@@ -3,6 +3,7 @@ mod boot;
 mod theme;
 
 use std::io::{self, Write};
+use std::time::Duration;
 
 use color_eyre::Result;
 use crossterm::{
@@ -13,6 +14,7 @@ use crossterm::{
     ExecutableCommand, QueueableCommand,
 };
 use ratatui::{
+    layout::Alignment,
     style::{Modifier, Style},
     text::Line,
     widgets::{Block, Borders},
@@ -65,21 +67,25 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, device: &Device) -> Result<()
     let title = format!(" {} ", selector_label(device));
 
     loop {
-        terminal.draw(|frame| render_app(frame, &title))?;
+        let now = chrono::Local::now();
+        let time_str = format!(" {} ", now.format("%H:%M:%S"));
+        terminal.draw(|frame| render_app(frame, &title, &time_str))?;
 
-        if let Event::Key(key) = event::read()? {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                _ => {}
+        if event::poll(Duration::from_secs(1))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                    _ => {}
+                }
             }
         }
     }
 }
 
-fn render_app(frame: &mut Frame, title: &str) {
+fn render_app(frame: &mut Frame, title: &str, time: &str) {
     let area = frame.area();
 
     let title_line = Line::from(title).style(
@@ -87,11 +93,16 @@ fn render_app(frame: &mut Frame, title: &str) {
             .fg(theme::ACCENT)
             .add_modifier(Modifier::BOLD),
     );
+    let time_line =
+        Line::from(time)
+            .style(Style::new().fg(theme::FG))
+            .alignment(Alignment::Center);
     let hint_line = Line::from(" q/Esc to exit ").style(Style::new().fg(theme::MUTED));
 
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title_line)
+        .title(time_line)
         .title_bottom(hint_line)
         .border_style(Style::new().fg(theme::SURFACE))
         .style(Style::new().bg(theme::BG).fg(theme::FG));
