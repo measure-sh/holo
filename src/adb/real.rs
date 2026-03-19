@@ -16,25 +16,79 @@ impl Adb for RealAdb {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let devices = stdout
-            .lines()
-            .skip(1) // skip "List of devices attached" header
-            .filter(|line| !line.trim().is_empty())
-            .filter_map(|line| {
-                let mut parts = line.split_whitespace();
-                let serial = parts.next()?.to_string();
-                let status = parts.next()?;
-                if status != "device" {
-                    return None; // skip offline/unauthorized
-                }
-                let description = parts.collect::<Vec<_>>().join(" ");
-                Some(Device {
-                    serial,
-                    description,
-                })
-            })
-            .collect();
+        Ok(parse_device_list(&stdout))
+    }
+}
 
-        Ok(devices)
+pub fn parse_device_list(output: &str) -> Vec<Device> {
+    output
+        .lines()
+        .skip(1) // skip "List of devices attached" header
+        .filter(|line| !line.trim().is_empty())
+        .filter_map(|line| {
+            let mut parts = line.split_whitespace();
+            let serial = parts.next()?.to_string();
+            let status = parts.next()?;
+            if status != "device" {
+                return None; // skip offline/unauthorized
+            }
+            let description = parts.collect::<Vec<_>>().join(" ");
+            Some(Device {
+                serial,
+                description,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_single_device() {
+        let output = "List of devices attached\nR5CT32MKXYJ device usb:1-1 product:a53xnaxx model:SM_A536E transport_id:1\n\n";
+        let devices = parse_device_list(output);
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].serial, "R5CT32MKXYJ");
+        assert!(devices[0].description.contains("model:SM_A536E"));
+    }
+
+    #[test]
+    fn parses_multiple_devices() {
+        let output = "List of devices attached\n\
+            R5CT32MKXYJ device usb:1-1 model:SM_A536E\n\
+            emulator-5554 device product:sdk_phone model:sdk_phone\n\n";
+        let devices = parse_device_list(output);
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].serial, "R5CT32MKXYJ");
+        assert_eq!(devices[1].serial, "emulator-5554");
+    }
+
+    #[test]
+    fn skips_offline_and_unauthorized_devices() {
+        let output = "List of devices attached\n\
+            R5CT32MKXYJ device model:SM_A536E\n\
+            ABCDEF123456 offline\n\
+            GHIJKL789012 unauthorized\n\n";
+        let devices = parse_device_list(output);
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].serial, "R5CT32MKXYJ");
+    }
+
+    #[test]
+    fn returns_empty_for_no_devices() {
+        let output = "List of devices attached\n\n";
+        let devices = parse_device_list(output);
+        assert!(devices.is_empty());
+    }
+
+    #[test]
+    fn handles_device_with_no_description() {
+        let output = "List of devices attached\nemulator-5554 device\n\n";
+        let devices = parse_device_list(output);
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].serial, "emulator-5554");
+        assert!(devices[0].description.is_empty());
     }
 }

@@ -1,4 +1,5 @@
 mod adb;
+mod boot;
 mod theme;
 
 use color_eyre::Result;
@@ -7,11 +8,12 @@ use ratatui::{
     layout::{Constraint, Layout},
     style::{Modifier, Style},
     text::Text,
-    widgets::{Block, List, ListItem, ListState},
+    widgets::{Block, List, ListItem},
     DefaultTerminal, Frame,
 };
 
 use adb::{Adb, Device, RealAdb};
+use boot::{BootResult, DeviceSelector};
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -19,15 +21,15 @@ fn main() -> Result<()> {
     let adb = RealAdb;
     let devices = adb.list_devices()?;
 
-    let device = match devices.len() {
-        0 => {
+    let device = match boot::resolve_device(devices) {
+        BootResult::NoDevices => {
             eprintln!("No devices connected. Connect a device and try again.");
             std::process::exit(1);
         }
-        1 => devices.into_iter().next().unwrap(),
-        _ => {
+        BootResult::Selected(device) => device,
+        BootResult::NeedsSelection(devices) => {
             let terminal = ratatui::init();
-            let result = select_device(terminal, &devices);
+            let result = run_device_selection(terminal, devices);
             ratatui::restore();
             result?
         }
@@ -39,12 +41,11 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn select_device(mut terminal: DefaultTerminal, devices: &[Device]) -> Result<Device> {
-    let mut list_state = ListState::default();
-    list_state.select(Some(0));
+fn run_device_selection(mut terminal: DefaultTerminal, devices: Vec<Device>) -> Result<Device> {
+    let mut selector = DeviceSelector::new(devices);
 
     loop {
-        terminal.draw(|frame| render_device_selection(frame, devices, &mut list_state))?;
+        terminal.draw(|frame| render_device_selection(frame, &mut selector))?;
 
         if let Event::Key(key) = event::read()? {
             if key.kind != KeyEventKind::Press {
@@ -55,25 +56,16 @@ fn select_device(mut terminal: DefaultTerminal, devices: &[Device]) -> Result<De
                     ratatui::restore();
                     std::process::exit(0);
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    let i = list_state.selected().unwrap_or(0);
-                    list_state.select(Some((i + 1).min(devices.len() - 1)));
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    let i = list_state.selected().unwrap_or(0);
-                    list_state.select(Some(i.saturating_sub(1)));
-                }
-                KeyCode::Enter => {
-                    let i = list_state.selected().unwrap_or(0);
-                    return Ok(devices[i].clone());
-                }
+                KeyCode::Down | KeyCode::Char('j') => selector.select_next(),
+                KeyCode::Up | KeyCode::Char('k') => selector.select_previous(),
+                KeyCode::Enter => return Ok(selector.confirm()),
                 _ => {}
             }
         }
     }
 }
 
-fn render_device_selection(frame: &mut Frame, devices: &[Device], list_state: &mut ListState) {
+fn render_device_selection(frame: &mut Frame, selector: &mut DeviceSelector) {
     let area = frame.area();
 
     let bg = Block::default().style(Style::new().bg(theme::BG));
@@ -81,7 +73,7 @@ fn render_device_selection(frame: &mut Frame, devices: &[Device], list_state: &m
 
     let [_, content, _] = Layout::vertical([
         Constraint::Fill(1),
-        Constraint::Length((devices.len() as u16) + 4),
+        Constraint::Length((selector.devices.len() as u16) + 4),
         Constraint::Fill(1),
     ])
     .areas(area);
@@ -93,7 +85,8 @@ fn render_device_selection(frame: &mut Frame, devices: &[Device], list_state: &m
     ])
     .areas(content);
 
-    let items: Vec<ListItem> = devices
+    let items: Vec<ListItem> = selector
+        .devices
         .iter()
         .map(|d| {
             let label = if d.description.is_empty() {
@@ -122,5 +115,5 @@ fn render_device_selection(frame: &mut Frame, devices: &[Device], list_state: &m
         )
         .highlight_symbol("▶ ");
 
-    frame.render_stateful_widget(list, center, list_state);
+    frame.render_stateful_widget(list, center, &mut selector.list_state);
 }
