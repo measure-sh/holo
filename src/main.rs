@@ -16,7 +16,7 @@ use crossterm::{
 use ratatui::{
     layout::Alignment,
     style::{Modifier, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Borders},
     Frame,
 };
@@ -67,20 +67,20 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: &impl Adb, device: &Devi
     let title = format!(" {} ", selector_label(device));
 
     let battery_refresh_interval = Duration::from_secs(30);
-    let mut battery_str = String::new();
+    let mut battery_level: Option<u8> = None;
     let mut last_battery_fetch = Instant::now() - battery_refresh_interval;
 
     loop {
         if last_battery_fetch.elapsed() >= battery_refresh_interval {
             if let Ok(level) = adb.get_battery_level(&device.serial) {
-                battery_str = format!(" {level}% ");
+                battery_level = Some(level);
             }
             last_battery_fetch = Instant::now();
         }
 
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
-        terminal.draw(|frame| render_app(frame, &title, &time_str, &battery_str))?;
+        terminal.draw(|frame| render_app(frame, &title, &time_str, battery_level))?;
 
         if event::poll(Duration::from_secs(1))? {
             if let Event::Key(key) = event::read()? {
@@ -96,7 +96,32 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: &impl Adb, device: &Devi
     }
 }
 
-fn render_app(frame: &mut Frame, title: &str, time: &str, battery: &str) {
+fn battery_color(level: u8) -> ratatui::style::Color {
+    if level < 10 {
+        theme::RED
+    } else if level <= 25 {
+        theme::YELLOW
+    } else {
+        theme::FG
+    }
+}
+
+fn battery_bar(level: u8) -> Line<'static> {
+    const BAR_WIDTH: usize = 10;
+    let filled = ((level as usize) * BAR_WIDTH / 100).min(BAR_WIDTH);
+    let empty = BAR_WIDTH - filled;
+    let color = battery_color(level);
+
+    Line::from(vec![
+        Span::raw(" "),
+        Span::styled("█".repeat(filled), Style::new().fg(color)),
+        Span::styled("░".repeat(empty), Style::new().fg(theme::SURFACE)),
+        Span::styled(format!(" {level}% "), Style::new().fg(color)),
+    ])
+    .alignment(Alignment::Right)
+}
+
+fn render_app(frame: &mut Frame, title: &str, time: &str, battery_level: Option<u8>) {
     let area = frame.area();
 
     let title_line = Line::from(title).style(
@@ -108,16 +133,18 @@ fn render_app(frame: &mut Frame, title: &str, time: &str, battery: &str) {
         Line::from(time)
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
-    let battery_line = Line::from(battery)
-        .style(Style::new().fg(theme::FG))
-        .alignment(Alignment::Right);
     let hint_line = Line::from(" q/Esc to exit ").style(Style::new().fg(theme::MUTED));
 
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .title(title_line)
-        .title(time_line)
-        .title(battery_line)
+        .title(time_line);
+
+    if let Some(level) = battery_level {
+        block = block.title(battery_bar(level));
+    }
+
+    block = block
         .title_bottom(hint_line)
         .border_style(Style::new().fg(theme::SURFACE))
         .style(Style::new().bg(theme::BG).fg(theme::FG));
