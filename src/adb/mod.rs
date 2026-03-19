@@ -7,7 +7,8 @@ use color_eyre::Result;
 #[derive(Debug, Clone)]
 pub struct Device {
     pub serial: String,
-    pub description: String,
+    pub model: Option<String>,
+    pub device: Option<String>,
 }
 
 pub trait Adb {

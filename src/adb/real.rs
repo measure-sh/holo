@@ -32,10 +32,19 @@ pub fn parse_device_list(output: &str) -> Vec<Device> {
             if status != "device" {
                 return None; // skip offline/unauthorized
             }
-            let description = parts.collect::<Vec<_>>().join(" ");
+            let mut model = None;
+            let mut device = None;
+            for part in parts {
+                if let Some(val) = part.strip_prefix("model:") {
+                    model = Some(val.replace('_', " "));
+                } else if let Some(val) = part.strip_prefix("device:") {
+                    device = Some(val.to_string());
+                }
+            }
             Some(Device {
                 serial,
-                description,
+                model,
+                device,
             })
         })
         .collect()
@@ -47,11 +56,12 @@ mod tests {
 
     #[test]
     fn parses_single_device() {
-        let output = "List of devices attached\nR5CT32MKXYJ device usb:1-1 product:a53xnaxx model:SM_A536E transport_id:1\n\n";
+        let output = "List of devices attached\nR5CT32MKXYJ device usb:1-1 product:a53xnaxx model:SM_A536E device:a53x transport_id:1\n\n";
         let devices = parse_device_list(output);
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].serial, "R5CT32MKXYJ");
-        assert!(devices[0].description.contains("model:SM_A536E"));
+        assert_eq!(devices[0].model.as_deref(), Some("SM A536E"));
+        assert_eq!(devices[0].device.as_deref(), Some("a53x"));
     }
 
     #[test]
@@ -62,7 +72,8 @@ mod tests {
         let devices = parse_device_list(output);
         assert_eq!(devices.len(), 2);
         assert_eq!(devices[0].serial, "R5CT32MKXYJ");
-        assert_eq!(devices[1].serial, "emulator-5554");
+        assert_eq!(devices[0].model.as_deref(), Some("SM A536E"));
+        assert_eq!(devices[1].model.as_deref(), Some("sdk phone"));
     }
 
     #[test]
@@ -89,6 +100,7 @@ mod tests {
         let devices = parse_device_list(output);
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].serial, "emulator-5554");
-        assert!(devices[0].description.is_empty());
+        assert!(devices[0].model.is_none());
+        assert!(devices[0].device.is_none());
     }
 }

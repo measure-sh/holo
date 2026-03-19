@@ -38,10 +38,11 @@ fn main() -> Result<()> {
 }
 
 fn device_label(d: &Device) -> String {
-    if d.description.is_empty() {
-        d.serial.clone()
-    } else {
-        format!("{} ({})", d.serial, d.description)
+    match (&d.model, &d.device) {
+        (Some(model), Some(device)) => format!("{model} ({device})"),
+        (Some(model), None) => model.clone(),
+        (None, Some(device)) => device.clone(),
+        (None, None) => d.serial.clone(),
     }
 }
 

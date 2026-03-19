@@ -22,7 +22,8 @@ mod tests {
         (0..n)
             .map(|i| Device {
                 serial: format!("device-{i}"),
-                description: String::new(),
+                model: None,
+                device: None,
             })
             .collect()
     }
