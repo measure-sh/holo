@@ -14,6 +14,7 @@ use crossterm::{
 };
 use ratatui::{
     style::{Modifier, Style},
+    text::Line,
     widgets::{Block, Borders},
     Frame,
 };
@@ -72,14 +73,17 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, device: &Device) -> Result<()
 fn render_app(frame: &mut Frame, title: &str) {
     let area = frame.area();
 
+    let title_line = Line::from(title).style(
+        Style::new()
+            .fg(theme::ACCENT)
+            .add_modifier(Modifier::BOLD),
+    );
+    let hint_line = Line::from(" q/Esc to exit ").style(Style::new().fg(theme::MUTED));
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(title)
-        .title_style(
-            Style::new()
-                .fg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD),
-        )
+        .title(title_line)
+        .title_bottom(hint_line)
         .border_style(Style::new().fg(theme::SURFACE))
         .style(Style::new().bg(theme::BG).fg(theme::FG));
 
