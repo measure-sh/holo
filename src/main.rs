@@ -62,7 +62,7 @@ fn selector_label(d: &Device) -> String {
 }
 
 fn run_app(mut terminal: ratatui::DefaultTerminal, device: &Device) -> Result<()> {
-    let title = format!(" {} ", device_label(device));
+    let title = format!(" {} ", selector_label(device));
 
     loop {
         terminal.draw(|frame| render_app(frame, &title))?;
