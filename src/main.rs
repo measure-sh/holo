@@ -5,7 +5,8 @@ mod theme;
 mod ui;
 
 use std::io::{self, Write};
-use std::time::{Duration, Instant};
+use std::sync::mpsc;
+use std::time::Duration;
 
 use color_eyre::Result;
 use crossterm::{
@@ -66,20 +67,34 @@ fn selector_label(d: &Device) -> String {
     }
 }
 
-fn run_app(mut terminal: ratatui::DefaultTerminal, adb: &impl Adb, device: &Device) -> Result<()> {
+fn spawn_battery_poller(serial: String) -> mpsc::Receiver<u8> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let adb = RealAdb;
+        let interval = Duration::from_secs(30);
+        loop {
+            if let Ok(level) = adb.get_battery_level(&serial) {
+                if tx.send(level).is_err() {
+                    return; // main thread exited
+                }
+            }
+            std::thread::sleep(interval);
+        }
+    });
+    rx
+}
+
+fn run_app(mut terminal: ratatui::DefaultTerminal, _adb: &impl Adb, device: &Device) -> Result<()> {
     let title = format!(" {} ", selector_label(device));
     let mut app = App::new();
 
-    let battery_refresh_interval = Duration::from_secs(30);
+    let battery_rx = spawn_battery_poller(device.serial.clone());
     let mut battery_level: Option<u8> = None;
-    let mut last_battery_fetch = Instant::now() - battery_refresh_interval;
 
     loop {
-        if last_battery_fetch.elapsed() >= battery_refresh_interval {
-            if let Ok(level) = adb.get_battery_level(&device.serial) {
-                battery_level = Some(level);
-            }
-            last_battery_fetch = Instant::now();
+        // Drain any battery updates that arrived (non-blocking)
+        while let Ok(level) = battery_rx.try_recv() {
+            battery_level = Some(level);
         }
 
         let now = chrono::Local::now();
