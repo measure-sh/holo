@@ -1,10 +1,12 @@
+mod theme;
+
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Style, Stylize},
+    style::Style,
     text::Text,
-    widgets::Paragraph,
+    widgets::{Block, Paragraph},
     DefaultTerminal, Frame,
 };
 
@@ -32,6 +34,9 @@ fn run(mut terminal: DefaultTerminal) -> Result<()> {
 fn render(frame: &mut Frame) {
     let area = frame.area();
 
+    let bg = Block::default().style(Style::new().bg(theme::BG));
+    frame.render_widget(bg, area);
+
     let [_, center, _] = Layout::vertical([
         Constraint::Fill(1),
         Constraint::Length(1),
@@ -39,7 +44,8 @@ fn render(frame: &mut Frame) {
     ])
     .areas(area);
 
-    let text = Text::from("Hello, msh!").style(Style::new().bold());
+    let text = Text::from("Hello, msh!")
+        .style(Style::new().fg(theme::ACCENT).bg(theme::BG));
     let paragraph = Paragraph::new(text).centered();
     frame.render_widget(paragraph, center);
 }
