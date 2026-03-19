@@ -12,6 +12,11 @@ use crossterm::{
     terminal::{self, ClearType},
     ExecutableCommand, QueueableCommand,
 };
+use ratatui::{
+    style::{Modifier, Style},
+    widgets::{Block, Borders},
+    Frame,
+};
 
 use adb::{Adb, Device, RealAdb};
 use boot::BootResult;
@@ -31,10 +36,10 @@ fn main() -> Result<()> {
         BootResult::NeedsSelection(devices) => run_device_selection(devices)?,
     };
 
-    eprintln!("Selected device: {}", device.serial);
-    // TODO: enter main app with selected device
-
-    Ok(())
+    let terminal = ratatui::init();
+    let result = run_app(terminal, &device);
+    ratatui::restore();
+    result
 }
 
 fn device_label(d: &Device) -> String {
@@ -44,6 +49,41 @@ fn device_label(d: &Device) -> String {
         (None, Some(device)) => device.clone(),
         (None, None) => d.serial.clone(),
     }
+}
+
+fn run_app(mut terminal: ratatui::DefaultTerminal, device: &Device) -> Result<()> {
+    let title = format!(" {} ", device_label(device));
+
+    loop {
+        terminal.draw(|frame| render_app(frame, &title))?;
+
+        if let Event::Key(key) = event::read()? {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                _ => {}
+            }
+        }
+    }
+}
+
+fn render_app(frame: &mut Frame, title: &str) {
+    let area = frame.area();
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(title)
+        .title_style(
+            Style::new()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        )
+        .border_style(Style::new().fg(theme::SURFACE))
+        .style(Style::new().bg(theme::BG).fg(theme::FG));
+
+    frame.render_widget(block, area);
 }
 
 fn to_crossterm_color(c: ratatui::style::Color) -> Color {
