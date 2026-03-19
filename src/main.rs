@@ -3,7 +3,7 @@ mod boot;
 mod theme;
 
 use std::io::{self, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use color_eyre::Result;
 use crossterm::{
@@ -40,7 +40,7 @@ fn main() -> Result<()> {
     };
 
     let terminal = ratatui::init();
-    let result = run_app(terminal, &device);
+    let result = run_app(terminal, &adb, &device);
     ratatui::restore();
     result
 }
@@ -63,13 +63,24 @@ fn selector_label(d: &Device) -> String {
     }
 }
 
-fn run_app(mut terminal: ratatui::DefaultTerminal, device: &Device) -> Result<()> {
+fn run_app(mut terminal: ratatui::DefaultTerminal, adb: &impl Adb, device: &Device) -> Result<()> {
     let title = format!(" {} ", selector_label(device));
 
+    let battery_refresh_interval = Duration::from_secs(30);
+    let mut battery_str = String::new();
+    let mut last_battery_fetch = Instant::now() - battery_refresh_interval;
+
     loop {
+        if last_battery_fetch.elapsed() >= battery_refresh_interval {
+            if let Ok(level) = adb.get_battery_level(&device.serial) {
+                battery_str = format!(" {level}% ");
+            }
+            last_battery_fetch = Instant::now();
+        }
+
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
-        terminal.draw(|frame| render_app(frame, &title, &time_str))?;
+        terminal.draw(|frame| render_app(frame, &title, &time_str, &battery_str))?;
 
         if event::poll(Duration::from_secs(1))? {
             if let Event::Key(key) = event::read()? {
@@ -85,7 +96,7 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, device: &Device) -> Result<()
     }
 }
 
-fn render_app(frame: &mut Frame, title: &str, time: &str) {
+fn render_app(frame: &mut Frame, title: &str, time: &str, battery: &str) {
     let area = frame.area();
 
     let title_line = Line::from(title).style(
@@ -97,12 +108,16 @@ fn render_app(frame: &mut Frame, title: &str, time: &str) {
         Line::from(time)
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
+    let battery_line = Line::from(battery)
+        .style(Style::new().fg(theme::FG))
+        .alignment(Alignment::Right);
     let hint_line = Line::from(" q/Esc to exit ").style(Style::new().fg(theme::MUTED));
 
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title_line)
         .title(time_line)
+        .title(battery_line)
         .title_bottom(hint_line)
         .border_style(Style::new().fg(theme::SURFACE))
         .style(Style::new().bg(theme::BG).fg(theme::FG));
