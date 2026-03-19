@@ -2,18 +2,19 @@ mod adb;
 mod boot;
 mod theme;
 
+use std::io::{self, Write};
+
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use ratatui::{
-    layout::{Constraint, Layout},
-    style::{Modifier, Style},
-    text::Text,
-    widgets::{Block, List, ListItem},
-    DefaultTerminal, Frame,
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyEventKind},
+    style::{self, Attribute, Color, SetAttribute, SetBackgroundColor, SetForegroundColor},
+    terminal::{self, ClearType},
+    ExecutableCommand, QueueableCommand,
 };
 
 use adb::{Adb, Device, RealAdb};
-use boot::{BootResult, DeviceSelector};
+use boot::BootResult;
 
 fn main() -> Result<()> {
     color_eyre::install()?;
@@ -27,12 +28,7 @@ fn main() -> Result<()> {
             std::process::exit(1);
         }
         BootResult::Selected(device) => device,
-        BootResult::NeedsSelection(devices) => {
-            let terminal = ratatui::init();
-            let result = run_device_selection(terminal, devices);
-            ratatui::restore();
-            result?
-        }
+        BootResult::NeedsSelection(devices) => run_device_selection(devices)?,
     };
 
     eprintln!("Selected device: {}", device.serial);
@@ -41,79 +37,109 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_device_selection(mut terminal: DefaultTerminal, devices: Vec<Device>) -> Result<Device> {
-    let mut selector = DeviceSelector::new(devices);
+fn device_label(d: &Device) -> String {
+    if d.description.is_empty() {
+        d.serial.clone()
+    } else {
+        format!("{} ({})", d.serial, d.description)
+    }
+}
+
+fn to_crossterm_color(c: ratatui::style::Color) -> Color {
+    match c {
+        ratatui::style::Color::Rgb(r, g, b) => Color::Rgb { r, g, b },
+        _ => Color::Reset,
+    }
+}
+
+fn move_to_top(w: &mut io::Stderr, total_lines: u16) -> Result<()> {
+    w.queue(cursor::MoveUp(total_lines))?
+        .queue(terminal::Clear(ClearType::FromCursorDown))?;
+    Ok(())
+}
+
+fn run_device_selection(devices: Vec<Device>) -> Result<Device> {
+    let mut stderr = io::stderr();
+    let mut selected: usize = 0;
+    let total = devices.len();
+    let total_lines = (total + 2) as u16; // header + devices + footer
+
+    terminal::enable_raw_mode()?;
+    stderr.execute(cursor::Hide)?;
+
+    render_selector(&mut stderr, &devices, selected)?;
 
     loop {
-        terminal.draw(|frame| render_device_selection(frame, &mut selector))?;
-
         if let Event::Key(key) = event::read()? {
             if key.kind != KeyEventKind::Press {
                 continue;
             }
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => {
-                    ratatui::restore();
+                    move_to_top(&mut stderr, total_lines)?;
+                    stderr.execute(cursor::Show)?;
+                    terminal::disable_raw_mode()?;
                     std::process::exit(0);
                 }
-                KeyCode::Down | KeyCode::Char('j') => selector.select_next(),
-                KeyCode::Up | KeyCode::Char('k') => selector.select_previous(),
-                KeyCode::Enter => return Ok(selector.confirm()),
-                _ => {}
+                KeyCode::Down | KeyCode::Char('j') => {
+                    selected = (selected + 1).min(total - 1);
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    selected = selected.saturating_sub(1);
+                }
+                KeyCode::Enter => {
+                    let device = devices[selected].clone();
+                    move_to_top(&mut stderr, total_lines)?;
+                    stderr.execute(cursor::Show)?;
+                    terminal::disable_raw_mode()?;
+                    return Ok(device);
+                }
+                _ => continue,
             }
+
+            move_to_top(&mut stderr, total_lines)?;
+            render_selector(&mut stderr, &devices, selected)?;
         }
     }
 }
 
-fn render_device_selection(frame: &mut Frame, selector: &mut DeviceSelector) {
-    let area = frame.area();
+fn render_selector(w: &mut io::Stderr, devices: &[Device], selected: usize) -> Result<()> {
+    let accent = to_crossterm_color(theme::ACCENT);
+    let fg = to_crossterm_color(theme::FG);
+    let bg = to_crossterm_color(theme::BG);
+    let muted = to_crossterm_color(theme::MUTED);
 
-    let bg = Block::default().style(Style::new().bg(theme::BG));
-    frame.render_widget(bg, area);
+    // Header
+    w.queue(SetForegroundColor(accent))?
+        .queue(style::Print(" Select Device"))?
+        .queue(SetForegroundColor(Color::Reset))?
+        .queue(style::Print("\r\n"))?;
 
-    let [_, content, _] = Layout::vertical([
-        Constraint::Fill(1),
-        Constraint::Length((selector.devices.len() as u16) + 4),
-        Constraint::Fill(1),
-    ])
-    .areas(area);
+    // Device list
+    for (i, device) in devices.iter().enumerate() {
+        let label = device_label(device);
+        if i == selected {
+            w.queue(SetBackgroundColor(accent))?
+                .queue(SetForegroundColor(bg))?
+                .queue(SetAttribute(Attribute::Bold))?
+                .queue(style::Print(format!(" ▶ {label}")))?
+                .queue(SetAttribute(Attribute::Reset))?
+                .queue(SetForegroundColor(Color::Reset))?
+                .queue(SetBackgroundColor(Color::Reset))?;
+        } else {
+            w.queue(SetForegroundColor(fg))?
+                .queue(style::Print(format!("   {label}")))?
+                .queue(SetForegroundColor(Color::Reset))?;
+        }
+        w.queue(style::Print("\r\n"))?;
+    }
 
-    let [_, center, _] = Layout::horizontal([
-        Constraint::Fill(1),
-        Constraint::Percentage(60),
-        Constraint::Fill(1),
-    ])
-    .areas(content);
+    // Footer hint
+    w.queue(SetForegroundColor(muted))?
+        .queue(style::Print(" j/k to move, Enter to select, q to quit"))?
+        .queue(SetForegroundColor(Color::Reset))?
+        .queue(style::Print("\r\n"))?;
 
-    let items: Vec<ListItem> = selector
-        .devices
-        .iter()
-        .map(|d| {
-            let label = if d.description.is_empty() {
-                d.serial.clone()
-            } else {
-                format!("{} ({})", d.serial, d.description)
-            };
-            ListItem::new(Text::from(label))
-        })
-        .collect();
-
-    let list = List::new(items)
-        .block(
-            Block::bordered()
-                .title(" Select Device ")
-                .title_style(Style::new().fg(theme::ACCENT))
-                .border_style(Style::new().fg(theme::SURFACE))
-                .style(Style::new().bg(theme::BG)),
-        )
-        .style(Style::new().fg(theme::FG))
-        .highlight_style(
-            Style::new()
-                .fg(theme::BG)
-                .bg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶ ");
-
-    frame.render_stateful_widget(list, center, &mut selector.list_state);
+    w.flush()?;
+    Ok(())
 }
