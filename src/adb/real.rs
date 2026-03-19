@@ -18,6 +18,28 @@ impl Adb for RealAdb {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_device_list(&stdout))
     }
+
+    fn get_battery_level(&self, serial: &str) -> Result<u8> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "battery"])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb dumpsys battery failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        parse_battery_level(&stdout).ok_or_else(|| color_eyre::eyre::eyre!("could not parse battery level"))
+    }
+}
+
+fn parse_battery_level(output: &str) -> Option<u8> {
+    output.lines().find_map(|line| {
+        let line = line.trim();
+        let value = line.strip_prefix("level:")?;
+        value.trim().parse().ok()
+    })
 }
 
 pub fn parse_device_list(output: &str) -> Vec<Device> {
@@ -92,6 +114,24 @@ mod tests {
         let output = "List of devices attached\n\n";
         let devices = parse_device_list(output);
         assert!(devices.is_empty());
+    }
+
+    #[test]
+    fn parses_battery_level_from_dumpsys() {
+        let output = "Current Battery Service state:\n  AC powered: false\n  USB powered: true\n  status: 2\n  level: 72\n  temperature: 250\n";
+        assert_eq!(parse_battery_level(output), Some(72));
+    }
+
+    #[test]
+    fn parses_full_battery() {
+        let output = "  level: 100\n";
+        assert_eq!(parse_battery_level(output), Some(100));
+    }
+
+    #[test]
+    fn returns_none_for_missing_level() {
+        let output = "Current Battery Service state:\n  AC powered: false\n";
+        assert_eq!(parse_battery_level(output), None);
     }
 
     #[test]

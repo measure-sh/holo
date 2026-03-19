@@ -13,4 +13,5 @@ pub struct Device {
 
 pub trait Adb {
     fn list_devices(&self) -> Result<Vec<Device>>;
+    fn get_battery_level(&self, serial: &str) -> Result<u8>;
 }
