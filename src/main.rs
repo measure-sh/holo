@@ -1,6 +1,8 @@
 mod adb;
+mod app;
 mod boot;
 mod theme;
+mod ui;
 
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
@@ -22,6 +24,7 @@ use ratatui::{
 };
 
 use adb::{Adb, Device, RealAdb};
+use app::App;
 use boot::BootResult;
 
 fn main() -> Result<()> {
@@ -65,6 +68,7 @@ fn selector_label(d: &Device) -> String {
 
 fn run_app(mut terminal: ratatui::DefaultTerminal, adb: &impl Adb, device: &Device) -> Result<()> {
     let title = format!(" {} ", selector_label(device));
+    let mut app = App::new();
 
     let battery_refresh_interval = Duration::from_secs(30);
     let mut battery_level: Option<u8> = None;
@@ -80,7 +84,9 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: &impl Adb, device: &Devi
 
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
-        terminal.draw(|frame| render_app(frame, &title, &time_str, battery_level))?;
+        terminal.draw(|frame| {
+            render_app(frame, &title, &time_str, battery_level, app.selected_panel)
+        })?;
 
         if event::poll(Duration::from_secs(1))? {
             if let Event::Key(key) = event::read()? {
@@ -89,6 +95,9 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: &impl Adb, device: &Devi
                 }
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                    KeyCode::Char(c @ '1'..='6') => {
+                        app.select_panel(c as u8 - b'0');
+                    }
                     _ => {}
                 }
             }
@@ -121,7 +130,13 @@ fn battery_bar(level: u8) -> Line<'static> {
     .alignment(Alignment::Right)
 }
 
-fn render_app(frame: &mut Frame, title: &str, time: &str, battery_level: Option<u8>) {
+fn render_app(
+    frame: &mut Frame,
+    title: &str,
+    time: &str,
+    battery_level: Option<u8>,
+    selected_panel: Option<u8>,
+) {
     let area = frame.area();
 
     let title_line = Line::from(title).style(
@@ -133,7 +148,8 @@ fn render_app(frame: &mut Frame, title: &str, time: &str, battery_level: Option<
         Line::from(time)
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
-    let hint_line = Line::from(" q/Esc to exit ").style(Style::new().fg(theme::MUTED));
+    let hint_line =
+        Line::from(" 1-6: panel | q/Esc: exit ").style(Style::new().fg(theme::MUTED));
 
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -149,7 +165,9 @@ fn render_app(frame: &mut Frame, title: &str, time: &str, battery_level: Option<
         .border_style(Style::new().fg(theme::SURFACE))
         .style(Style::new().bg(theme::BG).fg(theme::FG));
 
+    let inner = block.inner(area);
     frame.render_widget(block, area);
+    ui::render_panels(frame, inner, selected_panel);
 }
 
 fn to_crossterm_color(c: ratatui::style::Color) -> Color {
