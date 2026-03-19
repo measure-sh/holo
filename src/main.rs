@@ -52,6 +52,15 @@ fn device_label(d: &Device) -> String {
     }
 }
 
+fn selector_label(d: &Device) -> String {
+    let detail = device_label(d);
+    if detail == d.serial {
+        d.serial.clone()
+    } else {
+        format!("{}: {detail}", d.serial)
+    }
+}
+
 fn run_app(mut terminal: ratatui::DefaultTerminal, device: &Device) -> Result<()> {
     let title = format!(" {} ", device_label(device));
 
@@ -162,7 +171,7 @@ fn render_selector(w: &mut io::Stderr, devices: &[Device], selected: usize) -> R
 
     // Device list
     for (i, device) in devices.iter().enumerate() {
-        let label = device_label(device);
+        let label = selector_label(device);
         if i == selected {
             w.queue(SetBackgroundColor(accent))?
                 .queue(SetForegroundColor(bg))?
