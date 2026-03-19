@@ -35,9 +35,9 @@ pub fn parse_device_list(output: &str) -> Vec<Device> {
             let mut model = None;
             let mut device = None;
             for part in parts {
-                if let Some(val) = part.strip_prefix("model:") {
+                if let Some(val) = part.strip_prefix("model:").filter(|v| !v.is_empty()) {
                     model = Some(val.replace('_', " "));
-                } else if let Some(val) = part.strip_prefix("device:") {
+                } else if let Some(val) = part.strip_prefix("device:").filter(|v| !v.is_empty()) {
                     device = Some(val.to_string());
                 }
             }
