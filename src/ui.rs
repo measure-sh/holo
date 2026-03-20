@@ -167,10 +167,10 @@ fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
         return Line::from(raw);
     };
 
-    let bg_color = theme::level_color(parsed.level);
-    let badge = Span::styled(
-        format!(" {} ", parsed.level),
-        Style::new().fg(theme::BG).bg(bg_color).add_modifier(Modifier::BOLD),
+    let level_fg = theme::level_color(parsed.level);
+    let label = Span::styled(
+        theme::level_label(parsed.level),
+        Style::new().fg(level_fg).add_modifier(Modifier::BOLD),
     );
 
     let sep = Span::raw(" ");
@@ -179,16 +179,16 @@ fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
 
     let is_main = pid.is_some_and(|p| parsed.tid == p);
     let thread = if is_main {
-        Span::styled("main", Style::new().fg(theme::ACCENT))
+        Span::styled("main", Style::new().fg(theme::MUTED))
     } else {
         Span::styled(parsed.tid, Style::new().fg(theme::MUTED))
     };
 
-    let tag = Span::styled(parsed.tag, Style::new().fg(theme::FG).add_modifier(Modifier::BOLD));
+    let tag = Span::styled(parsed.tag, Style::new().fg(level_fg).add_modifier(Modifier::BOLD));
 
     let message = Span::styled(format!(": {}", parsed.message), Style::new().fg(theme::FG));
 
-    Line::from(vec![badge, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
+    Line::from(vec![label, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
 }
 
 fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: usize) {

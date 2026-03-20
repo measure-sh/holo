@@ -26,11 +26,23 @@ pub const DIM_TEAL: Color = Color::Rgb(0x3a, 0x70, 0x6a);
 pub fn level_color(level: char) -> Color {
     match level {
         'V' => MUTED,
-        'D' => ACCENT,
-        'I' => GREEN,
+        'D' => MAGENTA,
+        'I' => CYAN,
         'W' => YELLOW,
         'E' => RED,
-        'F' => MAGENTA,
+        'F' => RED,
         _ => MUTED,
+    }
+}
+
+pub fn level_label(level: char) -> &'static str {
+    match level {
+        'V' => "VERB",
+        'D' => "DEBU",
+        'I' => "INFO",
+        'W' => "WARN",
+        'E' => "ERRO",
+        'F' => "FATA",
+        _ => "????",
     }
 }
