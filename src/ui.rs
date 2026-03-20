@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders},
+    widgets::{Block, BorderType, Borders},
     Frame,
 };
 
@@ -20,14 +20,25 @@ const PANEL_NAMES: [&str; 7] = [
     "Commands",
 ];
 
+use ratatui::style::Color;
+
+const PANEL_COLORS: [Color; 7] = [
+    theme::ACCENT,  // 1 - blue
+    theme::GREEN,   // 2 - green
+    theme::YELLOW,  // 3 - yellow
+    theme::CYAN,    // 4 - cyan
+    theme::MAGENTA, // 5 - magenta
+    theme::RED,     // 6 - red
+    theme::GREEN,   // 7 - green
+];
+
 fn panel_title(index: u8) -> Line<'static> {
+    let color = PANEL_COLORS[(index - 1) as usize];
     Line::from(vec![
         Span::raw(" "),
         Span::styled(
             index.to_string(),
-            Style::new()
-                .fg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD),
+            Style::new().fg(color).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(" {} ", PANEL_NAMES[(index - 1) as usize]),
@@ -37,10 +48,12 @@ fn panel_title(index: u8) -> Line<'static> {
 }
 
 fn panel_block(index: u8) -> Block<'static> {
+    let color = PANEL_COLORS[(index - 1) as usize];
     Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .title(panel_title(index))
-        .border_style(Style::new().fg(theme::SURFACE))
+        .border_style(Style::new().fg(color))
 }
 
 pub fn render_app(
@@ -80,6 +93,7 @@ pub fn render_app(
 
     let mut block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .title(title_line)
         .title(time_line);
 
