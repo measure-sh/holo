@@ -105,8 +105,8 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 
 fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let top_visible = vis[0];
-    let bot_visible = vis[1] || vis[2] || vis[3] || vis[4] || vis[5];
+    let top_visible = vis[0] || vis[1];
+    let bot_visible = vis[2] || vis[3] || vis[4] || vis[5];
 
     match (top_visible, bot_visible) {
         (true, true) => {
@@ -114,21 +114,35 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Strin
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_logcat_panel(frame, rows[0], is_focused(app, 2), logcat_lines);
+            render_top_row(frame, rows[0], app, logcat_lines);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines),
+        (true, false) => render_top_row(frame, area, app, logcat_lines),
         (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
-fn render_logcat_panel(
-    frame: &mut Frame,
-    area: Rect,
-    focused: bool,
-    logcat_lines: &[String],
-) {
+fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String]) {
+    let vis = app.panel_visibility();
+    match (vis[0], vis[1]) {
+        (true, true) => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+                .split(area);
+            render_commands_panel(frame, cols[0], is_focused(app, 1), app.commands_cursor());
+            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines);
+        }
+        (true, false) => {
+            render_commands_panel(frame, area, is_focused(app, 1), app.commands_cursor())
+        }
+        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines),
+        (false, false) => {}
+    }
+}
+
+fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, logcat_lines: &[String]) {
     let block = panel_block(2, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -144,84 +158,8 @@ fn render_logcat_panel(
     frame.render_widget(paragraph, inner);
 }
 
-fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {
-    let vis = app.panel_visibility();
-    let left_visible = vis[1] || vis[2];
-    let mid_visible = vis[3] || vis[4];
-    let right_visible = vis[5];
-
-    let mut columns: Vec<(Constraint, BottomColumn)> = Vec::new();
-    if left_visible {
-        columns.push((Constraint::Ratio(1, 1), BottomColumn::Left));
-    }
-    if mid_visible {
-        columns.push((Constraint::Ratio(1, 1), BottomColumn::Mid));
-    }
-    if right_visible {
-        columns.push((Constraint::Ratio(1, 1), BottomColumn::Right));
-    }
-
-    if columns.is_empty() {
-        return;
-    }
-
-    let constraints: Vec<Constraint> = columns.iter().map(|(c, _)| *c).collect();
-    let areas = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(area);
-
-    for (i, (_, col_type)) in columns.iter().enumerate() {
-        match col_type {
-            BottomColumn::Left => render_left_column(frame, areas[i], vis),
-            BottomColumn::Mid => render_mid_column(frame, areas[i], vis),
-            BottomColumn::Right => {
-                render_commands_panel(frame, areas[i], is_focused(app, 7), app.commands_cursor())
-            }
-        }
-    }
-}
-
-enum BottomColumn {
-    Left,
-    Mid,
-    Right,
-}
-
-fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
-    match (vis[1], vis[2]) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            frame.render_widget(panel_block(3, false), rows[0]);
-            frame.render_widget(panel_block(4, false), rows[1]);
-        }
-        (true, false) => frame.render_widget(panel_block(3, false), area),
-        (false, true) => frame.render_widget(panel_block(4, false), area),
-        (false, false) => {}
-    }
-}
-
-fn render_mid_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
-    match (vis[3], vis[4]) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            frame.render_widget(panel_block(5, false), rows[0]);
-            frame.render_widget(panel_block(6, false), rows[1]);
-        }
-        (true, false) => frame.render_widget(panel_block(5, false), area),
-        (false, true) => frame.render_widget(panel_block(6, false), area),
-        (false, false) => {}
-    }
-}
-
 fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: usize) {
-    let block = panel_block(7, focused);
+    let block = panel_block(1, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -241,4 +179,56 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: u
     let selected = if focused { Some(cursor) } else { None };
     let mut state = ListState::default().with_selected(selected);
     frame.render_stateful_widget(list, inner, &mut state);
+}
+
+fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {
+    let vis = app.panel_visibility();
+    let left_visible = vis[2] || vis[3];
+    let right_visible = vis[4] || vis[5];
+
+    match (left_visible, right_visible) {
+        (true, true) => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            render_left_column(frame, cols[0], vis);
+            render_right_column(frame, cols[1], vis);
+        }
+        (true, false) => render_left_column(frame, area, vis),
+        (false, true) => render_right_column(frame, area, vis),
+        (false, false) => {}
+    }
+}
+
+fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+    match (vis[2], vis[3]) {
+        (true, true) => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            frame.render_widget(panel_block(3, false), rows[0]);
+            frame.render_widget(panel_block(4, false), rows[1]);
+        }
+        (true, false) => frame.render_widget(panel_block(3, false), area),
+        (false, true) => frame.render_widget(panel_block(4, false), area),
+        (false, false) => {}
+    }
+}
+
+fn render_right_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+    match (vis[4], vis[5]) {
+        (true, true) => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            frame.render_widget(panel_block(5, false), rows[0]);
+            frame.render_widget(panel_block(6, false), rows[1]);
+        }
+        (true, false) => frame.render_widget(panel_block(5, false), area),
+        (false, true) => frame.render_widget(panel_block(6, false), area),
+        (false, false) => {}
+    }
 }

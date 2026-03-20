@@ -36,7 +36,7 @@ impl App {
     }
 
     pub fn handle_key(&mut self, code: KeyCode) -> Action {
-        if self.focused == Some(7) {
+        if self.focused == Some(1) {
             match code {
                 KeyCode::Up => {
                     self.commands_cursor = self.commands_cursor.saturating_sub(1);
@@ -62,7 +62,7 @@ impl App {
 
         match code {
             KeyCode::Char('q') => Action::Quit,
-            KeyCode::Char(c @ '2'..='7') => {
+            KeyCode::Char(c @ '1'..='6') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
             }
@@ -77,10 +77,10 @@ impl App {
     }
 
     fn toggle_visibility(&mut self, n: u8) {
-        if !(2..=7).contains(&n) {
+        if !(1..=6).contains(&n) {
             return;
         }
-        let idx = (n - 2) as usize;
+        let idx = (n - 1) as usize;
         if self.visible[idx] && self.visible.iter().filter(|&&v| v).count() == 1 {
             return;
         }
@@ -130,7 +130,7 @@ mod tests {
         app.toggle_visibility(3);
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, true, true, true, true]
+            &[true, true, false, true, true, true]
         );
     }
 
@@ -145,14 +145,14 @@ mod tests {
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new();
-        for n in 3..=7 {
+        for n in 2..=6 {
             app.toggle_visibility(n);
         }
         assert_eq!(
             app.panel_visibility(),
             &[true, false, false, false, false, false]
         );
-        app.toggle_visibility(2);
+        app.toggle_visibility(1);
         assert_eq!(
             app.panel_visibility(),
             &[true, false, false, false, false, false]
@@ -163,7 +163,7 @@ mod tests {
     fn out_of_range_is_ignored() {
         let mut app = App::new();
         app.toggle_visibility(0);
-        app.toggle_visibility(1);
+        app.toggle_visibility(7);
         app.toggle_visibility(8);
         assert_eq!(app.panel_visibility(), &[true; 6]);
     }
@@ -183,7 +183,7 @@ mod tests {
         ));
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, true, true, true, true]
+            &[true, true, false, true, true, true]
         );
     }
 
@@ -211,7 +211,7 @@ mod tests {
         let mut app = App::new();
         assert_eq!(app.focused_panel(), Some(2));
         app.handle_key(KeyCode::Char('c'));
-        assert_eq!(app.focused_panel(), Some(7));
+        assert_eq!(app.focused_panel(), Some(1));
         app.handle_key(KeyCode::Char('l'));
         assert_eq!(app.focused_panel(), Some(2));
     }
@@ -220,7 +220,7 @@ mod tests {
     fn commands_cursor_moves_when_focused() {
         let mut app = App::new();
         app.handle_key(KeyCode::Char('c'));
-        assert_eq!(app.focused_panel(), Some(7));
+        assert_eq!(app.focused_panel(), Some(1));
         app.handle_key(KeyCode::Down);
         assert_eq!(app.commands_cursor(), 1);
         app.handle_key(KeyCode::Down);
