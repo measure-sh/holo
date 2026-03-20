@@ -160,6 +160,7 @@ fn run_app(
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
+                app.set_logcat_len(logcat_lines.len());
                 match app.handle_key(key.code) {
                     Action::Quit => return Ok(()),
                     Action::OpenApp => {
@@ -181,6 +182,29 @@ fn run_app(
                         spawn_app_action(&adb, &device.serial, package, |adb, s, p| {
                             adb.clear_app_data(s, p).and_then(|_| adb.launch_app(s, p))
                         });
+                    }
+                    Action::CopyLogcat => {
+                        let indices: Vec<usize> = if app.logcat_selected().is_empty() {
+                            app.logcat_cursor().into_iter().collect()
+                        } else {
+                            let mut v: Vec<usize> = app.logcat_selected().iter().copied().collect();
+                            v.sort();
+                            v
+                        };
+                        let text: String = indices
+                            .iter()
+                            .filter_map(|&i| logcat_lines.get(i))
+                            .map(|l| {
+                                logcat::parse(l)
+                                    .map(|p| p.message.to_string())
+                                    .unwrap_or_else(|| l.clone())
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                            let _ = clipboard.set_text(text);
+                        }
+                        app.clear_logcat_selection();
                     }
                     Action::None => {}
                 }
