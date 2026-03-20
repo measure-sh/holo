@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState},
     Frame,
 };
 
@@ -250,13 +250,13 @@ fn render_logcat_panel(
     app.clamp_logcat_scroll(filtered.len(), visible_height);
     let end = filtered.len().saturating_sub(app.logcat_scroll());
     let start = end.saturating_sub(visible_height);
-    let visible: Vec<Line> = filtered[start..end]
+    let items: Vec<ListItem> = filtered[start..end]
         .iter()
-        .map(|l| style_logcat_line(l, pid_str.as_deref()))
+        .map(|l| ListItem::new(style_logcat_line(l, pid_str.as_deref())))
         .collect();
 
-    let paragraph = Paragraph::new(visible);
-    frame.render_widget(paragraph, inner);
+    let list = List::new(items);
+    frame.render_widget(list, inner);
 }
 
 fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
