@@ -129,23 +129,28 @@ impl App {
         }
 
         if code == KeyCode::Esc && self.logcat_scroll > 0 {
+            self.focused = Some(2);
             self.logcat_scroll = 0;
             return Action::None;
         }
         match code {
             KeyCode::Char('t') => {
+                self.focused = Some(2);
                 self.input_mode = InputMode::EditingTag;
                 return Action::None;
             }
             KeyCode::Char('s') => {
+                self.focused = Some(2);
                 self.input_mode = InputMode::EditingSearch;
                 return Action::None;
             }
             KeyCode::Right => {
+                self.focused = Some(2);
                 self.cycle_level(true);
                 return Action::None;
             }
             KeyCode::Left => {
+                self.focused = Some(2);
                 self.cycle_level(false);
                 return Action::None;
             }
@@ -400,6 +405,7 @@ mod tests {
         let mut app = App::new();
         app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
+        assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
@@ -407,6 +413,7 @@ mod tests {
         let mut app = App::new();
         app.handle_key(KeyCode::Char('s'));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
+        assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
@@ -415,6 +422,7 @@ mod tests {
         assert_eq!(app.focused_panel(), Some(1));
         app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
+        assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
@@ -460,6 +468,7 @@ mod tests {
         assert_eq!(app.logcat_filter().level, None);
         app.handle_key(KeyCode::Right);
         assert_eq!(app.logcat_filter().level, Some('V'));
+        assert_eq!(app.focused_panel(), Some(2));
         app.handle_key(KeyCode::Right);
         assert_eq!(app.logcat_filter().level, Some('D'));
     }
@@ -519,6 +528,7 @@ mod tests {
         app.handle_key(KeyCode::Char('c'));
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.logcat_scroll(), 0);
+        assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
@@ -527,6 +537,14 @@ mod tests {
         assert_eq!(app.logcat_scroll(), 0);
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.logcat_scroll(), 0);
+    }
+
+    #[test]
+    fn left_right_shifts_focus_to_logcat() {
+        let mut app = App::new();
+        assert_eq!(app.focused_panel(), Some(1));
+        app.handle_key(KeyCode::Right);
+        assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
