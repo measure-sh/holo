@@ -61,7 +61,7 @@ pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>, s
             let (pid_str, pid_color, name_color) = if let Some(pid) = processes.and_then(|p| p.get(name.as_str())) {
                 (format!("{pid:<width$}", width = PID_WIDTH as usize), theme::MUTED, theme::FG)
             } else {
-                (format!("{:>width$}", "zzz", width = PID_WIDTH as usize), theme::SURFACE, theme::SURFACE)
+                (format!("{:<width$}", "zzz", width = PID_WIDTH as usize), theme::SURFACE, theme::SURFACE)
             };
 
             ListItem::new(Line::from(vec![
