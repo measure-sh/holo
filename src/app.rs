@@ -115,19 +115,7 @@ impl App {
         }
 
         if self.focused == Some(2) {
-            if code == KeyCode::Esc && self.logcat_scroll > 0 {
-                self.logcat_scroll = 0;
-                return Action::None;
-            }
             match code {
-                KeyCode::Char('t') => {
-                    self.input_mode = InputMode::EditingTag;
-                    return Action::None;
-                }
-                KeyCode::Char('s') => {
-                    self.input_mode = InputMode::EditingSearch;
-                    return Action::None;
-                }
                 KeyCode::Up => {
                     self.logcat_scroll += 1;
                     return Action::None;
@@ -136,16 +124,32 @@ impl App {
                     self.logcat_scroll = self.logcat_scroll.saturating_sub(1);
                     return Action::None;
                 }
-                KeyCode::Right => {
-                    self.cycle_level(true);
-                    return Action::None;
-                }
-                KeyCode::Left => {
-                    self.cycle_level(false);
-                    return Action::None;
-                }
                 _ => {}
             }
+        }
+
+        if code == KeyCode::Esc && self.logcat_scroll > 0 {
+            self.logcat_scroll = 0;
+            return Action::None;
+        }
+        match code {
+            KeyCode::Char('t') => {
+                self.input_mode = InputMode::EditingTag;
+                return Action::None;
+            }
+            KeyCode::Char('s') => {
+                self.input_mode = InputMode::EditingSearch;
+                return Action::None;
+            }
+            KeyCode::Right => {
+                self.cycle_level(true);
+                return Action::None;
+            }
+            KeyCode::Left => {
+                self.cycle_level(false);
+                return Action::None;
+            }
+            _ => {}
         }
 
         match code {
@@ -392,33 +396,30 @@ mod tests {
     }
 
     #[test]
-    fn t_enters_tag_editing_when_logcat_focused() {
+    fn t_enters_tag_editing() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
     }
 
     #[test]
-    fn s_enters_search_editing_when_logcat_focused() {
+    fn s_enters_search_editing() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('s'));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
     }
 
     #[test]
-    fn t_ignored_when_logcat_not_focused() {
+    fn t_works_when_commands_focused() {
         let mut app = App::new();
         assert_eq!(app.focused_panel(), Some(1));
         app.handle_key(KeyCode::Char('t'));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert_eq!(app.input_mode(), InputMode::EditingTag);
     }
 
     #[test]
     fn typing_appends_to_tag() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         app.handle_key(KeyCode::Char('a'));
         app.handle_key(KeyCode::Char('b'));
@@ -428,7 +429,6 @@ mod tests {
     #[test]
     fn typing_appends_to_search() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('s'));
         app.handle_key(KeyCode::Char('x'));
         app.handle_key(KeyCode::Char('y'));
@@ -438,7 +438,6 @@ mod tests {
     #[test]
     fn backspace_removes_from_tag() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         app.handle_key(KeyCode::Char('a'));
         app.handle_key(KeyCode::Char('b'));
@@ -449,7 +448,6 @@ mod tests {
     #[test]
     fn enter_exits_editing_mode() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('s'));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
         app.handle_key(KeyCode::Enter);
@@ -459,7 +457,6 @@ mod tests {
     #[test]
     fn level_cycles_forward_with_right() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         assert_eq!(app.logcat_filter().level, None);
         app.handle_key(KeyCode::Right);
         assert_eq!(app.logcat_filter().level, Some('V'));
@@ -470,7 +467,6 @@ mod tests {
     #[test]
     fn level_cycles_backward_with_left() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Left);
         assert_eq!(app.logcat_filter().level, Some('F'));
     }
@@ -478,7 +474,6 @@ mod tests {
     #[test]
     fn level_wraps_around() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         for _ in 0..7 {
             app.handle_key(KeyCode::Right);
         }
@@ -521,6 +516,7 @@ mod tests {
         app.handle_key(KeyCode::Up);
         app.handle_key(KeyCode::Up);
         assert_eq!(app.logcat_scroll(), 3);
+        app.handle_key(KeyCode::Char('c'));
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.logcat_scroll(), 0);
     }
@@ -528,11 +524,9 @@ mod tests {
     #[test]
     fn esc_does_nothing_when_already_at_bottom() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
         assert_eq!(app.logcat_scroll(), 0);
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.logcat_scroll(), 0);
-        assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
