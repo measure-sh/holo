@@ -20,16 +20,18 @@ const PANEL_INFO: [(&str, ratatui::style::Color); 7] = [
     ("commands",       theme::DIM_TEAL),
 ];
 
+const SUPERSCRIPT_DIGITS: [char; 8] = ['\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}'];
+
 fn panel_title(index: u8) -> Line<'static> {
     let (name, color) = PANEL_INFO[(index - 1) as usize];
+    let superscript = SUPERSCRIPT_DIGITS[(index - 1) as usize];
     Line::from(vec![
-        Span::raw(" "),
         Span::styled(
-            index.to_string(),
+            format!(" {}", superscript),
             Style::new().fg(color).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!(" {} ", name),
+            format!("{} ", name),
             Style::new().fg(theme::MUTED),
         ),
     ])
