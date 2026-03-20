@@ -133,8 +133,11 @@ fn run_app(
             process_map = Some(procs);
         }
 
-        if logcat_handle.is_none() {
-            if let Some(pid) = process_map.as_ref().and_then(|m| m.get(package).copied()) {
+        let current_pid = process_map.as_ref().and_then(|m| m.get(package).copied());
+        if current_pid != monitored_pid {
+            logcat_handle = None;
+            monitored_pid = None;
+            if let Some(pid) = current_pid {
                 logcat_handle = logcat::LogcatHandle::spawn(&device.serial, pid);
                 monitored_pid = Some(pid);
             }
