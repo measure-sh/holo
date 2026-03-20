@@ -15,6 +15,8 @@ pub struct App {
     visible: [bool; 7],
     focused: Option<u8>,
     apps_cursor: usize,
+    filter_active: bool,
+    filter_text: String,
 }
 
 impl App {
@@ -23,24 +25,48 @@ impl App {
             visible: [true; 7],
             focused: Some(1),
             apps_cursor: 0,
+            filter_active: false,
+            filter_text: String::new(),
         }
     }
 
     pub fn handle_key(&mut self, code: KeyCode, app_count: usize) -> Action {
+        if self.focused == Some(1) && self.filter_active {
+            match code {
+                KeyCode::Esc => {
+                    self.filter_active = false;
+                    self.filter_text.clear();
+                    self.apps_cursor = 0;
+                    return Action::None;
+                }
+                KeyCode::Backspace => { self.filter_text.pop(); self.apps_cursor = 0; return Action::None; }
+                KeyCode::Up => { self.move_apps_cursor(-1, app_count); return Action::None; }
+                KeyCode::Down => { self.move_apps_cursor(1, app_count); return Action::None; }
+                KeyCode::Char(c) => { self.filter_text.push(c); self.apps_cursor = 0; return Action::None; }
+                _ => return Action::None,
+            }
+        }
+
         if self.focused == Some(1) {
             match code {
                 KeyCode::Up => { self.move_apps_cursor(-1, app_count); return Action::None; }
                 KeyCode::Down => { self.move_apps_cursor(1, app_count); return Action::None; }
+                KeyCode::Char('/') => { self.filter_active = true; return Action::None; }
                 KeyCode::Char('o') => return Action::OpenApp(self.apps_cursor),
                 KeyCode::Char('k') => return Action::KillApp(self.apps_cursor),
                 KeyCode::Char('r') => return Action::ClearDataAndOpen(self.apps_cursor),
                 KeyCode::Char('e') => return Action::ClearData(self.apps_cursor),
+                KeyCode::Esc => {
+                    self.filter_text.clear();
+                    self.apps_cursor = 0;
+                    return Action::None;
+                }
                 _ => {}
             }
         }
 
         match code {
-            KeyCode::Char('q') | KeyCode::Esc => Action::Quit,
+            KeyCode::Char('q') => Action::Quit,
             KeyCode::Char(c @ '1'..='7') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -95,6 +121,14 @@ impl App {
     pub fn focused_panel(&self) -> Option<u8> {
         self.focused
     }
+
+    pub fn filter_text(&self) -> &str {
+        &self.filter_text
+    }
+
+    pub fn is_filtering(&self) -> bool {
+        self.filter_active
+    }
 }
 
 #[cfg(test)]
@@ -148,9 +182,9 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_esc_quits() {
+    fn handle_key_esc_does_not_quit() {
         let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Esc, 10), Action::Quit));
+        assert!(matches!(app.handle_key(KeyCode::Esc, 10), Action::None));
     }
 
     #[test]
@@ -292,5 +326,88 @@ mod tests {
         assert!(matches!(app.handle_key(KeyCode::Char('k'), 10), Action::None));
         assert!(matches!(app.handle_key(KeyCode::Char('r'), 10), Action::None));
         assert!(matches!(app.handle_key(KeyCode::Char('e'), 10), Action::None));
+    }
+
+    #[test]
+    fn slash_enters_filter_mode() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('/'), 10);
+        assert!(app.is_filtering());
+        assert_eq!(app.filter_text(), "");
+    }
+
+    #[test]
+    fn typing_in_filter_mode_builds_query() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('c'), 10);
+        app.handle_key(KeyCode::Char('o'), 10);
+        app.handle_key(KeyCode::Char('m'), 10);
+        assert_eq!(app.filter_text(), "com");
+    }
+
+    #[test]
+    fn backspace_in_filter_removes_char() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('a'), 10);
+        app.handle_key(KeyCode::Char('b'), 10);
+        app.handle_key(KeyCode::Backspace, 10);
+        assert_eq!(app.filter_text(), "a");
+    }
+
+    #[test]
+    fn escape_clears_filter_and_exits_filter_mode() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('x'), 10);
+        app.handle_key(KeyCode::Esc, 10);
+        assert!(!app.is_filtering());
+        assert_eq!(app.filter_text(), "");
+    }
+
+    #[test]
+    fn arrows_work_in_filter_mode() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Down, 5);
+        assert_eq!(app.selected_app(), Some(1));
+        app.handle_key(KeyCode::Up, 5);
+        assert_eq!(app.selected_app(), Some(0));
+    }
+
+    #[test]
+    fn actions_not_dispatched_in_filter_mode() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('/'), 10);
+        // 'o' should be treated as filter input, not open action
+        assert!(matches!(app.handle_key(KeyCode::Char('o'), 10), Action::None));
+        assert_eq!(app.filter_text(), "o");
+    }
+
+    #[test]
+    fn filter_cursor_resets_on_new_input() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('/'), 5);
+        app.handle_key(KeyCode::Down, 5);
+        app.handle_key(KeyCode::Down, 5);
+        assert_eq!(app.selected_app(), Some(2));
+        // Typing resets cursor to 0
+        app.handle_key(KeyCode::Char('x'), 5);
+        assert_eq!(app.selected_app(), Some(0));
+    }
+
+    #[test]
+    fn esc_clears_filter_when_not_in_filter_mode() {
+        let mut app = App::new();
+        // Enter filter, type, exit with Esc
+        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('x'), 10);
+        app.handle_key(KeyCode::Esc, 10);
+        // Now not filtering, filter_text is empty
+        // Pressing Esc again on focused apps panel is a no-op
+        app.handle_key(KeyCode::Esc, 10);
+        assert!(!app.is_filtering());
+        assert_eq!(app.filter_text(), "");
     }
 }
