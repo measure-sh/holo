@@ -11,11 +11,11 @@ use ratatui::{
 
 use crate::app::{App, InputMode, LogcatFilter};
 
-const COMMAND_LABELS: [(&str, &str); 4] = [
-    ("o", "open app"),
-    ("k", "kill app"),
-    ("d", "clear data"),
-    ("f", "clear data & open"),
+const COMMAND_LABELS: [&str; 4] = [
+    "open app",
+    "kill app",
+    "delete data",
+    "fresh start",
 ];
 use crate::battery;
 use crate::logcat;
@@ -331,10 +331,12 @@ fn render_commands_panel(frame: &mut Frame, area: Rect) {
 
     let items: Vec<ListItem> = COMMAND_LABELS
         .iter()
-        .map(|&(key, label)| {
+        .map(|&label| {
+            let first = &label[..1];
+            let rest = &label[1..];
             ListItem::new(Line::from(vec![
-                Span::styled(key, Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
-                Span::styled(format!(" {}", label), Style::new().fg(theme::FG)),
+                Span::styled(first, Style::new().fg(theme::KEY_HINT)),
+                Span::styled(rest, Style::new().fg(theme::MUTED)),
             ]))
         })
         .collect();
