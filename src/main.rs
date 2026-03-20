@@ -3,6 +3,7 @@ mod app;
 mod apps;
 mod battery;
 mod boot;
+mod logcat;
 mod panel;
 mod processes;
 mod selector;
@@ -75,6 +76,10 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
     let apps_rx = apps::spawn_poller(adb.clone(), device.serial.clone());
     let mut packages: Option<Vec<String>> = None;
 
+    let mut logcat_handle: Option<logcat::LogcatHandle> = None;
+    let mut logcat_lines: Vec<String> = Vec::new();
+    const MAX_LOGCAT_LINES: usize = 1000;
+
     loop {
         while let Ok(level) = battery_rx.try_recv() {
             battery_level = Some(level);
@@ -85,11 +90,19 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
         while let Ok(pkgs) = apps_rx.try_recv() {
             packages = Some(pkgs);
         }
+        if let Some(handle) = &logcat_handle {
+            while let Ok(line) = handle.rx().try_recv() {
+                logcat_lines.push(line);
+                if logcat_lines.len() > MAX_LOGCAT_LINES {
+                    logcat_lines.drain(..logcat_lines.len() - MAX_LOGCAT_LINES);
+                }
+            }
+        }
 
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, &app, packages.as_deref(), process_map.as_ref())
+            ui::render_app(frame, &title, &time_str, battery_level, &app, packages.as_deref(), process_map.as_ref(), &logcat_lines)
         })?;
 
         if event::poll(Duration::from_secs(1))? {
@@ -119,6 +132,17 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
                         spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| {
                             adb.clear_app_data(s, p).and_then(|_| adb.launch_app(s, p))
                         });
+                    }
+                    Action::MonitorApp(idx) => {
+                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
+                        if let Some(pkg) = pkg {
+                            let pid = process_map.as_ref().and_then(|m| m.get(&pkg).copied());
+                            if let Some(pid) = pid {
+                                logcat_lines.clear();
+                                logcat_handle = logcat::LogcatHandle::spawn(&device.serial, pid);
+                                app.set_monitored_package(Some(pkg));
+                            }
+                        }
                     }
                     Action::None => {}
                 }

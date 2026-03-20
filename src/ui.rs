@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame,
 };
 
@@ -66,6 +66,7 @@ pub fn render_app(
     app: &App,
     packages: Option<&[String]>,
     processes: Option<&HashMap<String, u32>>,
+    logcat_lines: &[String],
 ) {
     let area = frame.area();
 
@@ -100,7 +101,7 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, app, packages, processes, app.filter_text(), app.is_filtering());
+    render_panels(frame, inner, app, packages, processes, app.filter_text(), app.is_filtering(), logcat_lines);
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
@@ -108,7 +109,7 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 }
 
 /// Vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
@@ -119,17 +120,17 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[St
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], app, packages, processes, filter, filtering);
+            render_top_row(frame, rows[0], app, packages, processes, filter, filtering, logcat_lines);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, app, packages, processes, filter, filtering),
+        (true, false) => render_top_row(frame, area, app, packages, processes, filter, filtering, logcat_lines),
         (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
 /// Horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
+fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
     match (vis[0], vis[1]) {
         (true, true) => {
@@ -138,10 +139,10 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
             render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering);
-            frame.render_widget(panel_block(2, is_focused(app, 2)), cols[1]);
+            render_logcat_panel(frame, cols[1], is_focused(app, 2), app.monitored_package(), logcat_lines);
         }
         (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering),
-        (false, true) => frame.render_widget(panel_block(2, is_focused(app, 2)), area),
+        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), app.monitored_package(), logcat_lines),
         (false, false) => {}
     }
 }
@@ -194,6 +195,9 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
             Span::styled("───", border),
             Span::styled(" e", key),
             Span::styled("rase ", muted),
+            Span::styled("───", border),
+            Span::styled(" m", key),
+            Span::styled("onitor ", muted),
         ];
 
         block = block.title_bottom(Line::from(hints));
@@ -202,6 +206,31 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
     let inner = block.inner(area);
     frame.render_widget(block, area);
     apps::render_apps(frame, inner, packages, selected, processes, filter);
+}
+
+fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, monitored_package: Option<&str>, logcat_lines: &[String]) {
+    let mut block = panel_block(2, focused);
+
+    if let Some(pkg) = monitored_package {
+        let color = panel::by_number(2).border_color(focused);
+        block = block.title(Line::from(vec![
+            Span::styled("───", Style::new().fg(color)),
+            Span::styled(format!(" {pkg} "), Style::new().fg(theme::FG)),
+        ]));
+    }
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let visible_height = inner.height as usize;
+    let start = logcat_lines.len().saturating_sub(visible_height);
+    let visible: Vec<Line> = logcat_lines[start..]
+        .iter()
+        .map(|l| Line::from(l.as_str()))
+        .collect();
+
+    let paragraph = Paragraph::new(visible).wrap(Wrap { trim: false });
+    frame.render_widget(paragraph, inner);
 }
 
 /// Horizontal split within the bottom section (3 columns).

@@ -9,6 +9,7 @@ pub enum Action {
     KillApp(usize),
     ClearDataAndOpen(usize),
     ClearData(usize),
+    MonitorApp(usize),
 }
 
 pub struct App {
@@ -17,6 +18,7 @@ pub struct App {
     apps_cursor: usize,
     filter_active: bool,
     filter_text: String,
+    monitored_package: Option<String>,
 }
 
 impl App {
@@ -27,6 +29,7 @@ impl App {
             apps_cursor: 0,
             filter_active: false,
             filter_text: String::new(),
+            monitored_package: None,
         }
     }
 
@@ -60,6 +63,7 @@ impl App {
                 KeyCode::Char('k') => return Action::KillApp(self.apps_cursor),
                 KeyCode::Char('r') => return Action::ClearDataAndOpen(self.apps_cursor),
                 KeyCode::Char('e') => return Action::ClearData(self.apps_cursor),
+                KeyCode::Char('m') => return Action::MonitorApp(self.apps_cursor),
                 KeyCode::Esc => {
                     self.filter_text.clear();
                     self.apps_cursor = 0;
@@ -132,6 +136,14 @@ impl App {
 
     pub fn is_filtering(&self) -> bool {
         self.filter_active
+    }
+
+    pub fn set_monitored_package(&mut self, pkg: Option<String>) {
+        self.monitored_package = pkg;
+    }
+
+    pub fn monitored_package(&self) -> Option<&str> {
+        self.monitored_package.as_deref()
     }
 }
 
@@ -323,6 +335,13 @@ mod tests {
     }
 
     #[test]
+    fn m_monitors_app_when_focused() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Down, 10);
+        assert!(matches!(app.handle_key(KeyCode::Char('m'), 10), Action::MonitorApp(1)));
+    }
+
+    #[test]
     fn app_actions_ignored_when_not_focused() {
         let mut app = App::new();
         app.handle_key(KeyCode::Char('l'), 10); // focus panel 2
@@ -330,6 +349,7 @@ mod tests {
         assert!(matches!(app.handle_key(KeyCode::Char('k'), 10), Action::None));
         assert!(matches!(app.handle_key(KeyCode::Char('r'), 10), Action::None));
         assert!(matches!(app.handle_key(KeyCode::Char('e'), 10), Action::None));
+        assert!(matches!(app.handle_key(KeyCode::Char('m'), 10), Action::None));
     }
 
     #[test]
@@ -410,6 +430,21 @@ mod tests {
         app.handle_key(KeyCode::Enter, 10);
         assert!(!app.is_filtering());
         assert_eq!(app.filter_text(), "co");
+    }
+
+    #[test]
+    fn monitored_package_defaults_to_none() {
+        let app = App::new();
+        assert_eq!(app.monitored_package(), None);
+    }
+
+    #[test]
+    fn set_monitored_package_stores_value() {
+        let mut app = App::new();
+        app.set_monitored_package(Some("com.example.app".to_string()));
+        assert_eq!(app.monitored_package(), Some("com.example.app"));
+        app.set_monitored_package(None);
+        assert_eq!(app.monitored_package(), None);
     }
 
     #[test]
