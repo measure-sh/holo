@@ -141,6 +141,7 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
                                 logcat_lines.clear();
                                 logcat_handle = logcat::LogcatHandle::spawn(&device.serial, pid);
                                 app.set_monitored_package(Some(pkg));
+                                app.set_focused(2);
                             }
                         }
                     }

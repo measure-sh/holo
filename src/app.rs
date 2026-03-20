@@ -145,6 +145,10 @@ impl App {
     pub fn monitored_package(&self) -> Option<&str> {
         self.monitored_package.as_deref()
     }
+
+    pub fn set_focused(&mut self, panel: u8) {
+        self.focused = Some(panel);
+    }
 }
 
 #[cfg(test)]
@@ -430,6 +434,14 @@ mod tests {
         app.handle_key(KeyCode::Enter, 10);
         assert!(!app.is_filtering());
         assert_eq!(app.filter_text(), "co");
+    }
+
+    #[test]
+    fn set_focused_changes_panel() {
+        let mut app = App::new();
+        assert_eq!(app.focused_panel(), Some(1));
+        app.set_focused(2);
+        assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]

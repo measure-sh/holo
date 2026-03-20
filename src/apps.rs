@@ -55,7 +55,7 @@ pub fn filtered_packages<'a>(packages: &'a [String], query: &str) -> Vec<&'a str
         .collect()
 }
 
-pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str) {
+pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, monitored_package: Option<&str>) {
     let Some(packages) = packages else {
         let list = List::new(vec![ListItem::new(Span::styled(
             "Loading…",
@@ -90,8 +90,15 @@ pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>, s
                 Span::styled(format!("{:<width$}", "zzz", width = PID_WIDTH as usize), Style::new().fg(theme::SURFACE))
             };
 
+            let indicator = if monitored_package == Some(name) {
+                Span::styled("● ", Style::new().fg(theme::GREEN))
+            } else {
+                Span::styled("  ", Style::default())
+            };
+
             ListItem::new(Line::from(vec![
                 pid_str,
+                indicator,
                 Span::styled(name.to_string(), Style::new().fg(theme::FG)),
             ]))
         })

@@ -138,10 +138,10 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
-            render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering);
+            render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering, app.monitored_package());
             render_logcat_panel(frame, cols[1], is_focused(app, 2), app.monitored_package(), logcat_lines);
         }
-        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering),
+        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering, app.monitored_package()),
         (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), app.monitored_package(), logcat_lines),
         (false, false) => {}
     }
@@ -174,7 +174,7 @@ fn apps_panel_title(focused: bool, filter: &str, filtering: bool) -> Line<'stati
     Line::from(spans)
 }
 
-fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
+fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool, monitored_package: Option<&str>) {
     let color = panel::by_number(1).border_color(focused);
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -205,7 +205,7 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    apps::render_apps(frame, inner, packages, selected, processes, filter);
+    apps::render_apps(frame, inner, packages, selected, processes, filter, monitored_package);
 }
 
 fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, monitored_package: Option<&str>, logcat_lines: &[String]) {
