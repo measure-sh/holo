@@ -188,16 +188,16 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
         let hint_style = Style::new().fg(theme::MUTED);
         let mut hints = vec![
             Span::styled(" o", key_style),
-            Span::styled(" Open ", hint_style),
+            Span::styled(" open ", hint_style),
             Span::styled("│", hint_style),
             Span::styled(" k", key_style),
-            Span::styled(" Kill ", hint_style),
+            Span::styled(" kill ", hint_style),
             Span::styled("│", hint_style),
             Span::styled(" r", key_style),
-            Span::styled(" Clear+Open ", hint_style),
+            Span::styled(" clear+open ", hint_style),
             Span::styled("│", hint_style),
             Span::styled(" e", key_style),
-            Span::styled(" Clear ", hint_style),
+            Span::styled(" clear ", hint_style),
         ];
         if !filter.is_empty() && !filtering {
             hints.push(Span::styled("│", hint_style));
