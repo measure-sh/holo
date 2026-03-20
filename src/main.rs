@@ -20,14 +20,19 @@ use adb::{Adb, Device, RealAdb};
 use app::{Action, App};
 use boot::BootResult;
 
+fn resolve_filtered_package(packages: &Option<Vec<String>>, filter: &str, idx: usize) -> Option<String> {
+    let pkgs = packages.as_ref()?;
+    let filtered = apps::filtered_packages(pkgs, filter);
+    filtered.get(idx).map(|s| s.to_string())
+}
+
 fn spawn_app_action(
     adb: &Arc<dyn Adb>,
     serial: &str,
-    packages: &Option<Vec<String>>,
-    idx: usize,
+    pkg: Option<String>,
     f: impl FnOnce(Arc<dyn Adb>, &str, &str) -> Result<()> + Send + 'static,
 ) {
-    if let Some(pkg) = packages.as_ref().and_then(|p| p.get(idx)).cloned() {
+    if let Some(pkg) = pkg {
         let adb = adb.clone();
         let serial = serial.to_string();
         std::thread::spawn(move || {
@@ -92,19 +97,26 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
-                match app.handle_key(key.code, packages.as_ref().map_or(0, |p| p.len())) {
+                let filtered_count = packages.as_ref().map_or(0, |p| {
+                    apps::filtered_packages(p, app.filter_text()).len()
+                });
+                match app.handle_key(key.code, filtered_count) {
                     Action::Quit => return Ok(()),
                     Action::OpenApp(idx) => {
-                        spawn_app_action(&adb, &device.serial, &packages, idx, |adb, s, p| adb.launch_app(s, p));
+                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
+                        spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| adb.launch_app(s, p));
                     }
                     Action::KillApp(idx) => {
-                        spawn_app_action(&adb, &device.serial, &packages, idx, |adb, s, p| adb.kill_app(s, p));
+                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
+                        spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| adb.kill_app(s, p));
                     }
                     Action::ClearData(idx) => {
-                        spawn_app_action(&adb, &device.serial, &packages, idx, |adb, s, p| adb.clear_app_data(s, p));
+                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
+                        spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| adb.clear_app_data(s, p));
                     }
                     Action::ClearDataAndOpen(idx) => {
-                        spawn_app_action(&adb, &device.serial, &packages, idx, |adb, s, p| {
+                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
+                        spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| {
                             adb.clear_app_data(s, p).and_then(|_| adb.launch_app(s, p))
                         });
                     }

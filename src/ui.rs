@@ -94,8 +94,6 @@ pub fn render_app(
         Span::styled(" focus ", hint_style),
         Span::styled("│", hint_style),
         Span::styled(" q", key_style),
-        Span::styled("/", hint_style),
-        Span::styled("Esc", key_style),
         Span::styled(" exit ", hint_style),
     ]);
 
@@ -116,7 +114,7 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, app, packages, processes);
+    render_panels(frame, inner, app, packages, processes, app.filter_text(), app.is_filtering());
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
@@ -124,7 +122,7 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 }
 
 /// Vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
@@ -135,17 +133,17 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[St
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], app, packages, processes);
+            render_top_row(frame, rows[0], app, packages, processes, filter, filtering);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, app, packages, processes),
+        (true, false) => render_top_row(frame, area, app, packages, processes, filter, filtering),
         (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
 /// Horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>) {
+fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
     let vis = app.panel_visibility();
     match (vis[0], vis[1]) {
         (true, true) => {
@@ -153,37 +151,55 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
-            render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app(), processes);
+            render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering);
             frame.render_widget(panel_block(2, is_focused(app, 2)), cols[1]);
         }
-        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app(), processes),
+        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering),
         (false, true) => frame.render_widget(panel_block(2, is_focused(app, 2)), area),
         (false, false) => {}
     }
 }
 
-fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>) {
+fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
     let mut block = panel_block(1, focused);
     if focused {
         let key_style = Style::new().fg(theme::ACCENT);
         let hint_style = Style::new().fg(theme::MUTED);
-        block = block.title_bottom(Line::from(vec![
-            Span::styled(" o", key_style),
-            Span::styled(" Open ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" k", key_style),
-            Span::styled(" Kill ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" r", key_style),
-            Span::styled(" Clear+Open ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" e", key_style),
-            Span::styled(" Clear ", hint_style),
-        ]));
+        if filtering {
+            block = block.title_bottom(Line::from(vec![
+                Span::styled(" /", key_style),
+                Span::styled(filter, Style::new().fg(theme::FG)),
+                Span::styled("█", Style::new().fg(theme::ACCENT)),
+                Span::styled(" ", hint_style),
+            ]));
+        } else {
+            let mut hints = vec![
+                Span::styled(" o", key_style),
+                Span::styled(" Open ", hint_style),
+                Span::styled("│", hint_style),
+                Span::styled(" k", key_style),
+                Span::styled(" Kill ", hint_style),
+                Span::styled("│", hint_style),
+                Span::styled(" r", key_style),
+                Span::styled(" Clear+Open ", hint_style),
+                Span::styled("│", hint_style),
+                Span::styled(" e", key_style),
+                Span::styled(" Clear ", hint_style),
+                Span::styled("│", hint_style),
+                Span::styled(" /", key_style),
+                Span::styled(" Filter ", hint_style),
+            ];
+            if !filter.is_empty() {
+                hints.push(Span::styled("│", hint_style));
+                hints.push(Span::styled(" Esc", key_style));
+                hints.push(Span::styled(" Clear ", hint_style));
+            }
+            block = block.title_bottom(Line::from(hints));
+        }
     }
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    apps::render_apps(frame, inner, packages, selected, processes);
+    apps::render_apps(frame, inner, packages, selected, processes, filter);
 }
 
 /// Horizontal split within the bottom section (3 columns).
