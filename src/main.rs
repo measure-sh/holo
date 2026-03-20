@@ -3,6 +3,7 @@ mod app;
 mod apps;
 mod battery;
 mod boot;
+mod panel;
 mod selector;
 mod theme;
 mod ui;
