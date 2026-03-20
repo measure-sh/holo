@@ -61,6 +61,42 @@ impl Adb for RealAdb {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_process_list(&stdout))
     }
+
+    fn launch_app(&self, serial: &str, package: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1"])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb monkey launch failed: {stderr}");
+        }
+        Ok(())
+    }
+
+    fn kill_app(&self, serial: &str, package: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "am", "force-stop", package])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb force-stop failed: {stderr}");
+        }
+        Ok(())
+    }
+
+    fn clear_app_data(&self, serial: &str, package: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "pm", "clear", package])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb pm clear failed: {stderr}");
+        }
+        Ok(())
+    }
 }
 
 fn parse_package_list(output: &str) -> Vec<String> {

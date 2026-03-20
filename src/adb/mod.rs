@@ -18,4 +18,7 @@ pub trait Adb: Send + Sync {
     fn get_battery_level(&self, serial: &str) -> Result<u8>;
     fn list_packages(&self, serial: &str) -> Result<Vec<String>>;
     fn list_processes(&self, serial: &str) -> Result<HashMap<String, u32>>;
+    fn launch_app(&self, serial: &str, package: &str) -> Result<()>;
+    fn kill_app(&self, serial: &str, package: &str) -> Result<()>;
+    fn clear_app_data(&self, serial: &str, package: &str) -> Result<()>;
 }
