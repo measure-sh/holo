@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, LogcatFilter};
+use crate::app::{App, InputMode, LogcatFilter};
 use crate::battery;
 use crate::logcat;
 use crate::panel;
@@ -219,11 +219,40 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, app: &App
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let labels = app.command_labels();
-    let items: Vec<ListItem> = labels
+    let filter = app.logcat_filter();
+    let input_mode = app.input_mode();
+
+    let tag_label = match input_mode {
+        InputMode::EditingTag => format!("Tag: {}|", filter.tag),
+        _ => format!("Tag: {}", filter.tag),
+    };
+    let search_label = match input_mode {
+        InputMode::EditingSearch => format!("Search: {}|", filter.search),
+        _ => format!("Search: {}", filter.search),
+    };
+    let level_str = match filter.level {
+        Some(c) => c.to_string(),
+        None => "All".to_string(),
+    };
+    let level_label = format!("Level: \u{25C2} {} \u{25B8}", level_str);
+
+    let action_labels = ["Open app", "Kill app", "Clear data", "Clear data & open"];
+    let mut items: Vec<ListItem> = action_labels
         .iter()
-        .map(|label| ListItem::new(Span::styled(label.as_str(), Style::new().fg(theme::FG))))
+        .map(|&label| ListItem::new(Span::styled(label, Style::new().fg(theme::FG))))
         .collect();
+
+    items.push(ListItem::new(Span::styled(
+        "───",
+        Style::new().fg(theme::SURFACE),
+    )));
+
+    for label in [&tag_label, &search_label, &level_label] {
+        items.push(ListItem::new(Span::styled(
+            label.as_str(),
+            Style::new().fg(theme::FG),
+        )));
+    }
 
     let list = List::new(items)
         .highlight_style(
@@ -233,7 +262,9 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, app: &App
         )
         .highlight_symbol("▸ ");
 
-    let selected = if focused { Some(app.commands_cursor()) } else { None };
+    let cursor = app.commands_cursor();
+    let display_index = if cursor < 4 { cursor } else { cursor + 1 };
+    let selected = if focused { Some(display_index) } else { None };
     let mut state = ListState::default().with_selected(selected);
     frame.render_stateful_widget(list, inner, &mut state);
 }

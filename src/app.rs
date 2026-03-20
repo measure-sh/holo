@@ -187,21 +187,7 @@ impl App {
         self.input_mode
     }
 
-    pub fn command_labels(&self) -> Vec<String> {
-        let level_str = match self.logcat_filter.level {
-            Some(c) => c.to_string(),
-            None => "All".to_string(),
-        };
-        vec![
-            "Open app".to_string(),
-            "Kill app".to_string(),
-            "Clear data".to_string(),
-            "Clear data & open".to_string(),
-            format!("Tag: {}", self.logcat_filter.tag),
-            format!("Search: {}", self.logcat_filter.search),
-            format!("Level: {}", level_str),
-        ]
-    }
+
 }
 
 #[cfg(test)]
