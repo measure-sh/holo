@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{App, LogcatFilter};
 use crate::battery;
 use crate::logcat;
 use crate::panel;
@@ -98,14 +98,14 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, app, logcat_lines, monitored_pid);
+    render_panels(frame, inner, app, logcat_lines, monitored_pid, app.logcat_filter());
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
     app.focused_panel() == Some(panel_number)
 }
 
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>, filter: &LogcatFilter) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5];
@@ -116,16 +116,16 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Strin
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], app, logcat_lines, monitored_pid);
+            render_top_row(frame, rows[0], app, logcat_lines, monitored_pid, filter);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, app, logcat_lines, monitored_pid),
+        (true, false) => render_top_row(frame, area, app, logcat_lines, monitored_pid, filter),
         (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
-fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>) {
+fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>, filter: &LogcatFilter) {
     let vis = app.panel_visibility();
     match (vis[0], vis[1]) {
         (true, true) => {
@@ -134,26 +134,49 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Stri
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
             render_commands_panel(frame, cols[0], is_focused(app, 1), app);
-            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid);
+            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid, filter);
         }
         (true, false) => {
             render_commands_panel(frame, area, is_focused(app, 1), app)
         }
-        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid),
+        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid, filter),
         (false, false) => {}
     }
 }
 
-fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, logcat_lines: &[String], monitored_pid: Option<u32>) {
+fn render_logcat_panel(
+    frame: &mut Frame,
+    area: Rect,
+    focused: bool,
+    logcat_lines: &[String],
+    monitored_pid: Option<u32>,
+    filter: &LogcatFilter,
+) {
     let block = panel_block(2, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let pid_str = monitored_pid.map(|p| p.to_string());
 
+    let filtered: Vec<&String> = logcat_lines
+        .iter()
+        .filter(|line| {
+            let Some(parsed) = logcat::parse(line) else {
+                return true;
+            };
+            let tag_ok = filter.tag.is_empty()
+                || parsed.tag.to_lowercase().contains(&filter.tag.to_lowercase());
+            let search_ok = filter.search.is_empty()
+                || line.to_lowercase().contains(&filter.search.to_lowercase());
+            let level_ok =
+                filter.level.is_none() || Some(parsed.level) == filter.level;
+            tag_ok && search_ok && level_ok
+        })
+        .collect();
+
     let visible_height = inner.height as usize;
-    let start = logcat_lines.len().saturating_sub(visible_height);
-    let visible: Vec<Line> = logcat_lines[start..]
+    let start = filtered.len().saturating_sub(visible_height);
+    let visible: Vec<Line> = filtered[start..]
         .iter()
         .map(|l| style_logcat_line(l, pid_str.as_deref()))
         .collect();
