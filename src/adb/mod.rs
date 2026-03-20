@@ -11,7 +11,7 @@ pub struct Device {
     pub device: Option<String>,
 }
 
-pub trait Adb {
+pub trait Adb: Send + Sync {
     fn list_devices(&self) -> Result<Vec<Device>>;
     fn get_battery_level(&self, serial: &str) -> Result<u8>;
 }

@@ -1,11 +1,12 @@
 mod adb;
 mod app;
+mod battery;
 mod boot;
 mod selector;
 mod theme;
 mod ui;
 
-use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::Result;
@@ -13,7 +14,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
     layout::Alignment,
     style::{Modifier, Style},
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, Borders},
     Frame,
 };
@@ -25,7 +26,7 @@ use boot::BootResult;
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let adb = RealAdb;
+    let adb = Arc::new(RealAdb);
     let devices = adb.list_devices()?;
 
     let device = match boot::resolve_device(devices) {
@@ -38,37 +39,19 @@ fn main() -> Result<()> {
     };
 
     let terminal = ratatui::init();
-    let result = run_app(terminal, &adb, &device);
+    let result = run_app(terminal, adb, &device);
     ratatui::restore();
     result
 }
 
-fn spawn_battery_poller(serial: String) -> mpsc::Receiver<u8> {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let adb = RealAdb;
-        let interval = Duration::from_secs(30);
-        loop {
-            if let Ok(level) = adb.get_battery_level(&serial) {
-                if tx.send(level).is_err() {
-                    return; // main thread exited
-                }
-            }
-            std::thread::sleep(interval);
-        }
-    });
-    rx
-}
-
-fn run_app(mut terminal: ratatui::DefaultTerminal, _adb: &impl Adb, device: &Device) -> Result<()> {
+fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &Device) -> Result<()> {
     let title = format!(" {} ", selector::selector_label(device));
     let mut app = App::new();
 
-    let battery_rx = spawn_battery_poller(device.serial.clone());
+    let battery_rx = battery::spawn_poller(adb, device.serial.clone());
     let mut battery_level: Option<u8> = None;
 
     loop {
-        // Drain any battery updates that arrived (non-blocking)
         while let Ok(level) = battery_rx.try_recv() {
             battery_level = Some(level);
         }
@@ -94,31 +77,6 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, _adb: &impl Adb, device: &Dev
             }
         }
     }
-}
-
-fn battery_color(level: u8) -> ratatui::style::Color {
-    if level < 10 {
-        theme::RED
-    } else if level <= 25 {
-        theme::YELLOW
-    } else {
-        theme::FG
-    }
-}
-
-fn battery_bar(level: u8) -> Line<'static> {
-    const BAR_WIDTH: usize = 10;
-    let filled = ((level as usize) * BAR_WIDTH / 100).min(BAR_WIDTH);
-    let empty = BAR_WIDTH - filled;
-    let color = battery_color(level);
-
-    Line::from(vec![
-        Span::raw(" "),
-        Span::styled("█".repeat(filled), Style::new().fg(color)),
-        Span::styled("░".repeat(empty), Style::new().fg(theme::SURFACE)),
-        Span::styled(format!(" {level}% "), Style::new().fg(color)),
-    ])
-    .alignment(Alignment::Right)
 }
 
 fn render_app(
@@ -148,7 +106,7 @@ fn render_app(
         .title(time_line);
 
     if let Some(level) = battery_level {
-        block = block.title(battery_bar(level));
+        block = block.title(battery::battery_bar(level));
     }
 
     block = block
@@ -160,4 +118,3 @@ fn render_app(
     frame.render_widget(block, area);
     ui::render_panels(frame, inner, selected_panel);
 }
-
