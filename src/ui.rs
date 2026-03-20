@@ -80,41 +80,24 @@ pub fn render_app(
             .alignment(Alignment::Center);
     let key_style = Style::new().fg(theme::ACCENT);
     let hint_style = Style::new().fg(theme::MUTED);
-    let apps_focused = app.focused_panel() == Some(1);
-    let hint_line = if apps_focused {
-        Line::from(vec![
-            Span::styled(" o", key_style),
-            Span::styled(" Open ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" k", key_style),
-            Span::styled(" Kill ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" r", key_style),
-            Span::styled(" Clear+Open ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" e", key_style),
-            Span::styled(" Clear ", hint_style),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled(" 1", key_style),
-            Span::styled("-", hint_style),
-            Span::styled("7", key_style),
-            Span::styled(" toggle visibility ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" i", key_style),
-            Span::styled("/", hint_style),
-            Span::styled("l", key_style),
-            Span::styled("/", hint_style),
-            Span::styled("c", key_style),
-            Span::styled(" focus ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" q", key_style),
-            Span::styled("/", hint_style),
-            Span::styled("Esc", key_style),
-            Span::styled(" exit ", hint_style),
-        ])
-    };
+    let hint_line = Line::from(vec![
+        Span::styled(" 1", key_style),
+        Span::styled("-", hint_style),
+        Span::styled("7", key_style),
+        Span::styled(" toggle visibility ", hint_style),
+        Span::styled("│", hint_style),
+        Span::styled(" i", key_style),
+        Span::styled("/", hint_style),
+        Span::styled("l", key_style),
+        Span::styled("/", hint_style),
+        Span::styled("c", key_style),
+        Span::styled(" focus ", hint_style),
+        Span::styled("│", hint_style),
+        Span::styled(" q", key_style),
+        Span::styled("/", hint_style),
+        Span::styled("Esc", key_style),
+        Span::styled(" exit ", hint_style),
+    ]);
 
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -180,7 +163,24 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
 }
 
 fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>) {
-    let block = panel_block(1, focused);
+    let mut block = panel_block(1, focused);
+    if focused {
+        let key_style = Style::new().fg(theme::ACCENT);
+        let hint_style = Style::new().fg(theme::MUTED);
+        block = block.title_bottom(Line::from(vec![
+            Span::styled(" o", key_style),
+            Span::styled(" Open ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" k", key_style),
+            Span::styled(" Kill ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" r", key_style),
+            Span::styled(" Clear+Open ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" e", key_style),
+            Span::styled(" Clear ", hint_style),
+        ]));
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
     apps::render_apps(frame, inner, packages, selected, processes);
