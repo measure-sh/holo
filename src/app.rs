@@ -51,7 +51,7 @@ impl App {
             match code {
                 KeyCode::Up => { self.move_apps_cursor(-1, app_count); return Action::None; }
                 KeyCode::Down => { self.move_apps_cursor(1, app_count); return Action::None; }
-                KeyCode::Char('/') => { self.filter_active = true; return Action::None; }
+                KeyCode::Char('f') => { self.filter_active = true; return Action::None; }
                 KeyCode::Char('o') => return Action::OpenApp(self.apps_cursor),
                 KeyCode::Char('k') => return Action::KillApp(self.apps_cursor),
                 KeyCode::Char('r') => return Action::ClearDataAndOpen(self.apps_cursor),
@@ -329,9 +329,9 @@ mod tests {
     }
 
     #[test]
-    fn slash_enters_filter_mode() {
+    fn f_enters_filter_mode() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('f'), 10);
         assert!(app.is_filtering());
         assert_eq!(app.filter_text(), "");
     }
@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn typing_in_filter_mode_builds_query() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('f'), 10);
         app.handle_key(KeyCode::Char('c'), 10);
         app.handle_key(KeyCode::Char('o'), 10);
         app.handle_key(KeyCode::Char('m'), 10);
@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn backspace_in_filter_removes_char() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('f'), 10);
         app.handle_key(KeyCode::Char('a'), 10);
         app.handle_key(KeyCode::Char('b'), 10);
         app.handle_key(KeyCode::Backspace, 10);
@@ -359,7 +359,7 @@ mod tests {
     #[test]
     fn escape_clears_filter_and_exits_filter_mode() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('f'), 10);
         app.handle_key(KeyCode::Char('x'), 10);
         app.handle_key(KeyCode::Esc, 10);
         assert!(!app.is_filtering());
@@ -369,7 +369,7 @@ mod tests {
     #[test]
     fn arrows_work_in_filter_mode() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('f'), 10);
         app.handle_key(KeyCode::Down, 5);
         assert_eq!(app.selected_app(), Some(1));
         app.handle_key(KeyCode::Up, 5);
@@ -379,7 +379,7 @@ mod tests {
     #[test]
     fn actions_not_dispatched_in_filter_mode() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('f'), 10);
         // 'o' should be treated as filter input, not open action
         assert!(matches!(app.handle_key(KeyCode::Char('o'), 10), Action::None));
         assert_eq!(app.filter_text(), "o");
@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn filter_cursor_resets_on_new_input() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('/'), 5);
+        app.handle_key(KeyCode::Char('f'), 5);
         app.handle_key(KeyCode::Down, 5);
         app.handle_key(KeyCode::Down, 5);
         assert_eq!(app.selected_app(), Some(2));
@@ -401,7 +401,7 @@ mod tests {
     fn esc_clears_filter_when_not_in_filter_mode() {
         let mut app = App::new();
         // Enter filter, type, exit with Esc
-        app.handle_key(KeyCode::Char('/'), 10);
+        app.handle_key(KeyCode::Char('f'), 10);
         app.handle_key(KeyCode::Char('x'), 10);
         app.handle_key(KeyCode::Esc, 10);
         // Now not filtering, filter_text is empty

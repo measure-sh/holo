@@ -162,41 +162,46 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
 
 fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
     let mut block = panel_block(1, focused);
+
+    if filtering || !filter.is_empty() {
+        let mut filter_spans = vec![
+            Span::styled(" ", Style::default()),
+            Span::styled(filter, Style::new().fg(theme::FG)),
+        ];
+        if filtering {
+            filter_spans.push(Span::styled("█", Style::new().fg(theme::ACCENT)));
+        }
+        filter_spans.push(Span::styled(" ", Style::default()));
+        block = block.title(Line::from(filter_spans).alignment(Alignment::Right));
+    }
+
     if focused {
         let key_style = Style::new().fg(theme::ACCENT);
         let hint_style = Style::new().fg(theme::MUTED);
-        if filtering {
-            block = block.title_bottom(Line::from(vec![
-                Span::styled(" /", key_style),
-                Span::styled(filter, Style::new().fg(theme::FG)),
-                Span::styled("█", Style::new().fg(theme::ACCENT)),
-                Span::styled(" ", hint_style),
-            ]));
-        } else {
-            let mut hints = vec![
-                Span::styled(" o", key_style),
-                Span::styled(" Open ", hint_style),
-                Span::styled("│", hint_style),
-                Span::styled(" k", key_style),
-                Span::styled(" Kill ", hint_style),
-                Span::styled("│", hint_style),
-                Span::styled(" r", key_style),
-                Span::styled(" Clear+Open ", hint_style),
-                Span::styled("│", hint_style),
-                Span::styled(" e", key_style),
-                Span::styled(" Clear ", hint_style),
-                Span::styled("│", hint_style),
-                Span::styled(" /", key_style),
-                Span::styled(" Filter ", hint_style),
-            ];
-            if !filter.is_empty() {
-                hints.push(Span::styled("│", hint_style));
-                hints.push(Span::styled(" Esc", key_style));
-                hints.push(Span::styled(" Clear ", hint_style));
-            }
-            block = block.title_bottom(Line::from(hints));
+        let mut hints = vec![
+            Span::styled(" o", key_style),
+            Span::styled(" Open ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" k", key_style),
+            Span::styled(" Kill ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" r", key_style),
+            Span::styled(" Clear+Open ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" e", key_style),
+            Span::styled(" Clear ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" f", key_style),
+            Span::styled(" Filter ", hint_style),
+        ];
+        if !filter.is_empty() && !filtering {
+            hints.push(Span::styled("│", hint_style));
+            hints.push(Span::styled(" Esc", key_style));
+            hints.push(Span::styled(" Clear ", hint_style));
         }
+        block = block.title_bottom(Line::from(hints));
     }
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
     apps::render_apps(frame, inner, packages, selected, processes, filter);
