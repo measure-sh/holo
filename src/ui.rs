@@ -1,7 +1,7 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, Borders},
     Frame,
 };
@@ -10,20 +10,36 @@ use crate::apps;
 use crate::battery;
 use crate::theme;
 
-const PANEL_TITLES: [&str; 7] = [
-    "1. Installed Apps",
-    "2. Logcat",
-    "3. Network",
-    "4. CPU",
-    "5. Memory",
-    "6. Disk Usage",
-    "7. Commands",
+const PANEL_NAMES: [&str; 7] = [
+    "Installed Apps",
+    "Logcat",
+    "Network",
+    "CPU",
+    "Memory",
+    "Disk Usage",
+    "Commands",
 ];
+
+fn panel_title(index: u8) -> Line<'static> {
+    Line::from(vec![
+        Span::raw(" "),
+        Span::styled(
+            index.to_string(),
+            Style::new()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" {} ", PANEL_NAMES[(index - 1) as usize]),
+            Style::new().fg(theme::MUTED),
+        ),
+    ])
+}
 
 fn panel_block(index: u8) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
-        .title(format!(" {} ", PANEL_TITLES[(index - 1) as usize]))
+        .title(panel_title(index))
         .border_style(Style::new().fg(theme::SURFACE))
 }
 
@@ -46,8 +62,21 @@ pub fn render_app(
         Line::from(time)
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
-    let hint_line =
-        Line::from(" 1-7: toggle | q/Esc: exit ").style(Style::new().fg(theme::MUTED));
+    let key_style = Style::new()
+        .fg(theme::ACCENT)
+        .add_modifier(Modifier::BOLD);
+    let hint_style = Style::new().fg(theme::MUTED);
+    let hint_line = Line::from(vec![
+        Span::styled(" 1", key_style),
+        Span::styled("-", hint_style),
+        Span::styled("7", key_style),
+        Span::styled(" toggle ", hint_style),
+        Span::styled("│", hint_style),
+        Span::styled(" q", key_style),
+        Span::styled("/", hint_style),
+        Span::styled("Esc", key_style),
+        Span::styled(" exit ", hint_style),
+    ]);
 
     let mut block = Block::default()
         .borders(Borders::ALL)

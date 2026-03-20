@@ -4,13 +4,14 @@
 - Border on all sides, styled in surface color
 - Top-left title: device label, bold + accent color
 - Top-center title: live clock (`HH:MM:SS`), updates every second
-- Bottom title: `q/Esc to exit` hint in muted color
+- Bottom title: key hints — keys (`1`-`7`, `q`, `Esc`) in bold accent, separators/labels in muted
 - Show device battery on the top right
 - Event loop polls every 1 second; redraws on each tick
 
 ## Panel Layout (fixed-position, btop-style)
 
 - 7 panels in fixed spatial positions; keys `1`–`7` toggle visibility
+- Panel titles: number in bold accent color, name in muted (btop-style)
 - At least one panel must remain visible
 - Hidden panels cause neighbors to expand into vacated space (no reflow)
 - Layout tree:
