@@ -2,7 +2,10 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState},
+    widgets::{
+        Block, BorderType, Borders, List, ListItem, ListState, Scrollbar, ScrollbarOrientation,
+        ScrollbarState,
+    },
     Frame,
 };
 
@@ -219,14 +222,13 @@ fn render_logcat_panel(
     let input_mode = app.input_mode();
 
     let color = panel::by_number(2).border_color(focused);
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(panel_title(2, focused))
         .title_bottom(logcat_filter_bar(app.logcat_filter(), input_mode, focused))
         .border_style(Style::new().fg(color));
     let inner = block.inner(area);
-    frame.render_widget(block, area);
 
     let pid_str = monitored_pid.map(|p| p.to_string());
 
@@ -248,8 +250,22 @@ fn render_logcat_panel(
 
     let visible_height = inner.height as usize;
     app.clamp_logcat_scroll(filtered.len(), visible_height);
-    let end = filtered.len().saturating_sub(app.logcat_scroll());
+    let logcat_scroll = app.logcat_scroll();
+    let end = filtered.len().saturating_sub(logcat_scroll);
     let start = end.saturating_sub(visible_height);
+
+    if logcat_scroll > 0 {
+        block = block.title_top(
+            Line::from(vec![Span::styled(
+                format!(" ↑{} ", logcat_scroll),
+                Style::new().fg(theme::MUTED),
+            )])
+            .alignment(Alignment::Right),
+        );
+    }
+
+    frame.render_widget(block, area);
+
     let items: Vec<ListItem> = filtered[start..end]
         .iter()
         .map(|l| ListItem::new(style_logcat_line(l, pid_str.as_deref())))
@@ -257,6 +273,14 @@ fn render_logcat_panel(
 
     let list = List::new(items);
     frame.render_widget(list, inner);
+
+    if filtered.len() > visible_height {
+        let mut scrollbar_state = ScrollbarState::new(filtered.len()).position(start);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::new().fg(theme::MUTED))
+            .track_style(Style::new().fg(theme::SURFACE));
+        frame.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
+    }
 }
 
 fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
