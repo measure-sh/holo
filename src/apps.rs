@@ -38,17 +38,10 @@ pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>) {
         return;
     };
 
-    let mut items: Vec<ListItem> = Vec::with_capacity(packages.len() + 1);
-    items.push(ListItem::new(Span::styled(
-        format!("{} packages", packages.len()),
-        Style::new().fg(theme::MUTED),
-    )));
-    for name in packages {
-        items.push(ListItem::new(Span::styled(
-            name.clone(),
-            Style::new().fg(theme::FG),
-        )));
-    }
+    let items: Vec<ListItem> = packages
+        .iter()
+        .map(|name| ListItem::new(Span::styled(name.clone(), Style::new().fg(theme::FG))))
+        .collect();
     let list = List::new(items);
     frame.render_widget(list, area);
 }
