@@ -37,12 +37,12 @@ fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
         ));
         spans.push(Span::styled(
             format!("{} ", chars.as_str()),
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(theme::FG),
         ));
     } else {
         spans.push(Span::styled(
             format!("{} ", def.name),
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(theme::FG),
         ));
     }
 
