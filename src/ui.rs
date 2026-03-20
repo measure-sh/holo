@@ -1,32 +1,30 @@
-use std::collections::HashMap;
-
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
-use crate::app::App;
-use crate::apps;
+use crate::app::{App, COMMAND_LABELS};
 use crate::battery;
 use crate::panel;
 use crate::theme;
 
-const SUPERSCRIPT_DIGITS: [char; 8] = ['\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}'];
+const SUPERSCRIPT_DIGITS: [char; 8] = [
+    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}',
+    '\u{2078}',
+];
 
 fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
     let def = panel::by_number(panel_number);
     let color = def.border_color(focused);
     let superscript = SUPERSCRIPT_DIGITS[(panel_number - 1) as usize];
 
-    let mut spans = vec![
-        Span::styled(
-            format!(" {}", superscript),
-            Style::new().fg(color).add_modifier(Modifier::BOLD),
-        ),
-    ];
+    let mut spans = vec![Span::styled(
+        format!(" {}", superscript),
+        Style::new().fg(color).add_modifier(Modifier::BOLD),
+    )];
 
     if def.is_focusable() {
         let mut chars = def.name.chars();
@@ -64,8 +62,6 @@ pub fn render_app(
     time: &str,
     battery_level: Option<u8>,
     app: &App,
-    packages: Option<&[String]>,
-    processes: Option<&HashMap<String, u32>>,
     logcat_lines: &[String],
 ) {
     let area = frame.area();
@@ -75,10 +71,9 @@ pub fn render_app(
             .fg(theme::ACCENT)
             .add_modifier(Modifier::BOLD),
     );
-    let time_line =
-        Line::from(time)
-            .style(Style::new().fg(theme::FG))
-            .alignment(Alignment::Center);
+    let time_line = Line::from(time)
+        .style(Style::new().fg(theme::FG))
+        .alignment(Alignment::Center);
     let hint_line = Line::from(vec![
         Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
         Span::styled("uit ", Style::new().fg(theme::MUTED)),
@@ -101,18 +96,17 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, app, packages, processes, app.filter_text(), app.is_filtering(), logcat_lines);
+    render_panels(frame, inner, app, logcat_lines);
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
     app.focused_panel() == Some(panel_number)
 }
 
-/// Vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool, logcat_lines: &[String]) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let top_visible = vis[0] || vis[1];
-    let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
+    let top_visible = vis[0];
+    let bot_visible = vis[1] || vis[2] || vis[3] || vis[4] || vis[5];
 
     match (top_visible, bot_visible) {
         (true, true) => {
@@ -120,105 +114,22 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[St
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], app, packages, processes, filter, filtering, logcat_lines);
+            render_logcat_panel(frame, rows[0], is_focused(app, 2), logcat_lines);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, app, packages, processes, filter, filtering, logcat_lines),
+        (true, false) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines),
         (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
-/// Horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool, logcat_lines: &[String]) {
-    let vis = app.panel_visibility();
-    match (vis[0], vis[1]) {
-        (true, true) => {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-                .split(area);
-            render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering, app.monitored_package());
-            render_logcat_panel(frame, cols[1], is_focused(app, 2), app.monitored_package(), logcat_lines);
-        }
-        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app(), processes, filter, filtering, app.monitored_package()),
-        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), app.monitored_package(), logcat_lines),
-        (false, false) => {}
-    }
-}
-
-fn apps_panel_title(focused: bool, filter: &str, filtering: bool) -> Line<'static> {
-    let mut spans = panel_title(1, focused).spans;
-    let border_color = panel::by_number(1).border_color(focused);
-
-    if focused {
-        spans.push(Span::styled("───", Style::new().fg(border_color)));
-        if filtering || !filter.is_empty() {
-            spans.push(Span::styled(filter.to_string(), Style::new().fg(theme::FG)));
-            if filtering {
-                spans.push(Span::styled("█", Style::new().fg(theme::ACCENT)));
-                spans.push(Span::styled(" ↵", Style::new().fg(theme::KEY_HINT)));
-            } else {
-                spans.push(Span::styled(" esc", Style::new().fg(theme::KEY_HINT)));
-            }
-        } else {
-            spans.push(Span::styled(
-                "f",
-                Style::new().fg(theme::KEY_HINT),
-            ));
-            spans.push(Span::styled("ilter", Style::new().fg(theme::MUTED)));
-        }
-    }
-
-    spans.push(Span::styled(" ", Style::default()));
-    Line::from(spans)
-}
-
-fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool, monitored_package: Option<&str>) {
-    let color = panel::by_number(1).border_color(focused);
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .title(apps_panel_title(focused, filter, filtering))
-        .border_style(Style::new().fg(color));
-
-    if focused {
-        let key = Style::new().fg(theme::KEY_HINT);
-        let muted = Style::new().fg(theme::MUTED);
-        let border = Style::new().fg(color);
-        let hints = vec![
-            Span::styled(" o", key),
-            Span::styled("pen ", muted),
-            Span::styled("───", border),
-            Span::styled(" k", key),
-            Span::styled("ill ", muted),
-            Span::styled("───", border),
-            Span::styled(" e", key),
-            Span::styled("rase ", muted),
-            Span::styled("───", border),
-            Span::styled(" m", key),
-            Span::styled("onitor ", muted),
-        ];
-
-        block = block.title_bottom(Line::from(hints));
-    }
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    apps::render_apps(frame, inner, packages, selected, processes, filter, monitored_package);
-}
-
-fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, monitored_package: Option<&str>, logcat_lines: &[String]) {
-    let mut block = panel_block(2, focused);
-
-    if let Some(pkg) = monitored_package {
-        let color = panel::by_number(2).border_color(focused);
-        block = block.title(Line::from(vec![
-            Span::styled("───", Style::new().fg(color)),
-            Span::styled(format!(" {pkg} "), Style::new().fg(theme::FG)),
-        ]));
-    }
-
+fn render_logcat_panel(
+    frame: &mut Frame,
+    area: Rect,
+    focused: bool,
+    logcat_lines: &[String],
+) {
+    let block = panel_block(2, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -233,12 +144,11 @@ fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, monitored_p
     frame.render_widget(paragraph, inner);
 }
 
-/// Horizontal split within the bottom section (3 columns).
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {
     let vis = app.panel_visibility();
-    let left_visible = vis[2] || vis[3];
-    let mid_visible = vis[4] || vis[5];
-    let right_visible = vis[6];
+    let left_visible = vis[1] || vis[2];
+    let mid_visible = vis[3] || vis[4];
+    let right_visible = vis[5];
 
     let mut columns: Vec<(Constraint, BottomColumn)> = Vec::new();
     if left_visible {
@@ -265,7 +175,9 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {
         match col_type {
             BottomColumn::Left => render_left_column(frame, areas[i], vis),
             BottomColumn::Mid => render_mid_column(frame, areas[i], vis),
-            BottomColumn::Right => frame.render_widget(panel_block(7, is_focused(app, 7)), areas[i]),
+            BottomColumn::Right => {
+                render_commands_panel(frame, areas[i], is_focused(app, 7), app.commands_cursor())
+            }
         }
     }
 }
@@ -276,9 +188,8 @@ enum BottomColumn {
     Right,
 }
 
-/// Vertical split within the left column (panels 3, 4).
-fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
-    match (vis[2], vis[3]) {
+fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+    match (vis[1], vis[2]) {
         (true, true) => {
             let rows = Layout::default()
                 .direction(Direction::Vertical)
@@ -293,9 +204,8 @@ fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     }
 }
 
-/// Vertical split within the mid column (panels 5, 6).
-fn render_mid_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
-    match (vis[4], vis[5]) {
+fn render_mid_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+    match (vis[3], vis[4]) {
         (true, true) => {
             let rows = Layout::default()
                 .direction(Direction::Vertical)
@@ -308,4 +218,27 @@ fn render_mid_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
         (false, true) => frame.render_widget(panel_block(6, false), area),
         (false, false) => {}
     }
+}
+
+fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: usize) {
+    let block = panel_block(7, focused);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let items: Vec<ListItem> = COMMAND_LABELS
+        .iter()
+        .map(|&label| ListItem::new(Span::styled(label, Style::new().fg(theme::FG))))
+        .collect();
+
+    let list = List::new(items)
+        .highlight_style(
+            Style::new()
+                .fg(theme::ACCENT)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▸ ");
+
+    let selected = if focused { Some(cursor) } else { None };
+    let mut state = ListState::default().with_selected(selected);
+    frame.render_stateful_widget(list, inner, &mut state);
 }

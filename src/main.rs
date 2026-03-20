@@ -3,6 +3,7 @@ mod app;
 mod apps;
 mod battery;
 mod boot;
+mod boot_ui;
 mod logcat;
 mod panel;
 mod processes;
@@ -11,7 +12,7 @@ mod theme;
 mod ui;
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use color_eyre::Result;
@@ -19,52 +20,98 @@ use crossterm::event::{self, Event, KeyEventKind};
 
 use adb::{Adb, Device, RealAdb};
 use app::{Action, App};
-use boot::BootResult;
+use boot::{BootAction, BootPhase};
 
-fn resolve_filtered_package(packages: &Option<Vec<String>>, filter: &str, idx: usize) -> Option<String> {
-    let pkgs = packages.as_ref()?;
-    let filtered = apps::filtered_packages(pkgs, filter);
-    filtered.get(idx).map(|s| s.to_string())
+fn spawn_device_poller(adb: Arc<dyn Adb>) -> mpsc::Receiver<Vec<Device>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || loop {
+        if let Ok(devices) = adb.list_devices() {
+            if tx.send(devices).is_err() {
+                return;
+            }
+        }
+        std::thread::sleep(Duration::from_secs(2));
+    });
+    rx
 }
 
 fn spawn_app_action(
     adb: &Arc<dyn Adb>,
     serial: &str,
-    pkg: Option<String>,
+    package: &str,
     f: impl FnOnce(Arc<dyn Adb>, &str, &str) -> Result<()> + Send + 'static,
 ) {
-    if let Some(pkg) = pkg {
-        let adb = adb.clone();
-        let serial = serial.to_string();
-        std::thread::spawn(move || {
-            let _ = f(adb, &serial, &pkg);
-        });
-    }
+    let adb = adb.clone();
+    let serial = serial.to_string();
+    let package = package.to_string();
+    std::thread::spawn(move || {
+        let _ = f(adb, &serial, &package);
+    });
 }
 
 fn main() -> Result<()> {
     color_eyre::install()?;
 
-    let adb = Arc::new(RealAdb);
-    let devices = adb.list_devices()?;
-
-    let device = match boot::resolve_device(devices) {
-        BootResult::NoDevices => {
-            eprintln!("No devices connected. Connect a device and try again.");
-            std::process::exit(1);
-        }
-        BootResult::Selected(device) => device,
-        BootResult::NeedsSelection(devices) => selector::run(devices)?,
-    };
-
+    let adb: Arc<dyn Adb> = Arc::new(RealAdb);
     let terminal = ratatui::init();
-    let result = run_app(terminal, adb, &device);
+    let result = run_boot(terminal, adb);
     ratatui::restore();
     result
 }
 
-fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &Device) -> Result<()> {
-    let title = format!(" {} ", selector::selector_label(device));
+fn run_boot(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>) -> Result<()> {
+    let mut phase = BootPhase::WaitingForDevice;
+    let device_rx = spawn_device_poller(adb.clone());
+    let mut apps_rx: Option<mpsc::Receiver<Vec<String>>> = None;
+    let mut tick: u8 = 0;
+
+    loop {
+        while let Ok(devices) = device_rx.try_recv() {
+            phase.receive_devices(devices);
+        }
+
+        if let BootPhase::SelectApp { device, .. } = &phase {
+            if apps_rx.is_none() {
+                apps_rx = Some(apps::spawn_poller(adb.clone(), device.serial.clone()));
+            }
+        }
+
+        if let Some(rx) = &apps_rx {
+            while let Ok(pkgs) = rx.try_recv() {
+                phase.receive_packages(pkgs);
+            }
+        }
+
+        if phase.is_done() {
+            let (device, package) = phase.into_result().unwrap();
+            return run_app(terminal, adb, &device, &package);
+        }
+
+        terminal.draw(|frame| boot_ui::render_boot(frame, &phase, tick))?;
+
+        if event::poll(Duration::from_millis(500))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind != KeyEventKind::Press {
+                    continue;
+                }
+                match phase.handle_key(key.code) {
+                    BootAction::Quit => return Ok(()),
+                    BootAction::Continue => {}
+                }
+            }
+        }
+
+        tick = tick.wrapping_add(1);
+    }
+}
+
+fn run_app(
+    mut terminal: ratatui::DefaultTerminal,
+    adb: Arc<dyn Adb>,
+    device: &Device,
+    package: &str,
+) -> Result<()> {
+    let title = format!(" {} — {} ", selector::selector_label(device), package);
     let mut app = App::new();
 
     let battery_rx = battery::spawn_poller(adb.clone(), device.serial.clone());
@@ -72,9 +119,6 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
 
     let procs_rx = processes::spawn_poller(adb.clone(), device.serial.clone());
     let mut process_map: Option<HashMap<String, u32>> = None;
-
-    let apps_rx = apps::spawn_poller(adb.clone(), device.serial.clone());
-    let mut packages: Option<Vec<String>> = None;
 
     let mut logcat_handle: Option<logcat::LogcatHandle> = None;
     let mut logcat_lines: Vec<String> = Vec::new();
@@ -87,9 +131,13 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
         while let Ok(procs) = procs_rx.try_recv() {
             process_map = Some(procs);
         }
-        while let Ok(pkgs) = apps_rx.try_recv() {
-            packages = Some(pkgs);
+
+        if logcat_handle.is_none() {
+            if let Some(pid) = process_map.as_ref().and_then(|m| m.get(package).copied()) {
+                logcat_handle = logcat::LogcatHandle::spawn(&device.serial, pid);
+            }
         }
+
         if let Some(handle) = &logcat_handle {
             while let Ok(line) = handle.rx().try_recv() {
                 logcat_lines.push(line);
@@ -102,7 +150,7 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, &app, packages.as_deref(), process_map.as_ref(), &logcat_lines)
+            ui::render_app(frame, &title, &time_str, battery_level, &app, &logcat_lines)
         })?;
 
         if event::poll(Duration::from_secs(1))? {
@@ -110,40 +158,27 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
-                let filtered_count = packages.as_ref().map_or(0, |p| {
-                    apps::filtered_packages(p, app.filter_text()).len()
-                });
-                match app.handle_key(key.code, filtered_count) {
+                match app.handle_key(key.code) {
                     Action::Quit => return Ok(()),
-                    Action::OpenApp(idx) => {
-                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
-                        spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| adb.launch_app(s, p));
-                    }
-                    Action::KillApp(idx) => {
-                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
-                        spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| adb.kill_app(s, p));
-                    }
-                    Action::ClearData(idx) => {
-                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
-                        spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| adb.clear_app_data(s, p));
-                    }
-                    Action::ClearDataAndOpen(idx) => {
-                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
-                        spawn_app_action(&adb, &device.serial, pkg, |adb, s, p| {
-                            adb.clear_app_data(s, p).and_then(|_| adb.launch_app(s, p))
+                    Action::OpenApp => {
+                        spawn_app_action(&adb, &device.serial, package, |adb, s, p| {
+                            adb.launch_app(s, p)
                         });
                     }
-                    Action::MonitorApp(idx) => {
-                        let pkg = resolve_filtered_package(&packages, app.filter_text(), idx);
-                        if let Some(pkg) = pkg {
-                            let pid = process_map.as_ref().and_then(|m| m.get(&pkg).copied());
-                            if let Some(pid) = pid {
-                                logcat_lines.clear();
-                                logcat_handle = logcat::LogcatHandle::spawn(&device.serial, pid);
-                                app.set_monitored_package(Some(pkg));
-                                app.set_focused(2);
-                            }
-                        }
+                    Action::KillApp => {
+                        spawn_app_action(&adb, &device.serial, package, |adb, s, p| {
+                            adb.kill_app(s, p)
+                        });
+                    }
+                    Action::ClearData => {
+                        spawn_app_action(&adb, &device.serial, package, |adb, s, p| {
+                            adb.clear_app_data(s, p)
+                        });
+                    }
+                    Action::ClearDataAndOpen => {
+                        spawn_app_action(&adb, &device.serial, package, |adb, s, p| {
+                            adb.clear_app_data(s, p).and_then(|_| adb.launch_app(s, p))
+                        });
                     }
                     Action::None => {}
                 }
