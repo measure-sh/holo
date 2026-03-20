@@ -73,7 +73,7 @@ impl App {
                 match code {
                     KeyCode::Char(c) => self.logcat_filter.tag.push(c),
                     KeyCode::Backspace => { self.logcat_filter.tag.pop(); }
-                    KeyCode::Enter => self.input_mode = InputMode::Normal,
+                    KeyCode::Enter | KeyCode::Esc => self.input_mode = InputMode::Normal,
                     _ => {}
                 }
                 return Action::None;
@@ -82,7 +82,7 @@ impl App {
                 match code {
                     KeyCode::Char(c) => self.logcat_filter.search.push(c),
                     KeyCode::Backspace => { self.logcat_filter.search.pop(); }
-                    KeyCode::Enter => self.input_mode = InputMode::Normal,
+                    KeyCode::Enter | KeyCode::Esc => self.input_mode = InputMode::Normal,
                     _ => {}
                 }
                 return Action::None;
@@ -460,6 +460,28 @@ mod tests {
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
         app.handle_key(KeyCode::Enter);
         assert_eq!(app.input_mode(), InputMode::Normal);
+    }
+
+    #[test]
+    fn esc_exits_tag_editing_preserving_input() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('t'));
+        app.handle_key(KeyCode::Char('a'));
+        app.handle_key(KeyCode::Char('b'));
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert_eq!(app.logcat_filter().tag, "ab");
+    }
+
+    #[test]
+    fn esc_exits_search_editing_preserving_input() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('s'));
+        app.handle_key(KeyCode::Char('x'));
+        app.handle_key(KeyCode::Char('y'));
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert_eq!(app.logcat_filter().search, "xy");
     }
 
     #[test]
