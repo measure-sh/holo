@@ -33,7 +33,7 @@ fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
         let first = chars.next().unwrap();
         spans.push(Span::styled(
             String::from(first),
-            Style::new().fg(color).add_modifier(Modifier::UNDERLINED),
+            Style::new().fg(color),
         ));
         spans.push(Span::styled(
             format!("{} ", chars.as_str()),
@@ -79,7 +79,7 @@ pub fn render_app(
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
     let hint_line = Line::from(vec![
-        Span::styled(" q", Style::new().fg(theme::ACCENT).add_modifier(Modifier::UNDERLINED)),
+        Span::styled(" q", Style::new().fg(theme::ACCENT)),
         Span::styled("uit ", Style::new().fg(theme::MUTED)),
     ]);
 
@@ -160,7 +160,7 @@ fn apps_panel_title(focused: bool, filter: &str, filtering: bool) -> Line<'stati
         } else {
             spans.push(Span::styled(
                 "f",
-                Style::new().fg(theme::ACCENT).add_modifier(Modifier::UNDERLINED),
+                Style::new().fg(theme::ACCENT),
             ));
             spans.push(Span::styled("ilter", Style::new().fg(theme::MUTED)));
         }
