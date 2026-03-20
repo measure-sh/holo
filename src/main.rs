@@ -76,7 +76,7 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
-                if matches!(app.handle_key(key.code), Action::Quit) {
+                if matches!(app.handle_key(key.code, packages.as_ref().map_or(0, |p| p.len())), Action::Quit) {
                     return Ok(());
                 }
             }

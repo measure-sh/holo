@@ -17,16 +17,16 @@ impl App {
     pub fn new() -> Self {
         Self {
             visible: [true; 7],
-            focused: None,
+            focused: Some(1),
             apps_cursor: 0,
         }
     }
 
-    pub fn handle_key(&mut self, code: KeyCode) -> Action {
+    pub fn handle_key(&mut self, code: KeyCode, app_count: usize) -> Action {
         if self.focused == Some(1) {
             match code {
-                KeyCode::Up => { self.move_apps_cursor(-1); return Action::None; }
-                KeyCode::Down => { self.move_apps_cursor(1); return Action::None; }
+                KeyCode::Up => { self.move_apps_cursor(-1, app_count); return Action::None; }
+                KeyCode::Down => { self.move_apps_cursor(1, app_count); return Action::None; }
                 _ => {}
             }
         }
@@ -66,9 +66,10 @@ impl App {
         }
     }
 
-    fn move_apps_cursor(&mut self, delta: isize) {
+    fn move_apps_cursor(&mut self, delta: isize, app_count: usize) {
         let new = self.apps_cursor as isize + delta;
-        self.apps_cursor = new.max(0) as usize;
+        let max = app_count.saturating_sub(1);
+        self.apps_cursor = (new.max(0) as usize).min(max);
     }
 
     pub fn selected_app(&self) -> Option<usize> {
@@ -135,105 +136,116 @@ mod tests {
     #[test]
     fn handle_key_q_quits() {
         let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Char('q')), Action::Quit));
+        assert!(matches!(app.handle_key(KeyCode::Char('q'), 10), Action::Quit));
     }
 
     #[test]
     fn handle_key_esc_quits() {
         let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Esc), Action::Quit));
+        assert!(matches!(app.handle_key(KeyCode::Esc, 10), Action::Quit));
     }
 
     #[test]
     fn handle_key_digit_toggles_visibility() {
         let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Char('3')), Action::None));
+        assert!(matches!(app.handle_key(KeyCode::Char('3'), 10), Action::None));
         assert_eq!(app.panel_visibility(), &[true, true, false, true, true, true, true]);
     }
 
     #[test]
     fn handle_key_unknown_is_none() {
         let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Char('x')), Action::None));
+        assert!(matches!(app.handle_key(KeyCode::Char('x'), 10), Action::None));
         assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
     fn focus_toggles_on_same_key() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('i'));
-        assert_eq!(app.focused_panel(), Some(1));
-        app.handle_key(KeyCode::Char('i'));
+        // Panel 1 starts focused; pressing 'i' unfocuses
+        app.handle_key(KeyCode::Char('i'), 10);
         assert_eq!(app.focused_panel(), None);
+        // Pressing again refocuses
+        app.handle_key(KeyCode::Char('i'), 10);
+        assert_eq!(app.focused_panel(), Some(1));
     }
 
     #[test]
     fn focus_switches_between_panels() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('i'));
         assert_eq!(app.focused_panel(), Some(1));
-        app.handle_key(KeyCode::Char('l'));
+        app.handle_key(KeyCode::Char('l'), 10);
         assert_eq!(app.focused_panel(), Some(2));
-        app.handle_key(KeyCode::Char('c'));
+        app.handle_key(KeyCode::Char('c'), 10);
         assert_eq!(app.focused_panel(), Some(7));
     }
 
     #[test]
-    fn unfocusable_keys_do_not_focus() {
+    fn unfocusable_keys_do_not_change_focus() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('n'));
-        assert_eq!(app.focused_panel(), None);
+        app.handle_key(KeyCode::Char('n'), 10);
+        assert_eq!(app.focused_panel(), Some(1));
     }
 
     #[test]
-    fn new_app_has_no_focus() {
+    fn new_app_focuses_apps_panel() {
         let app = App::new();
-        assert_eq!(app.focused_panel(), None);
+        assert_eq!(app.focused_panel(), Some(1));
     }
 
     #[test]
     fn arrow_keys_move_cursor_when_apps_focused() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('i'));
-        app.handle_key(KeyCode::Down);
+        // Panel 1 starts focused
+        app.handle_key(KeyCode::Down, 10);
         assert_eq!(app.selected_app(), Some(1));
-        app.handle_key(KeyCode::Down);
+        app.handle_key(KeyCode::Down, 10);
         assert_eq!(app.selected_app(), Some(2));
-        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Up, 10);
         assert_eq!(app.selected_app(), Some(1));
     }
 
     #[test]
     fn arrow_keys_ignored_when_apps_not_focused() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Down);
-        assert_eq!(app.selected_app(), None);
         // Focus a different panel
-        app.handle_key(KeyCode::Char('l'));
-        app.handle_key(KeyCode::Down);
+        app.handle_key(KeyCode::Char('l'), 10);
+        app.handle_key(KeyCode::Down, 10);
         assert_eq!(app.selected_app(), None);
     }
 
     #[test]
     fn cursor_does_not_go_below_zero() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('i'));
-        app.handle_key(KeyCode::Up);
+        // Panel 1 starts focused
+        app.handle_key(KeyCode::Up, 10);
         assert_eq!(app.selected_app(), Some(0));
+    }
+
+    #[test]
+    fn cursor_does_not_exceed_app_count() {
+        let mut app = App::new();
+        for _ in 0..20 {
+            app.handle_key(KeyCode::Down, 5);
+        }
+        assert_eq!(app.selected_app(), Some(4));
+        // Moving up once should immediately go to index 3
+        app.handle_key(KeyCode::Up, 5);
+        assert_eq!(app.selected_app(), Some(3));
     }
 
     #[test]
     fn cursor_preserved_when_refocusing() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('i'));
-        app.handle_key(KeyCode::Down);
-        app.handle_key(KeyCode::Down);
+        // Panel 1 starts focused
+        app.handle_key(KeyCode::Down, 10);
+        app.handle_key(KeyCode::Down, 10);
         assert_eq!(app.selected_app(), Some(2));
         // Unfocus
-        app.handle_key(KeyCode::Char('i'));
+        app.handle_key(KeyCode::Char('i'), 10);
         assert_eq!(app.selected_app(), None);
         // Refocus — cursor remembered
-        app.handle_key(KeyCode::Char('i'));
+        app.handle_key(KeyCode::Char('i'), 10);
         assert_eq!(app.selected_app(), Some(2));
     }
 }
