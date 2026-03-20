@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
     Frame,
 };
 
@@ -255,7 +255,7 @@ fn render_logcat_panel(
         .map(|l| style_logcat_line(l, pid_str.as_deref()))
         .collect();
 
-    let paragraph = Paragraph::new(visible).wrap(Wrap { trim: false });
+    let paragraph = Paragraph::new(visible);
     frame.render_widget(paragraph, inner);
 }
 
