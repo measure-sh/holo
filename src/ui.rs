@@ -22,28 +22,59 @@ const PANEL_INFO: [(&str, ratatui::style::Color); 7] = [
 
 const SUPERSCRIPT_DIGITS: [char; 8] = ['\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}'];
 
-fn panel_title(index: u8) -> Line<'static> {
-    let (name, color) = PANEL_INFO[(index - 1) as usize];
-    let superscript = SUPERSCRIPT_DIGITS[(index - 1) as usize];
-    Line::from(vec![
-        Span::styled(
-            format!(" {}", superscript),
-            Style::new().fg(color).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!("{} ", name),
-            Style::new().fg(theme::MUTED),
-        ),
-    ])
+const FOCUSABLE_PANELS: [u8; 3] = [1, 2, 7];
+
+fn bright_color(index: u8) -> ratatui::style::Color {
+    match index {
+        1 => theme::ACCENT,
+        2 => theme::GREEN,
+        7 => theme::CYAN,
+        _ => PANEL_INFO[(index - 1) as usize].1,
+    }
 }
 
-fn panel_block(index: u8) -> Block<'static> {
+fn panel_title(index: u8, focused: bool) -> Line<'static> {
+    let (name, color) = PANEL_INFO[(index - 1) as usize];
+    let border_color = if focused { bright_color(index) } else { color };
+    let superscript = SUPERSCRIPT_DIGITS[(index - 1) as usize];
+    let focusable = FOCUSABLE_PANELS.contains(&index);
+
+    let mut spans = vec![
+        Span::styled(
+            format!(" {}", superscript),
+            Style::new().fg(border_color).add_modifier(Modifier::BOLD),
+        ),
+    ];
+
+    if focusable {
+        let mut chars = name.chars();
+        let first = chars.next().unwrap();
+        spans.push(Span::styled(
+            String::from(first),
+            Style::new().fg(border_color),
+        ));
+        spans.push(Span::styled(
+            format!("{} ", chars.as_str()),
+            Style::new().fg(theme::MUTED),
+        ));
+    } else {
+        spans.push(Span::styled(
+            format!("{} ", name),
+            Style::new().fg(theme::MUTED),
+        ));
+    }
+
+    Line::from(spans)
+}
+
+fn panel_block(index: u8, focused: bool) -> Block<'static> {
     let (_, color) = PANEL_INFO[(index - 1) as usize];
+    let border_color = if focused { bright_color(index) } else { color };
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(panel_title(index))
-        .border_style(Style::new().fg(color))
+        .title(panel_title(index, focused))
+        .border_style(Style::new().fg(border_color))
 }
 
 pub fn render_app(
@@ -52,6 +83,7 @@ pub fn render_app(
     time: &str,
     battery_level: Option<u8>,
     visible: &[bool; 7],
+    focused: Option<u8>,
     packages: Option<&[String]>,
 ) {
     let area = frame.area();
@@ -74,6 +106,13 @@ pub fn render_app(
         Span::styled("-", hint_style),
         Span::styled("7", key_style),
         Span::styled(" toggle visibility ", hint_style),
+        Span::styled("│", hint_style),
+        Span::styled(" i", key_style),
+        Span::styled("/", hint_style),
+        Span::styled("l", key_style),
+        Span::styled("/", hint_style),
+        Span::styled("c", key_style),
+        Span::styled(" focus ", hint_style),
         Span::styled("│", hint_style),
         Span::styled(" q", key_style),
         Span::styled("/", hint_style),
@@ -98,11 +137,11 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, visible, packages);
+    render_panels(frame, inner, visible, focused, packages);
 }
 
 /// Level 1: vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: Option<&[String]>) {
+fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], focused: Option<u8>, packages: Option<&[String]>) {
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
 
@@ -112,41 +151,42 @@ fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: Optio
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], vis, packages);
-            render_bottom_section(frame, rows[1], vis);
+            render_top_row(frame, rows[0], vis, focused, packages);
+            render_bottom_section(frame, rows[1], vis, focused);
         }
-        (true, false) => render_top_row(frame, area, vis, packages),
-        (false, true) => render_bottom_section(frame, area, vis),
+        (true, false) => render_top_row(frame, area, vis, focused, packages),
+        (false, true) => render_bottom_section(frame, area, vis, focused),
         (false, false) => {}
     }
 }
 
 /// Level 2a: horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: Option<&[String]>) {
+fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7], focused: Option<u8>, packages: Option<&[String]>) {
+    let f = |n: u8| focused == Some(n);
     match (vis[0], vis[1]) {
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
-            render_apps_panel(frame, cols[0], packages);
-            frame.render_widget(panel_block(2), cols[1]);
+            render_apps_panel(frame, cols[0], f(1), packages);
+            frame.render_widget(panel_block(2, f(2)), cols[1]);
         }
-        (true, false) => render_apps_panel(frame, area, packages),
-        (false, true) => frame.render_widget(panel_block(2), area),
+        (true, false) => render_apps_panel(frame, area, f(1), packages),
+        (false, true) => frame.render_widget(panel_block(2, f(2)), area),
         (false, false) => {}
     }
 }
 
-fn render_apps_panel(frame: &mut Frame, area: Rect, packages: Option<&[String]>) {
-    let block = panel_block(1);
+fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>) {
+    let block = panel_block(1, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
     apps::render_apps(frame, inner, packages);
 }
 
 /// Level 2b: horizontal split within the bottom section (3 columns).
-fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
+fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 7], focused: Option<u8>) {
     let left_visible = vis[2] || vis[3];
     let mid_visible = vis[4] || vis[5];
     let right_visible = vis[6];
@@ -176,7 +216,7 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
         match col_type {
             BottomColumn::Left => render_left_column(frame, areas[i], vis),
             BottomColumn::Mid => render_mid_column(frame, areas[i], vis),
-            BottomColumn::Right => frame.render_widget(panel_block(7), areas[i]),
+            BottomColumn::Right => frame.render_widget(panel_block(7, focused == Some(7)), areas[i]),
         }
     }
 }
@@ -195,11 +235,11 @@ fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            frame.render_widget(panel_block(3), rows[0]);
-            frame.render_widget(panel_block(4), rows[1]);
+            frame.render_widget(panel_block(3, false), rows[0]);
+            frame.render_widget(panel_block(4, false), rows[1]);
         }
-        (true, false) => frame.render_widget(panel_block(3), area),
-        (false, true) => frame.render_widget(panel_block(4), area),
+        (true, false) => frame.render_widget(panel_block(3, false), area),
+        (false, true) => frame.render_widget(panel_block(4, false), area),
         (false, false) => {}
     }
 }
@@ -212,11 +252,11 @@ fn render_mid_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            frame.render_widget(panel_block(5), rows[0]);
-            frame.render_widget(panel_block(6), rows[1]);
+            frame.render_widget(panel_block(5, false), rows[0]);
+            frame.render_widget(panel_block(6, false), rows[1]);
         }
-        (true, false) => frame.render_widget(panel_block(5), area),
-        (false, true) => frame.render_widget(panel_block(6), area),
+        (true, false) => frame.render_widget(panel_block(5, false), area),
+        (false, true) => frame.render_widget(panel_block(6, false), area),
         (false, false) => {}
     }
 }
