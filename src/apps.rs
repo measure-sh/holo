@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
-    text::Span,
+    text::{Line, Span},
     widgets::{List, ListItem, ListState},
     Frame,
 };
@@ -28,7 +29,7 @@ pub fn spawn_poller(adb: Arc<dyn Adb>, serial: String) -> mpsc::Receiver<Vec<Str
     rx
 }
 
-pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>, selected: Option<usize>) {
+pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>) {
     let Some(packages) = packages else {
         let list = List::new(vec![ListItem::new(Span::styled(
             "Loading…",
@@ -40,7 +41,16 @@ pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>, s
 
     let items: Vec<ListItem> = packages
         .iter()
-        .map(|name| ListItem::new(Span::styled(name.clone(), Style::new().fg(theme::FG))))
+        .map(|name| {
+            let pid = processes.and_then(|p| p.get(name.as_str()));
+            match pid {
+                Some(pid) => ListItem::new(Line::from(vec![
+                    Span::styled(name.clone(), Style::new().fg(theme::FG)),
+                    Span::styled(format!("  {pid}"), Style::new().fg(theme::MUTED)),
+                ])),
+                None => ListItem::new(Span::styled(name.clone(), Style::new().fg(theme::FG))),
+            }
+        })
         .collect();
     let list = List::new(items)
         .highlight_style(Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD))

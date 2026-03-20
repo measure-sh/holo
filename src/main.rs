@@ -4,10 +4,12 @@ mod apps;
 mod battery;
 mod boot;
 mod panel;
+mod processes;
 mod selector;
 mod theme;
 mod ui;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -46,12 +48,18 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
     let battery_rx = battery::spawn_poller(adb.clone(), device.serial.clone());
     let mut battery_level: Option<u8> = None;
 
+    let procs_rx = processes::spawn_poller(adb.clone(), device.serial.clone());
+    let mut process_map: Option<HashMap<String, u32>> = None;
+
     let apps_rx = apps::spawn_poller(adb, device.serial.clone());
     let mut packages: Option<Vec<String>> = None;
 
     loop {
         while let Ok(level) = battery_rx.try_recv() {
             battery_level = Some(level);
+        }
+        while let Ok(procs) = procs_rx.try_recv() {
+            process_map = Some(procs);
         }
         while let Ok(pkgs) = apps_rx.try_recv() {
             packages = Some(pkgs);
@@ -60,7 +68,7 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, &app, packages.as_deref())
+            ui::render_app(frame, &title, &time_str, battery_level, &app, packages.as_deref(), process_map.as_ref())
         })?;
 
         if event::poll(Duration::from_secs(1))? {

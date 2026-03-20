@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -63,6 +65,7 @@ pub fn render_app(
     battery_level: Option<u8>,
     app: &App,
     packages: Option<&[String]>,
+    processes: Option<&HashMap<String, u32>>,
 ) {
     let area = frame.area();
 
@@ -75,9 +78,7 @@ pub fn render_app(
         Line::from(time)
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
-    let key_style = Style::new()
-        .fg(theme::ACCENT)
-        .add_modifier(Modifier::BOLD);
+    let key_style = Style::new().fg(theme::ACCENT);
     let hint_style = Style::new().fg(theme::MUTED);
     let hint_line = Line::from(vec![
         Span::styled(" 1", key_style),
@@ -115,7 +116,7 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, app, packages);
+    render_panels(frame, inner, app, packages, processes);
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
@@ -123,7 +124,7 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 }
 
 /// Vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
@@ -134,17 +135,17 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[St
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], app, packages);
+            render_top_row(frame, rows[0], app, packages, processes);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, app, packages),
+        (true, false) => render_top_row(frame, area, app, packages, processes),
         (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
 /// Horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>) {
+fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>, processes: Option<&HashMap<String, u32>>) {
     let vis = app.panel_visibility();
     match (vis[0], vis[1]) {
         (true, true) => {
@@ -152,20 +153,20 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
-            render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app());
+            render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app(), processes);
             frame.render_widget(panel_block(2, is_focused(app, 2)), cols[1]);
         }
-        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app()),
+        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app(), processes),
         (false, true) => frame.render_widget(panel_block(2, is_focused(app, 2)), area),
         (false, false) => {}
     }
 }
 
-fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>) {
+fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>) {
     let block = panel_block(1, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    apps::render_apps(frame, inner, packages, selected);
+    apps::render_apps(frame, inner, packages, selected, processes);
 }
 
 /// Horizontal split within the bottom section (3 columns).
