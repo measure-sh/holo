@@ -156,6 +156,9 @@ fn apps_panel_title(focused: bool, filter: &str, filtering: bool) -> Line<'stati
             spans.push(Span::styled(filter.to_string(), Style::new().fg(theme::FG)));
             if filtering {
                 spans.push(Span::styled("█", Style::new().fg(theme::ACCENT)));
+                spans.push(Span::styled(" ↵", Style::new().fg(theme::KEY_HINT)));
+            } else {
+                spans.push(Span::styled(" esc", Style::new().fg(theme::KEY_HINT)));
             }
         } else {
             spans.push(Span::styled(
@@ -182,7 +185,7 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
         let key = Style::new().fg(theme::KEY_HINT);
         let muted = Style::new().fg(theme::MUTED);
         let border = Style::new().fg(color);
-        let mut hints = vec![
+        let hints = vec![
             Span::styled(" o", key),
             Span::styled("pen ", muted),
             Span::styled("───", border),
@@ -192,11 +195,7 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
             Span::styled(" e", key),
             Span::styled("rase ", muted),
         ];
-        if !filter.is_empty() && !filtering {
-            hints.push(Span::styled("───", border));
-            hints.push(Span::styled(" Esc", key));
-            hints.push(Span::styled(" clear filter ", muted));
-        }
+
         block = block.title_bottom(Line::from(hints));
     }
 

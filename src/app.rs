@@ -33,6 +33,10 @@ impl App {
     pub fn handle_key(&mut self, code: KeyCode, app_count: usize) -> Action {
         if self.focused == Some(1) && self.filter_active {
             match code {
+                KeyCode::Enter => {
+                    self.filter_active = false;
+                    return Action::None;
+                }
                 KeyCode::Esc => {
                     self.filter_active = false;
                     self.filter_text.clear();
@@ -395,6 +399,17 @@ mod tests {
         // Typing resets cursor to 0
         app.handle_key(KeyCode::Char('x'), 5);
         assert_eq!(app.selected_app(), Some(0));
+    }
+
+    #[test]
+    fn enter_exits_filter_mode_but_preserves_text() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('f'), 10);
+        app.handle_key(KeyCode::Char('c'), 10);
+        app.handle_key(KeyCode::Char('o'), 10);
+        app.handle_key(KeyCode::Enter, 10);
+        assert!(!app.is_filtering());
+        assert_eq!(app.filter_text(), "co");
     }
 
     #[test]
