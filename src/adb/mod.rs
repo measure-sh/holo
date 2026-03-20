@@ -2,6 +2,8 @@ mod real;
 
 pub use real::RealAdb;
 
+use std::collections::HashMap;
+
 use color_eyre::Result;
 
 #[derive(Debug, Clone)]
@@ -15,4 +17,5 @@ pub trait Adb: Send + Sync {
     fn list_devices(&self) -> Result<Vec<Device>>;
     fn get_battery_level(&self, serial: &str) -> Result<u8>;
     fn list_packages(&self, serial: &str) -> Result<Vec<String>>;
+    fn list_processes(&self, serial: &str) -> Result<HashMap<String, u32>>;
 }

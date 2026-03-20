@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::Command;
 
 use color_eyre::{Result, eyre::bail};
@@ -46,6 +47,20 @@ impl Adb for RealAdb {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_package_list(&stdout))
     }
+
+    fn list_processes(&self, serial: &str) -> Result<HashMap<String, u32>> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "ps"])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb shell ps failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_process_list(&stdout))
+    }
 }
 
 fn parse_package_list(output: &str) -> Vec<String> {
@@ -65,6 +80,24 @@ fn parse_battery_level(output: &str) -> Option<u8> {
         let value = line.strip_prefix("level:")?;
         value.trim().parse().ok()
     })
+}
+
+fn parse_process_list(output: &str) -> HashMap<String, u32> {
+    let mut map = HashMap::new();
+    for line in output.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            continue;
+        }
+        let Some(pid) = parts.get(1).and_then(|s| s.parse::<u32>().ok()) else {
+            continue;
+        };
+        let Some(name) = parts.last() else {
+            continue;
+        };
+        map.insert(name.to_string(), pid);
+    }
+    map
 }
 
 pub fn parse_device_list(output: &str) -> Vec<Device> {
@@ -177,6 +210,34 @@ mod tests {
         let output = "package:com.example.app\nWarning: some adb warning\npackage:com.other.app\n";
         let packages = parse_package_list(output);
         assert_eq!(packages, vec!["com.example.app", "com.other.app"]);
+    }
+
+    #[test]
+    fn parses_process_list() {
+        let output = "USER           PID  PPID     VSZ    RSS WCHAN            ADDR S NAME\n\
+                       root             1     0   12345   6789 SyS_epoll_wait      0 S init\n\
+                       u0_a123      12345     1   98765  43210 SyS_epoll_wait      0 S com.example.app\n\
+                       u0_a456      67890     1   11111  22222 futex_wait          0 S com.other.app\n";
+        let procs = parse_process_list(output);
+        assert_eq!(procs.get("com.example.app"), Some(&12345));
+        assert_eq!(procs.get("com.other.app"), Some(&67890));
+        assert_eq!(procs.get("init"), Some(&1));
+    }
+
+    #[test]
+    fn parses_empty_process_list() {
+        assert!(parse_process_list("").is_empty());
+        assert!(parse_process_list("USER PID NAME\n").is_empty());
+    }
+
+    #[test]
+    fn skips_malformed_process_lines() {
+        let output = "USER PID NAME\n\
+                       partial\n\
+                       root 1 init\n";
+        let procs = parse_process_list(output);
+        assert_eq!(procs.get("init"), Some(&1));
+        assert_eq!(procs.len(), 1);
     }
 
     #[test]
