@@ -198,12 +198,11 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
 
     let level_str = match filter.level {
         Some(c) => c.to_string(),
-        None => "All".to_string(),
+        None => "*".to_string(),
     };
-    spans.push(Span::styled(
-        format!(" \u{25C2}{}\u{25B8} ", level_str),
-        muted,
-    ));
+    spans.push(Span::styled(" \u{25C2}", accent));
+    spans.push(Span::styled(format!("level:{}", level_str), muted));
+    spans.push(Span::styled("\u{25B8} ", accent));
 
     Line::from(spans)
 }
