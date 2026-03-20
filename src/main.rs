@@ -144,8 +144,13 @@ fn run_app(
         }
 
         if let Some(handle) = &logcat_handle {
+            let prev_len = logcat_lines.len();
             while let Ok(line) = handle.rx().try_recv() {
                 logcat_lines.push(line);
+            }
+            let new_count = logcat_lines.len() - prev_len;
+            if new_count > 0 {
+                app.adjust_logcat_scroll_for_new_lines(new_count);
                 if logcat_lines.len() > MAX_LOGCAT_LINES {
                     logcat_lines.drain(..logcat_lines.len() - MAX_LOGCAT_LINES);
                 }
@@ -155,7 +160,7 @@ fn run_app(
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, &app, &logcat_lines, monitored_pid)
+            ui::render_app(frame, &title, &time_str, battery_level, &mut app, &logcat_lines, monitored_pid)
         })?;
 
         if event::poll(Duration::from_secs(1))? {

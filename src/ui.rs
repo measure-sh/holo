@@ -64,7 +64,7 @@ pub fn render_app(
     title: &str,
     time: &str,
     battery_level: Option<u8>,
-    app: &App,
+    app: &mut App,
     logcat_lines: &[String],
     monitored_pid: Option<u32>,
 ) {
@@ -107,7 +107,7 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
     app.focused_panel() == Some(panel_number)
 }
 
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5];
@@ -127,7 +127,7 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Strin
     }
 }
 
-fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>) {
+fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let vis = app.panel_visibility();
     match (vis[0], vis[1]) {
         (true, true) => {
@@ -136,19 +136,22 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Stri
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
             render_commands_panel(frame, cols[0], is_focused(app, 1), app.commands_cursor());
-            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid, app.logcat_filter(), app);
+            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid, app);
         }
         (true, false) => {
             render_commands_panel(frame, area, is_focused(app, 1), app.commands_cursor())
         }
-        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid, app.logcat_filter(), app),
+        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid, app),
         (false, false) => {}
     }
 }
 
-fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode) -> Line<'static> {
+fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool) -> Line<'static> {
+    let accent = Style::new().fg(theme::KEY_HINT);
+    let muted = Style::new().fg(theme::MUTED);
+    let border = Style::new().fg(panel::by_number(2).border_color(focused));
+
     let mut spans = Vec::new();
-    let sep = Span::styled(" │ ", Style::new().fg(theme::SURFACE));
 
     let tag_value = if filter.tag.is_empty() {
         "*".to_string()
@@ -156,17 +159,16 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode) -> Line<'stat
         filter.tag.clone()
     };
     let tag_display = match input_mode {
-        InputMode::EditingTag => format!("{}|", tag_value.replace('*', "")),
+        InputMode::EditingTag => tag_value.replace('*', ""),
         _ => tag_value,
     };
-    spans.push(Span::styled(" ", Style::new()));
-    spans.push(Span::styled("t", Style::new().fg(theme::KEY_HINT)));
-    spans.push(Span::styled(
-        format!("ag:{} ", tag_display),
-        Style::new().fg(theme::FG),
-    ));
+    spans.push(Span::styled(" t", accent));
+    spans.push(Span::styled(format!("ag:{} ", tag_display), muted));
+    if matches!(input_mode, InputMode::EditingTag) {
+        spans.push(Span::styled("Esc ", Style::new().fg(theme::RED)));
+    }
 
-    spans.push(sep.clone());
+    spans.push(Span::styled("───", border));
 
     let search_value = if filter.search.is_empty() {
         String::new()
@@ -174,7 +176,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode) -> Line<'stat
         filter.search.clone()
     };
     let search_display = match input_mode {
-        InputMode::EditingSearch => format!("{}|", search_value),
+        InputMode::EditingSearch => search_value.clone(),
         _ => {
             if search_value.is_empty() {
                 "*".to_string()
@@ -183,21 +185,21 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode) -> Line<'stat
             }
         }
     };
-    spans.push(Span::styled("/", Style::new().fg(theme::KEY_HINT)));
-    spans.push(Span::styled(
-        format!(":{} ", search_display),
-        Style::new().fg(theme::FG),
-    ));
+    spans.push(Span::styled(" s", accent));
+    spans.push(Span::styled(format!("earch:{} ", search_display), muted));
+    if matches!(input_mode, InputMode::EditingSearch) {
+        spans.push(Span::styled("Esc ", Style::new().fg(theme::RED)));
+    }
 
-    spans.push(sep);
+    spans.push(Span::styled("───", border));
 
     let level_str = match filter.level {
         Some(c) => c.to_string(),
         None => "All".to_string(),
     };
     spans.push(Span::styled(
-        format!("\u{25C2}{}\u{25B8} ", level_str),
-        Style::new().fg(theme::FG),
+        format!(" \u{25C2}{}\u{25B8} ", level_str),
+        muted,
     ));
 
     Line::from(spans)
@@ -209,15 +211,19 @@ fn render_logcat_panel(
     focused: bool,
     logcat_lines: &[String],
     monitored_pid: Option<u32>,
-    filter: &LogcatFilter,
-    app: &App,
+    app: &mut App,
 ) {
+    let filter_tag = app.logcat_filter().tag.clone();
+    let filter_search = app.logcat_filter().search.clone();
+    let filter_level = app.logcat_filter().level;
+    let input_mode = app.input_mode();
+
     let color = panel::by_number(2).border_color(focused);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(panel_title(2, focused))
-        .title_bottom(logcat_filter_bar(filter, app.input_mode()))
+        .title_bottom(logcat_filter_bar(app.logcat_filter(), input_mode, focused))
         .border_style(Style::new().fg(color));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -230,19 +236,21 @@ fn render_logcat_panel(
             let Some(parsed) = logcat::parse(line) else {
                 return true;
             };
-            let tag_ok = filter.tag.is_empty()
-                || parsed.tag.to_lowercase().contains(&filter.tag.to_lowercase());
-            let search_ok = filter.search.is_empty()
-                || line.to_lowercase().contains(&filter.search.to_lowercase());
+            let tag_ok = filter_tag.is_empty()
+                || parsed.tag.to_lowercase().contains(&filter_tag.to_lowercase());
+            let search_ok = filter_search.is_empty()
+                || line.to_lowercase().contains(&filter_search.to_lowercase());
             let level_ok =
-                filter.level.is_none() || Some(parsed.level) == filter.level;
+                filter_level.is_none() || Some(parsed.level) == filter_level;
             tag_ok && search_ok && level_ok
         })
         .collect();
 
     let visible_height = inner.height as usize;
-    let start = filtered.len().saturating_sub(visible_height);
-    let visible: Vec<Line> = filtered[start..]
+    app.clamp_logcat_scroll(filtered.len(), visible_height);
+    let end = filtered.len().saturating_sub(app.logcat_scroll());
+    let start = end.saturating_sub(visible_height);
+    let visible: Vec<Line> = filtered[start..end]
         .iter()
         .map(|l| style_logcat_line(l, pid_str.as_deref()))
         .collect();
