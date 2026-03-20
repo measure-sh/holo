@@ -129,7 +129,7 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Stri
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(25), Constraint::Percentage(75)])
+                .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
             render_commands_panel(frame, cols[0], is_focused(app, 1), app.commands_cursor());
             render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines);
