@@ -179,7 +179,7 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
         .border_style(Style::new().fg(color));
 
     if focused {
-        let accent = Style::new().fg(theme::ACCENT).add_modifier(Modifier::UNDERLINED);
+        let accent = Style::new().fg(theme::ACCENT);
         let muted = Style::new().fg(theme::MUTED);
         let border = Style::new().fg(color);
         let mut hints = vec![
