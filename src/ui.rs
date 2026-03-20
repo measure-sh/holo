@@ -197,8 +197,8 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
     spans.push(Span::styled("───", border));
 
     let level_str = match filter.level {
-        Some(c) => c.to_string(),
-        None => "*".to_string(),
+        Some(c) => theme::level_name(c),
+        None => "All",
     };
     spans.push(Span::styled(" \u{25C2}", accent));
     spans.push(Span::styled(format!("level:{}", level_str), muted));

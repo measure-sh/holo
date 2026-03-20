@@ -46,3 +46,15 @@ pub fn level_label(level: char) -> &'static str {
         _ => "????",
     }
 }
+
+pub fn level_name(level: char) -> &'static str {
+    match level {
+        'V' => "Verbose",
+        'D' => "Debug",
+        'I' => "Info",
+        'W' => "Warn",
+        'E' => "Error",
+        'F' => "Fatal",
+        _ => "Unknown",
+    }
+}
