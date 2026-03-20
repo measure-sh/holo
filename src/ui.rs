@@ -9,13 +9,14 @@ use ratatui::{
 use crate::battery;
 use crate::theme;
 
-const PANEL_TITLES: [&str; 6] = [
+const PANEL_TITLES: [&str; 7] = [
     "1. Installed Apps",
     "2. Logcat",
     "3. Network",
     "4. CPU",
     "5. Memory",
     "6. Disk Usage",
+    "7. Commands",
 ];
 
 fn panel_block(index: u8) -> Block<'static> {
@@ -30,7 +31,7 @@ pub fn render_app(
     title: &str,
     time: &str,
     battery_level: Option<u8>,
-    visible: &[bool; 6],
+    visible: &[bool; 7],
 ) {
     let area = frame.area();
 
@@ -44,7 +45,7 @@ pub fn render_app(
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
     let hint_line =
-        Line::from(" 1-6: toggle | q/Esc: exit ").style(Style::new().fg(theme::MUTED));
+        Line::from(" 1-7: toggle | q/Esc: exit ").style(Style::new().fg(theme::MUTED));
 
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -66,9 +67,9 @@ pub fn render_app(
 }
 
 /// Level 1: vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     let top_visible = vis[0] || vis[1];
-    let bot_visible = vis[2] || vis[3] || vis[4] || vis[5];
+    let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
 
     match (top_visible, bot_visible) {
         (true, true) => {
@@ -86,7 +87,7 @@ fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
 }
 
 /// Level 2a: horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     match (vis[0], vis[1]) {
         (true, true) => {
             let cols = Layout::default()
@@ -103,10 +104,10 @@ fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
 }
 
 /// Level 2b: horizontal split within the bottom section (3 columns).
-fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     let left_visible = vis[2] || vis[3];
-    let mid_visible = vis[4];
-    let right_visible = vis[5];
+    let mid_visible = vis[4] || vis[5];
+    let right_visible = vis[6];
 
     let mut columns: Vec<(Constraint, BottomColumn)> = Vec::new();
     if left_visible {
@@ -132,8 +133,8 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
     for (i, (_, col_type)) in columns.iter().enumerate() {
         match col_type {
             BottomColumn::Left => render_left_column(frame, areas[i], vis),
-            BottomColumn::Mid => frame.render_widget(panel_block(5), areas[i]),
-            BottomColumn::Right => frame.render_widget(panel_block(6), areas[i]),
+            BottomColumn::Mid => render_mid_column(frame, areas[i], vis),
+            BottomColumn::Right => frame.render_widget(panel_block(7), areas[i]),
         }
     }
 }
@@ -144,8 +145,8 @@ enum BottomColumn {
     Right,
 }
 
-/// Level 3: vertical split within the left column (panels 3, 4).
-fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+/// Level 3a: vertical split within the left column (panels 3, 4).
+fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     match (vis[2], vis[3]) {
         (true, true) => {
             let rows = Layout::default()
@@ -157,6 +158,23 @@ fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
         }
         (true, false) => frame.render_widget(panel_block(3), area),
         (false, true) => frame.render_widget(panel_block(4), area),
+        (false, false) => {}
+    }
+}
+
+/// Level 3b: vertical split within the mid column (panels 5, 6).
+fn render_mid_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
+    match (vis[4], vis[5]) {
+        (true, true) => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            frame.render_widget(panel_block(5), rows[0]);
+            frame.render_widget(panel_block(6), rows[1]);
+        }
+        (true, false) => frame.render_widget(panel_block(5), area),
+        (false, true) => frame.render_widget(panel_block(6), area),
         (false, false) => {}
     }
 }
