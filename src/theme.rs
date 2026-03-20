@@ -12,6 +12,7 @@ pub const CYAN: Color = Color::Rgb(0x0d, 0xb9, 0xd7);
 pub const SURFACE: Color = Color::Rgb(0x32, 0x34, 0x4a);
 pub const OVERLAY: Color = Color::Rgb(0x41, 0x48, 0x68);
 pub const MUTED: Color = Color::Rgb(0x56, 0x5f, 0x89);
+pub const KEY_HINT: Color = Color::Rgb(0xbb, 0x9a, 0xf7); // magenta – hotkey letters
 
 // Dimmed panel colors — toned-down variants for borders/titles
 pub const DIM_BLUE: Color = Color::Rgb(0x4a, 0x63, 0x8c);

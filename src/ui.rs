@@ -33,7 +33,7 @@ fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
         let first = chars.next().unwrap();
         spans.push(Span::styled(
             String::from(first),
-            Style::new().fg(color),
+            Style::new().fg(theme::KEY_HINT),
         ));
         spans.push(Span::styled(
             format!("{} ", chars.as_str()),
@@ -79,7 +79,7 @@ pub fn render_app(
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
     let hint_line = Line::from(vec![
-        Span::styled(" q", Style::new().fg(theme::ACCENT)),
+        Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
         Span::styled("uit ", Style::new().fg(theme::MUTED)),
     ]);
 
@@ -160,7 +160,7 @@ fn apps_panel_title(focused: bool, filter: &str, filtering: bool) -> Line<'stati
         } else {
             spans.push(Span::styled(
                 "f",
-                Style::new().fg(theme::ACCENT),
+                Style::new().fg(theme::KEY_HINT),
             ));
             spans.push(Span::styled("ilter", Style::new().fg(theme::MUTED)));
         }
@@ -179,22 +179,22 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
         .border_style(Style::new().fg(color));
 
     if focused {
-        let accent = Style::new().fg(theme::ACCENT);
+        let key = Style::new().fg(theme::KEY_HINT);
         let muted = Style::new().fg(theme::MUTED);
         let border = Style::new().fg(color);
         let mut hints = vec![
-            Span::styled(" o", accent),
+            Span::styled(" o", key),
             Span::styled("pen ", muted),
             Span::styled("───", border),
-            Span::styled(" k", accent),
+            Span::styled(" k", key),
             Span::styled("ill ", muted),
             Span::styled("───", border),
-            Span::styled(" e", accent),
+            Span::styled(" e", key),
             Span::styled("rase ", muted),
         ];
         if !filter.is_empty() && !filtering {
             hints.push(Span::styled("───", border));
-            hints.push(Span::styled(" Esc", Style::new().fg(theme::ACCENT)));
+            hints.push(Span::styled(" Esc", key));
             hints.push(Span::styled(" clear filter ", muted));
         }
         block = block.title_bottom(Line::from(hints));
