@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -136,25 +134,17 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Stri
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
             render_commands_panel(frame, cols[0], is_focused(app, 1), app.commands_cursor());
-            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid, app.logcat_cursor(), app.logcat_selected());
+            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid);
         }
         (true, false) => {
             render_commands_panel(frame, area, is_focused(app, 1), app.commands_cursor())
         }
-        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid, app.logcat_cursor(), app.logcat_selected()),
+        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid),
         (false, false) => {}
     }
 }
 
-fn render_logcat_panel(
-    frame: &mut Frame,
-    area: Rect,
-    focused: bool,
-    logcat_lines: &[String],
-    monitored_pid: Option<u32>,
-    cursor: Option<usize>,
-    selected: &HashSet<usize>,
-) {
+fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let block = panel_block(2, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -162,39 +152,10 @@ fn render_logcat_panel(
     let pid_str = monitored_pid.map(|p| p.to_string());
 
     let visible_height = inner.height as usize;
-    let len = logcat_lines.len();
-    let start = if len <= visible_height {
-        0
-    } else {
-        match cursor {
-            None => len - visible_height,
-            Some(c) => {
-                let half = visible_height / 2;
-                if c < half {
-                    0
-                } else if c + visible_height - half > len {
-                    len - visible_height
-                } else {
-                    c - half
-                }
-            }
-        }
-    };
-    let end = (start + visible_height).min(len);
-
-    let visible: Vec<Line> = logcat_lines[start..end]
+    let start = logcat_lines.len().saturating_sub(visible_height);
+    let visible: Vec<Line> = logcat_lines[start..]
         .iter()
-        .enumerate()
-        .map(|(i, l)| {
-            let global_idx = start + i;
-            let mut line = style_logcat_line(l, pid_str.as_deref());
-            if selected.contains(&global_idx) {
-                line = line.style(Style::new().bg(theme::OVERLAY));
-            } else if cursor == Some(global_idx) {
-                line = line.style(Style::new().bg(theme::SURFACE));
-            }
-            line
-        })
+        .map(|l| style_logcat_line(l, pid_str.as_deref()))
         .collect();
 
     let paragraph = Paragraph::new(visible).wrap(Wrap { trim: false });

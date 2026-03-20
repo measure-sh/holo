@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use crossterm::event::KeyCode;
 
 use crate::panel;
@@ -11,7 +9,6 @@ pub enum Action {
     KillApp,
     ClearDataAndOpen,
     ClearData,
-    CopyLogcat,
 }
 
 const COMMAND_COUNT: usize = 4;
@@ -27,9 +24,6 @@ pub struct App {
     visible: [bool; 6],
     focused: Option<u8>,
     commands_cursor: usize,
-    logcat_cursor: Option<usize>,
-    logcat_selected: HashSet<usize>,
-    logcat_len: usize,
 }
 
 impl App {
@@ -38,9 +32,6 @@ impl App {
             visible: [true; 6],
             focused: Some(2),
             commands_cursor: 0,
-            logcat_cursor: None,
-            logcat_selected: HashSet::new(),
-            logcat_len: 0,
         }
     }
 
@@ -64,44 +55,6 @@ impl App {
                         3 => Action::ClearDataAndOpen,
                         _ => Action::None,
                     };
-                }
-                _ => {}
-            }
-        }
-
-        if self.focused == Some(2) && self.logcat_len > 0 {
-            match code {
-                KeyCode::Up => {
-                    self.logcat_cursor = Some(match self.logcat_cursor {
-                        None => self.logcat_len - 1,
-                        Some(c) => c.saturating_sub(1),
-                    });
-                    return Action::None;
-                }
-                KeyCode::Down => {
-                    if let Some(c) = self.logcat_cursor {
-                        self.logcat_cursor = Some((c + 1).min(self.logcat_len - 1));
-                    }
-                    return Action::None;
-                }
-                KeyCode::Char(' ') => {
-                    if let Some(c) = self.logcat_cursor {
-                        if !self.logcat_selected.remove(&c) {
-                            self.logcat_selected.insert(c);
-                        }
-                        self.logcat_cursor = Some((c + 1).min(self.logcat_len - 1));
-                    }
-                    return Action::None;
-                }
-                KeyCode::Enter => {
-                    if self.logcat_cursor.is_some() {
-                        return Action::CopyLogcat;
-                    }
-                }
-                KeyCode::Esc => {
-                    self.logcat_cursor = None;
-                    self.logcat_selected.clear();
-                    return Action::None;
                 }
                 _ => {}
             }
@@ -152,50 +105,6 @@ impl App {
 
     pub fn commands_cursor(&self) -> usize {
         self.commands_cursor
-    }
-
-    pub fn set_logcat_len(&mut self, len: usize) {
-        self.logcat_len = len;
-        if let Some(c) = self.logcat_cursor {
-            if len == 0 {
-                self.logcat_cursor = None;
-                self.logcat_selected.clear();
-            } else if c >= len {
-                self.logcat_cursor = Some(len - 1);
-            }
-        }
-    }
-
-    pub fn logcat_cursor(&self) -> Option<usize> {
-        self.logcat_cursor
-    }
-
-    pub fn logcat_selected(&self) -> &HashSet<usize> {
-        &self.logcat_selected
-    }
-
-    pub fn clear_logcat_selection(&mut self) {
-        self.logcat_selected.clear();
-    }
-
-    pub fn logcat_scroll_offset(&self, visible_height: usize) -> usize {
-        let len = self.logcat_len;
-        if len <= visible_height {
-            return 0;
-        }
-        match self.logcat_cursor {
-            None => len - visible_height,
-            Some(cursor) => {
-                let half = visible_height / 2;
-                if cursor < half {
-                    0
-                } else if cursor + visible_height - half > len {
-                    len - visible_height
-                } else {
-                    cursor - half
-                }
-            }
-        }
     }
 }
 
@@ -362,119 +271,5 @@ mod tests {
         let mut app = App::new();
         app.handle_key(KeyCode::Down);
         assert_eq!(app.commands_cursor(), 0);
-    }
-
-    fn logcat_app(lines: usize) -> App {
-        let mut app = App::new();
-        app.set_logcat_len(lines);
-        app
-    }
-
-    #[test]
-    fn logcat_up_activates_cursor_at_last_line() {
-        let mut app = logcat_app(50);
-        assert_eq!(app.logcat_cursor(), None);
-        app.handle_key(KeyCode::Up);
-        assert_eq!(app.logcat_cursor(), Some(49));
-    }
-
-    #[test]
-    fn logcat_cursor_moves_within_bounds() {
-        let mut app = logcat_app(50);
-        app.handle_key(KeyCode::Up);
-        app.handle_key(KeyCode::Up);
-        assert_eq!(app.logcat_cursor(), Some(48));
-        app.handle_key(KeyCode::Down);
-        assert_eq!(app.logcat_cursor(), Some(49));
-    }
-
-    #[test]
-    fn logcat_cursor_clamps_at_zero() {
-        let mut app = logcat_app(3);
-        app.handle_key(KeyCode::Up);
-        for _ in 0..10 {
-            app.handle_key(KeyCode::Up);
-        }
-        assert_eq!(app.logcat_cursor(), Some(0));
-    }
-
-    #[test]
-    fn logcat_down_clamps_at_end() {
-        let mut app = logcat_app(5);
-        app.handle_key(KeyCode::Up);
-        for _ in 0..10 {
-            app.handle_key(KeyCode::Down);
-        }
-        assert_eq!(app.logcat_cursor(), Some(4));
-    }
-
-    #[test]
-    fn logcat_space_toggles_selection_and_advances() {
-        let mut app = logcat_app(10);
-        app.handle_key(KeyCode::Up);
-        app.handle_key(KeyCode::Up);
-        assert_eq!(app.logcat_cursor(), Some(8));
-        app.handle_key(KeyCode::Char(' '));
-        assert!(app.logcat_selected().contains(&8));
-        assert_eq!(app.logcat_cursor(), Some(9));
-        app.handle_key(KeyCode::Up);
-        app.handle_key(KeyCode::Char(' '));
-        assert!(!app.logcat_selected().contains(&8));
-    }
-
-    #[test]
-    fn logcat_esc_clears_cursor_and_selection() {
-        let mut app = logcat_app(10);
-        app.handle_key(KeyCode::Up);
-        app.handle_key(KeyCode::Char(' '));
-        assert!(app.logcat_cursor().is_some());
-        assert!(!app.logcat_selected().is_empty());
-        app.handle_key(KeyCode::Esc);
-        assert_eq!(app.logcat_cursor(), None);
-        assert!(app.logcat_selected().is_empty());
-    }
-
-    #[test]
-    fn logcat_enter_returns_copy_action() {
-        let mut app = logcat_app(10);
-        app.handle_key(KeyCode::Up);
-        assert!(matches!(
-            app.handle_key(KeyCode::Enter),
-            Action::CopyLogcat
-        ));
-    }
-
-    #[test]
-    fn logcat_enter_without_cursor_does_not_copy() {
-        let mut app = logcat_app(10);
-        assert!(matches!(app.handle_key(KeyCode::Enter), Action::None));
-    }
-
-    #[test]
-    fn logcat_down_without_cursor_is_noop() {
-        let mut app = logcat_app(10);
-        app.handle_key(KeyCode::Down);
-        assert_eq!(app.logcat_cursor(), None);
-    }
-
-    #[test]
-    fn logcat_scroll_offset_tails_in_default_mode() {
-        let mut app = App::new();
-        app.set_logcat_len(100);
-        assert_eq!(app.logcat_scroll_offset(20), 80);
-    }
-
-    #[test]
-    fn logcat_scroll_offset_centers_on_cursor() {
-        let mut app = App::new();
-        app.set_logcat_len(100);
-        app.handle_key(KeyCode::Up);
-        for _ in 0..50 {
-            app.handle_key(KeyCode::Up);
-        }
-        let offset = app.logcat_scroll_offset(20);
-        let cursor = app.logcat_cursor().unwrap();
-        assert!(cursor >= offset);
-        assert!(cursor < offset + 20);
     }
 }
