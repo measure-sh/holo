@@ -80,24 +80,41 @@ pub fn render_app(
             .alignment(Alignment::Center);
     let key_style = Style::new().fg(theme::ACCENT);
     let hint_style = Style::new().fg(theme::MUTED);
-    let hint_line = Line::from(vec![
-        Span::styled(" 1", key_style),
-        Span::styled("-", hint_style),
-        Span::styled("7", key_style),
-        Span::styled(" toggle visibility ", hint_style),
-        Span::styled("│", hint_style),
-        Span::styled(" i", key_style),
-        Span::styled("/", hint_style),
-        Span::styled("l", key_style),
-        Span::styled("/", hint_style),
-        Span::styled("c", key_style),
-        Span::styled(" focus ", hint_style),
-        Span::styled("│", hint_style),
-        Span::styled(" q", key_style),
-        Span::styled("/", hint_style),
-        Span::styled("Esc", key_style),
-        Span::styled(" exit ", hint_style),
-    ]);
+    let apps_focused = app.focused_panel() == Some(1);
+    let hint_line = if apps_focused {
+        Line::from(vec![
+            Span::styled(" o", key_style),
+            Span::styled(" Open ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" k", key_style),
+            Span::styled(" Kill ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" r", key_style),
+            Span::styled(" Clear+Open ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" e", key_style),
+            Span::styled(" Clear ", hint_style),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(" 1", key_style),
+            Span::styled("-", hint_style),
+            Span::styled("7", key_style),
+            Span::styled(" toggle visibility ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" i", key_style),
+            Span::styled("/", hint_style),
+            Span::styled("l", key_style),
+            Span::styled("/", hint_style),
+            Span::styled("c", key_style),
+            Span::styled(" focus ", hint_style),
+            Span::styled("│", hint_style),
+            Span::styled(" q", key_style),
+            Span::styled("/", hint_style),
+            Span::styled("Esc", key_style),
+            Span::styled(" exit ", hint_style),
+        ])
+    };
 
     let mut block = Block::default()
         .borders(Borders::ALL)
