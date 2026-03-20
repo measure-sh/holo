@@ -1,5 +1,7 @@
 use crossterm::event::KeyCode;
 
+use crate::panel;
+
 pub enum Action {
     Quit,
     None,
@@ -22,17 +24,31 @@ impl App {
         match code {
             KeyCode::Char('q') | KeyCode::Esc => Action::Quit,
             KeyCode::Char(c @ '1'..='7') => {
-                self.toggle_panel(c as u8 - b'0');
+                self.toggle_visibility(c as u8 - b'0');
                 Action::None
             }
-            KeyCode::Char('i') => { self.focus_panel(1); Action::None }
-            KeyCode::Char('l') => { self.focus_panel(2); Action::None }
-            KeyCode::Char('c') => { self.focus_panel(7); Action::None }
+            KeyCode::Char(c) => {
+                if let Some(panel) = panel::by_focus_key(c) {
+                    self.toggle_focus(panel.number);
+                }
+                Action::None
+            }
             _ => Action::None,
         }
     }
 
-    fn focus_panel(&mut self, n: u8) {
+    fn toggle_visibility(&mut self, n: u8) {
+        if !(1..=7).contains(&n) {
+            return;
+        }
+        let idx = (n - 1) as usize;
+        if self.visible[idx] && self.visible.iter().filter(|&&v| v).count() == 1 {
+            return;
+        }
+        self.visible[idx] = !self.visible[idx];
+    }
+
+    fn toggle_focus(&mut self, n: u8) {
         if self.focused == Some(n) {
             self.focused = None;
         } else {
@@ -40,24 +56,12 @@ impl App {
         }
     }
 
-    pub fn focused_panel(&self) -> Option<u8> {
-        self.focused
-    }
-
-    fn toggle_panel(&mut self, n: u8) {
-        if !(1..=7).contains(&n) {
-            return;
-        }
-        let idx = (n - 1) as usize;
-        // Prevent hiding the last visible panel
-        if self.visible[idx] && self.visible.iter().filter(|&&v| v).count() == 1 {
-            return;
-        }
-        self.visible[idx] = !self.visible[idx];
-    }
-
     pub fn panel_visibility(&self) -> &[bool; 7] {
         &self.visible
+    }
+
+    pub fn focused_panel(&self) -> Option<u8> {
+        self.focused
     }
 }
 
@@ -72,17 +76,17 @@ mod tests {
     }
 
     #[test]
-    fn toggle_hides_panel() {
+    fn toggle_visibility_hides_panel() {
         let mut app = App::new();
-        app.toggle_panel(3);
+        app.toggle_visibility(3);
         assert_eq!(app.panel_visibility(), &[true, true, false, true, true, true, true]);
     }
 
     #[test]
-    fn toggle_twice_restores_panel() {
+    fn toggle_visibility_twice_restores_panel() {
         let mut app = App::new();
-        app.toggle_panel(3);
-        app.toggle_panel(3);
+        app.toggle_visibility(3);
+        app.toggle_visibility(3);
         assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
@@ -90,19 +94,18 @@ mod tests {
     fn cannot_hide_last_panel() {
         let mut app = App::new();
         for n in 2..=7 {
-            app.toggle_panel(n);
+            app.toggle_visibility(n);
         }
         assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false, false]);
-        // Try to hide the last one — should be prevented
-        app.toggle_panel(1);
+        app.toggle_visibility(1);
         assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false, false]);
     }
 
     #[test]
     fn out_of_range_is_ignored() {
         let mut app = App::new();
-        app.toggle_panel(0);
-        app.toggle_panel(8);
+        app.toggle_visibility(0);
+        app.toggle_visibility(8);
         assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
@@ -119,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_panel_number_toggles() {
+    fn handle_key_digit_toggles_visibility() {
         let mut app = App::new();
         assert!(matches!(app.handle_key(KeyCode::Char('3')), Action::None));
         assert_eq!(app.panel_visibility(), &[true, true, false, true, true, true, true]);
