@@ -115,6 +115,10 @@ impl App {
         }
 
         if self.focused == Some(2) {
+            if code == KeyCode::Esc && self.logcat_scroll > 0 {
+                self.logcat_scroll = 0;
+                return Action::None;
+            }
             match code {
                 KeyCode::Char('t') => {
                     self.input_mode = InputMode::EditingTag;
@@ -517,6 +521,28 @@ mod tests {
         app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Down);
         assert_eq!(app.logcat_scroll(), 0);
+    }
+
+    #[test]
+    fn esc_resets_scroll_to_zero() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Up);
+        assert_eq!(app.logcat_scroll(), 3);
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.logcat_scroll(), 0);
+    }
+
+    #[test]
+    fn esc_does_nothing_when_already_at_bottom() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
+        assert_eq!(app.logcat_scroll(), 0);
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.logcat_scroll(), 0);
+        assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]

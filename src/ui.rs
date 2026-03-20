@@ -256,10 +256,17 @@ fn render_logcat_panel(
 
     if logcat_scroll > 0 {
         block = block.title_top(
-            Line::from(vec![Span::styled(
-                format!(" ↑{} ", logcat_scroll),
-                Style::new().fg(theme::MUTED),
-            )])
+            Line::from(vec![
+                Span::styled(
+                    format!(" ↑{} ", logcat_scroll),
+                    Style::new().fg(theme::MUTED),
+                ),
+                Span::styled(
+                    " ESC",
+                    Style::new().fg(theme::KEY_HINT).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" resume ", Style::new().fg(theme::MUTED)),
+            ])
             .alignment(Alignment::Right),
         );
     }
