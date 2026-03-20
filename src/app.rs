@@ -5,6 +5,10 @@ use crate::panel;
 pub enum Action {
     Quit,
     None,
+    OpenApp(usize),
+    KillApp(usize),
+    ClearDataAndOpen(usize),
+    ClearData(usize),
 }
 
 pub struct App {
@@ -27,6 +31,10 @@ impl App {
             match code {
                 KeyCode::Up => { self.move_apps_cursor(-1, app_count); return Action::None; }
                 KeyCode::Down => { self.move_apps_cursor(1, app_count); return Action::None; }
+                KeyCode::Char('o') => return Action::OpenApp(self.apps_cursor),
+                KeyCode::Char('k') => return Action::KillApp(self.apps_cursor),
+                KeyCode::Char('r') => return Action::ClearDataAndOpen(self.apps_cursor),
+                KeyCode::Char('e') => return Action::ClearData(self.apps_cursor),
                 _ => {}
             }
         }
@@ -247,5 +255,42 @@ mod tests {
         // Refocus — cursor remembered
         app.handle_key(KeyCode::Char('i'), 10);
         assert_eq!(app.selected_app(), Some(2));
+    }
+
+    #[test]
+    fn o_opens_app_when_focused() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Down, 10);
+        assert!(matches!(app.handle_key(KeyCode::Char('o'), 10), Action::OpenApp(1)));
+    }
+
+    #[test]
+    fn k_kills_app_when_focused() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Down, 10);
+        app.handle_key(KeyCode::Down, 10);
+        assert!(matches!(app.handle_key(KeyCode::Char('k'), 10), Action::KillApp(2)));
+    }
+
+    #[test]
+    fn r_clears_and_opens_when_focused() {
+        let mut app = App::new();
+        assert!(matches!(app.handle_key(KeyCode::Char('r'), 10), Action::ClearDataAndOpen(0)));
+    }
+
+    #[test]
+    fn e_clears_data_when_focused() {
+        let mut app = App::new();
+        assert!(matches!(app.handle_key(KeyCode::Char('e'), 10), Action::ClearData(0)));
+    }
+
+    #[test]
+    fn app_actions_ignored_when_not_focused() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'), 10); // focus panel 2
+        assert!(matches!(app.handle_key(KeyCode::Char('o'), 10), Action::None));
+        assert!(matches!(app.handle_key(KeyCode::Char('k'), 10), Action::None));
+        assert!(matches!(app.handle_key(KeyCode::Char('r'), 10), Action::None));
+        assert!(matches!(app.handle_key(KeyCode::Char('e'), 10), Action::None));
     }
 }
