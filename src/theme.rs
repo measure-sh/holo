@@ -12,3 +12,12 @@ pub const CYAN: Color = Color::Rgb(0x0d, 0xb9, 0xd7);
 pub const SURFACE: Color = Color::Rgb(0x32, 0x34, 0x4a);
 pub const OVERLAY: Color = Color::Rgb(0x41, 0x48, 0x68);
 pub const MUTED: Color = Color::Rgb(0x56, 0x5f, 0x89);
+
+// Dimmed panel colors — toned-down variants for borders/titles
+pub const DIM_BLUE: Color = Color::Rgb(0x4a, 0x63, 0x8c);
+pub const DIM_GREEN: Color = Color::Rgb(0x5a, 0x76, 0x3e);
+pub const DIM_YELLOW: Color = Color::Rgb(0x80, 0x6a, 0x40);
+pub const DIM_CYAN: Color = Color::Rgb(0x2a, 0x6a, 0x7a);
+pub const DIM_MAGENTA: Color = Color::Rgb(0x6a, 0x5a, 0x8c);
+pub const DIM_RED: Color = Color::Rgb(0x8c, 0x4a, 0x54);
+pub const DIM_TEAL: Color = Color::Rgb(0x3a, 0x70, 0x6a);

@@ -10,30 +10,19 @@ use crate::apps;
 use crate::battery;
 use crate::theme;
 
-const PANEL_NAMES: [&str; 7] = [
-    "Installed Apps",
-    "Logcat",
-    "Network",
-    "CPU",
-    "Memory",
-    "Disk Usage",
-    "Commands",
-];
-
-use ratatui::style::Color;
-
-const PANEL_COLORS: [Color; 7] = [
-    theme::ACCENT,  // 1 - blue
-    theme::GREEN,   // 2 - green
-    theme::YELLOW,  // 3 - yellow
-    theme::CYAN,    // 4 - cyan
-    theme::MAGENTA, // 5 - magenta
-    theme::RED,     // 6 - red
-    theme::GREEN,   // 7 - green
+// icon, label, dim color
+const PANEL_INFO: [(&str, &str, ratatui::style::Color); 7] = [
+    ("\u{f0674}", "installed apps", theme::DIM_BLUE),    // 󰙴 apps
+    ("\u{f4aa}",  "logcat",         theme::DIM_GREEN),   //  log
+    ("\u{f0bf9}", "network",        theme::DIM_YELLOW),  // 󰯹 network
+    ("\u{f4bc}",  "cpu",            theme::DIM_CYAN),    //  cpu
+    ("\u{efc5}",  "memory",         theme::DIM_MAGENTA), //  memory
+    ("\u{f02ca}", "disk usage",     theme::DIM_RED),     // 󰋊 disk
+    ("\u{f489}",  "commands",       theme::DIM_TEAL),    //  terminal
 ];
 
 fn panel_title(index: u8) -> Line<'static> {
-    let color = PANEL_COLORS[(index - 1) as usize];
+    let (icon, name, color) = PANEL_INFO[(index - 1) as usize];
     Line::from(vec![
         Span::raw(" "),
         Span::styled(
@@ -41,14 +30,18 @@ fn panel_title(index: u8) -> Line<'static> {
             Style::new().fg(color).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
-            format!(" {} ", PANEL_NAMES[(index - 1) as usize]),
+            format!(" {} ", icon),
+            Style::new().fg(color),
+        ),
+        Span::styled(
+            format!("{} ", name),
             Style::new().fg(theme::MUTED),
         ),
     ])
 }
 
 fn panel_block(index: u8) -> Block<'static> {
-    let color = PANEL_COLORS[(index - 1) as usize];
+    let (_, _, color) = PANEL_INFO[(index - 1) as usize];
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
