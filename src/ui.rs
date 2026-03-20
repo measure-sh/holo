@@ -160,28 +160,33 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
     }
 }
 
-fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
-    let mut block = panel_block(1, focused);
+fn apps_panel_title(focused: bool, filter: &str, filtering: bool) -> Line<'static> {
+    let mut spans = panel_title(1, focused).spans;
 
     if focused {
-        let filter_line = if filtering || !filter.is_empty() {
-            let mut spans = vec![
-                Span::styled(" ", Style::default()),
-                Span::styled(filter, Style::new().fg(theme::FG)),
-            ];
+        spans.push(Span::styled("   ", Style::default()));
+        if filtering || !filter.is_empty() {
+            spans.push(Span::styled(filter.to_string(), Style::new().fg(theme::FG)));
             if filtering {
                 spans.push(Span::styled("█", Style::new().fg(theme::ACCENT)));
             }
-            spans.push(Span::styled("  ", Style::default()));
-            Line::from(spans).alignment(Alignment::Right)
         } else {
-            Line::from(vec![
-                Span::styled(" f", Style::new().fg(theme::ACCENT)),
-                Span::styled(" Filter  ", Style::new().fg(theme::MUTED)),
-            ]).alignment(Alignment::Right)
-        };
-        block = block.title(filter_line);
+            spans.push(Span::styled("f", Style::new().fg(theme::ACCENT)));
+            spans.push(Span::styled(" filter", Style::new().fg(theme::MUTED)));
+        }
     }
+
+    spans.push(Span::styled(" ", Style::default()));
+    Line::from(spans)
+}
+
+fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
+    let color = panel::by_number(1).border_color(focused);
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(apps_panel_title(focused, filter, filtering))
+        .border_style(Style::new().fg(color));
 
     if focused {
         let key_style = Style::new().fg(theme::ACCENT);
