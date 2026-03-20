@@ -275,7 +275,8 @@ fn render_logcat_panel(
     frame.render_widget(list, inner);
 
     if filtered.len() > visible_height {
-        let mut scrollbar_state = ScrollbarState::new(filtered.len()).position(start);
+        let mut scrollbar_state =
+            ScrollbarState::new(filtered.len().saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .thumb_style(Style::new().fg(theme::MUTED))
             .track_style(Style::new().fg(theme::SURFACE));
