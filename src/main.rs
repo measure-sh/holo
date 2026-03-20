@@ -52,7 +52,7 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, app.selected_panel)
+            ui::render_app(frame, &title, &time_str, battery_level, &app.visible_panels())
         })?;
 
         if event::poll(Duration::from_secs(1))? {

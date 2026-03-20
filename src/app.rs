@@ -6,13 +6,13 @@ pub enum Action {
 }
 
 pub struct App {
-    pub selected_panel: Option<u8>,
+    visible: [bool; 6],
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
-            selected_panel: None,
+            visible: [true; 6],
         }
     }
 
@@ -20,22 +20,32 @@ impl App {
         match code {
             KeyCode::Char('q') | KeyCode::Esc => Action::Quit,
             KeyCode::Char(c @ '1'..='6') => {
-                self.select_panel(c as u8 - b'0');
+                self.toggle_panel(c as u8 - b'0');
                 Action::None
             }
             _ => Action::None,
         }
     }
 
-    fn select_panel(&mut self, n: u8) {
+    fn toggle_panel(&mut self, n: u8) {
         if !(1..=6).contains(&n) {
             return;
         }
-        if self.selected_panel == Some(n) {
-            self.selected_panel = None;
-        } else {
-            self.selected_panel = Some(n);
+        let idx = (n - 1) as usize;
+        // Prevent hiding the last visible panel
+        if self.visible[idx] && self.visible.iter().filter(|&&v| v).count() == 1 {
+            return;
         }
+        self.visible[idx] = !self.visible[idx];
+    }
+
+    pub fn visible_panels(&self) -> Vec<u8> {
+        self.visible
+            .iter()
+            .enumerate()
+            .filter(|(_, v)| **v)
+            .map(|(i, _)| (i + 1) as u8)
+            .collect()
     }
 }
 
@@ -44,44 +54,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_app_has_no_selection() {
+    fn new_app_all_panels_visible() {
         let app = App::new();
-        assert_eq!(app.selected_panel, None);
+        assert_eq!(app.visible_panels(), vec![1, 2, 3, 4, 5, 6]);
     }
 
     #[test]
-    fn select_panel_sets_selection() {
+    fn toggle_hides_panel() {
         let mut app = App::new();
-        app.select_panel(3);
-        assert_eq!(app.selected_panel, Some(3));
+        app.toggle_panel(3);
+        assert_eq!(app.visible_panels(), vec![1, 2, 4, 5, 6]);
     }
 
     #[test]
-    fn select_same_panel_toggles_off() {
+    fn toggle_twice_restores_panel() {
         let mut app = App::new();
-        app.select_panel(2);
-        app.select_panel(2);
-        assert_eq!(app.selected_panel, None);
+        app.toggle_panel(3);
+        app.toggle_panel(3);
+        assert_eq!(app.visible_panels(), vec![1, 2, 3, 4, 5, 6]);
     }
 
     #[test]
-    fn select_different_panel_switches() {
+    fn cannot_hide_last_panel() {
         let mut app = App::new();
-        app.select_panel(1);
-        app.select_panel(4);
-        assert_eq!(app.selected_panel, Some(4));
+        // Hide all but panel 1
+        for n in 2..=6 {
+            app.toggle_panel(n);
+        }
+        assert_eq!(app.visible_panels(), vec![1]);
+        // Try to hide the last one — should be prevented
+        app.toggle_panel(1);
+        assert_eq!(app.visible_panels(), vec![1]);
     }
 
     #[test]
     fn out_of_range_is_ignored() {
         let mut app = App::new();
-        app.select_panel(0);
-        assert_eq!(app.selected_panel, None);
-        app.select_panel(7);
-        assert_eq!(app.selected_panel, None);
-        app.select_panel(3);
-        app.select_panel(0);
-        assert_eq!(app.selected_panel, Some(3));
+        app.toggle_panel(0);
+        app.toggle_panel(7);
+        assert_eq!(app.visible_panels(), vec![1, 2, 3, 4, 5, 6]);
     }
 
     #[test]
@@ -97,16 +108,16 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_panel_number_selects() {
+    fn handle_key_panel_number_toggles() {
         let mut app = App::new();
         assert!(matches!(app.handle_key(KeyCode::Char('3')), Action::None));
-        assert_eq!(app.selected_panel, Some(3));
+        assert_eq!(app.visible_panels(), vec![1, 2, 4, 5, 6]);
     }
 
     #[test]
     fn handle_key_unknown_is_none() {
         let mut app = App::new();
         assert!(matches!(app.handle_key(KeyCode::Char('x')), Action::None));
-        assert_eq!(app.selected_panel, None);
+        assert_eq!(app.visible_panels(), vec![1, 2, 3, 4, 5, 6]);
     }
 }

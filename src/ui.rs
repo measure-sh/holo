@@ -18,17 +18,11 @@ const PANEL_TITLES: [&str; 6] = [
     "6. Disk Usage",
 ];
 
-fn panel_block(index: u8, selected_panel: Option<u8>) -> Block<'static> {
-    let border_color = if selected_panel == Some(index) {
-        theme::ACCENT
-    } else {
-        theme::SURFACE
-    };
-
+fn panel_block(index: u8) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
         .title(format!(" {} ", PANEL_TITLES[(index - 1) as usize]))
-        .border_style(Style::new().fg(border_color))
+        .border_style(Style::new().fg(theme::SURFACE))
 }
 
 pub fn render_app(
@@ -36,7 +30,7 @@ pub fn render_app(
     title: &str,
     time: &str,
     battery_level: Option<u8>,
-    selected_panel: Option<u8>,
+    visible_panels: &[u8],
 ) {
     let area = frame.area();
 
@@ -50,7 +44,7 @@ pub fn render_app(
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
     let hint_line =
-        Line::from(" 1-6: panel | q/Esc: exit ").style(Style::new().fg(theme::MUTED));
+        Line::from(" 1-6: toggle | q/Esc: exit ").style(Style::new().fg(theme::MUTED));
 
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -68,38 +62,106 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, selected_panel);
+    render_panels(frame, inner, visible_panels);
 }
 
-fn render_panels(frame: &mut Frame, area: Rect, selected_panel: Option<u8>) {
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
-
-    let top_cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(rows[0]);
-
-    let bot_cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(40),
-            Constraint::Percentage(30),
-            Constraint::Percentage(30),
-        ])
-        .split(rows[1]);
-
-    let mid_right = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(bot_cols[1]);
-
-    frame.render_widget(panel_block(1, selected_panel), top_cols[0]);
-    frame.render_widget(panel_block(2, selected_panel), top_cols[1]);
-    frame.render_widget(panel_block(3, selected_panel), bot_cols[0]);
-    frame.render_widget(panel_block(4, selected_panel), mid_right[0]);
-    frame.render_widget(panel_block(5, selected_panel), mid_right[1]);
-    frame.render_widget(panel_block(6, selected_panel), bot_cols[2]);
+fn render_panels(frame: &mut Frame, area: Rect, visible_panels: &[u8]) {
+    match visible_panels.len() {
+        0 => {}
+        1 => {
+            frame.render_widget(panel_block(visible_panels[0]), area);
+        }
+        2 => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            for (i, &col) in cols.iter().enumerate() {
+                frame.render_widget(panel_block(visible_panels[i]), col);
+            }
+        }
+        3 => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(34),
+                    Constraint::Percentage(33),
+                ])
+                .split(area);
+            for (i, &col) in cols.iter().enumerate() {
+                frame.render_widget(panel_block(visible_panels[i]), col);
+            }
+        }
+        4 => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            let top = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(rows[0]);
+            let bot = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(rows[1]);
+            frame.render_widget(panel_block(visible_panels[0]), top[0]);
+            frame.render_widget(panel_block(visible_panels[1]), top[1]);
+            frame.render_widget(panel_block(visible_panels[2]), bot[0]);
+            frame.render_widget(panel_block(visible_panels[3]), bot[1]);
+        }
+        5 => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            let top = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(34),
+                    Constraint::Percentage(33),
+                ])
+                .split(rows[0]);
+            let bot = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(rows[1]);
+            frame.render_widget(panel_block(visible_panels[0]), top[0]);
+            frame.render_widget(panel_block(visible_panels[1]), top[1]);
+            frame.render_widget(panel_block(visible_panels[2]), top[2]);
+            frame.render_widget(panel_block(visible_panels[3]), bot[0]);
+            frame.render_widget(panel_block(visible_panels[4]), bot[1]);
+        }
+        _ => {
+            // 6 panels: 3×2 grid
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            let top = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(34),
+                    Constraint::Percentage(33),
+                ])
+                .split(rows[0]);
+            let bot = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([
+                    Constraint::Percentage(33),
+                    Constraint::Percentage(34),
+                    Constraint::Percentage(33),
+                ])
+                .split(rows[1]);
+            frame.render_widget(panel_block(visible_panels[0]), top[0]);
+            frame.render_widget(panel_block(visible_panels[1]), top[1]);
+            frame.render_widget(panel_block(visible_panels[2]), top[2]);
+            frame.render_widget(panel_block(visible_panels[3]), bot[0]);
+            frame.render_widget(panel_block(visible_panels[4]), bot[1]);
+            frame.render_widget(panel_block(visible_panels[5]), bot[2]);
+        }
+    }
 }
