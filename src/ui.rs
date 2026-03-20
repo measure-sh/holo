@@ -78,23 +78,9 @@ pub fn render_app(
         Line::from(time)
             .style(Style::new().fg(theme::FG))
             .alignment(Alignment::Center);
-    let key_style = Style::new().fg(theme::ACCENT);
-    let hint_style = Style::new().fg(theme::MUTED);
     let hint_line = Line::from(vec![
-        Span::styled(" 1", key_style),
-        Span::styled("-", hint_style),
-        Span::styled("7", key_style),
-        Span::styled(" toggle visibility ", hint_style),
-        Span::styled("│", hint_style),
-        Span::styled(" i", key_style),
-        Span::styled("/", hint_style),
-        Span::styled("l", key_style),
-        Span::styled("/", hint_style),
-        Span::styled("c", key_style),
-        Span::styled(" focus ", hint_style),
-        Span::styled("│", hint_style),
-        Span::styled(" q", key_style),
-        Span::styled(" exit ", hint_style),
+        Span::styled(" q", Style::new().fg(theme::ACCENT).add_modifier(Modifier::UNDERLINED)),
+        Span::styled("uit ", Style::new().fg(theme::MUTED)),
     ]);
 
     let mut block = Block::default()
@@ -162,17 +148,21 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
 
 fn apps_panel_title(focused: bool, filter: &str, filtering: bool) -> Line<'static> {
     let mut spans = panel_title(1, focused).spans;
+    let border_color = panel::by_number(1).border_color(focused);
 
     if focused {
-        spans.push(Span::styled("   ", Style::default()));
+        spans.push(Span::styled("───", Style::new().fg(border_color)));
         if filtering || !filter.is_empty() {
             spans.push(Span::styled(filter.to_string(), Style::new().fg(theme::FG)));
             if filtering {
                 spans.push(Span::styled("█", Style::new().fg(theme::ACCENT)));
             }
         } else {
-            spans.push(Span::styled("f", Style::new().fg(theme::ACCENT)));
-            spans.push(Span::styled(" filter", Style::new().fg(theme::MUTED)));
+            spans.push(Span::styled(
+                "f",
+                Style::new().fg(theme::ACCENT).add_modifier(Modifier::UNDERLINED),
+            ));
+            spans.push(Span::styled("ilter", Style::new().fg(theme::MUTED)));
         }
     }
 
@@ -189,25 +179,23 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
         .border_style(Style::new().fg(color));
 
     if focused {
-        let key_style = Style::new().fg(theme::ACCENT);
-        let hint_style = Style::new().fg(theme::MUTED);
+        let accent = Style::new().fg(theme::ACCENT).add_modifier(Modifier::UNDERLINED);
+        let muted = Style::new().fg(theme::MUTED);
+        let border = Style::new().fg(color);
         let mut hints = vec![
-            Span::styled(" o", key_style),
-            Span::styled(" open ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" k", key_style),
-            Span::styled(" kill ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" r", key_style),
-            Span::styled(" clear+open ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" e", key_style),
-            Span::styled(" clear ", hint_style),
+            Span::styled(" o", accent),
+            Span::styled("pen ", muted),
+            Span::styled("───", border),
+            Span::styled(" k", accent),
+            Span::styled("ill ", muted),
+            Span::styled("───", border),
+            Span::styled(" e", accent),
+            Span::styled("rase ", muted),
         ];
         if !filter.is_empty() && !filtering {
-            hints.push(Span::styled("│", hint_style));
-            hints.push(Span::styled(" Esc", key_style));
-            hints.push(Span::styled(" Clear filter ", hint_style));
+            hints.push(Span::styled("───", border));
+            hints.push(Span::styled(" Esc", Style::new().fg(theme::ACCENT)));
+            hints.push(Span::styled(" clear filter ", muted));
         }
         block = block.title_bottom(Line::from(hints));
     }
