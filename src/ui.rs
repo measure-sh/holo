@@ -168,7 +168,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
     spans.push(Span::styled(" t", accent));
     spans.push(Span::styled(format!("ag:{} ", tag_display), muted));
     if matches!(input_mode, InputMode::EditingTag) {
-        spans.push(Span::styled("Esc ", Style::new().fg(theme::RED)));
+        spans.push(Span::styled("⏎ ", Style::new().fg(theme::RED)));
     }
 
     spans.push(Span::styled("───", border));
@@ -191,7 +191,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
     spans.push(Span::styled(" s", accent));
     spans.push(Span::styled(format!("earch:{} ", search_display), muted));
     if matches!(input_mode, InputMode::EditingSearch) {
-        spans.push(Span::styled("Esc ", Style::new().fg(theme::RED)));
+        spans.push(Span::styled("⏎ ", Style::new().fg(theme::RED)));
     }
 
     spans.push(Span::styled("───", border));

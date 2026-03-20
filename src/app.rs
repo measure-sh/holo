@@ -73,7 +73,7 @@ impl App {
                 match code {
                     KeyCode::Char(c) => self.logcat_filter.tag.push(c),
                     KeyCode::Backspace => { self.logcat_filter.tag.pop(); }
-                    KeyCode::Enter | KeyCode::Esc => self.input_mode = InputMode::Normal,
+                    KeyCode::Enter => self.input_mode = InputMode::Normal,
                     _ => {}
                 }
                 return Action::None;
@@ -82,7 +82,7 @@ impl App {
                 match code {
                     KeyCode::Char(c) => self.logcat_filter.search.push(c),
                     KeyCode::Backspace => { self.logcat_filter.search.pop(); }
-                    KeyCode::Enter | KeyCode::Esc => self.input_mode = InputMode::Normal,
+                    KeyCode::Enter => self.input_mode = InputMode::Normal,
                     _ => {}
                 }
                 return Action::None;
@@ -444,16 +444,6 @@ mod tests {
         app.handle_key(KeyCode::Char('b'));
         app.handle_key(KeyCode::Backspace);
         assert_eq!(app.logcat_filter().tag, "a");
-    }
-
-    #[test]
-    fn esc_exits_editing_mode() {
-        let mut app = App::new();
-        app.handle_key(KeyCode::Char('l'));
-        app.handle_key(KeyCode::Char('t'));
-        assert_eq!(app.input_mode(), InputMode::EditingTag);
-        app.handle_key(KeyCode::Esc);
-        assert_eq!(app.input_mode(), InputMode::Normal);
     }
 
     #[test]
