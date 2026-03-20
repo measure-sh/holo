@@ -163,16 +163,24 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
 fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>, processes: Option<&HashMap<String, u32>>, filter: &str, filtering: bool) {
     let mut block = panel_block(1, focused);
 
-    if filtering || !filter.is_empty() {
-        let mut filter_spans = vec![
-            Span::styled(" ", Style::default()),
-            Span::styled(filter, Style::new().fg(theme::FG)),
-        ];
-        if filtering {
-            filter_spans.push(Span::styled("█", Style::new().fg(theme::ACCENT)));
-        }
-        filter_spans.push(Span::styled(" ", Style::default()));
-        block = block.title(Line::from(filter_spans).alignment(Alignment::Right));
+    if focused {
+        let filter_line = if filtering || !filter.is_empty() {
+            let mut spans = vec![
+                Span::styled(" ", Style::default()),
+                Span::styled(filter, Style::new().fg(theme::FG)),
+            ];
+            if filtering {
+                spans.push(Span::styled("█", Style::new().fg(theme::ACCENT)));
+            }
+            spans.push(Span::styled("  ", Style::default()));
+            Line::from(spans).alignment(Alignment::Right)
+        } else {
+            Line::from(vec![
+                Span::styled(" f", Style::new().fg(theme::ACCENT)),
+                Span::styled(" Filter  ", Style::new().fg(theme::MUTED)),
+            ]).alignment(Alignment::Right)
+        };
+        block = block.title(filter_line);
     }
 
     if focused {
@@ -190,14 +198,11 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
             Span::styled("│", hint_style),
             Span::styled(" e", key_style),
             Span::styled(" Clear ", hint_style),
-            Span::styled("│", hint_style),
-            Span::styled(" f", key_style),
-            Span::styled(" Filter ", hint_style),
         ];
         if !filter.is_empty() && !filtering {
             hints.push(Span::styled("│", hint_style));
             hints.push(Span::styled(" Esc", key_style));
-            hints.push(Span::styled(" Clear ", hint_style));
+            hints.push(Span::styled(" Clear filter ", hint_style));
         }
         block = block.title_bottom(Line::from(hints));
     }
