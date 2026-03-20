@@ -7,7 +7,6 @@ pub enum Action {
     None,
     OpenApp,
     KillApp,
-    ClearDataAndOpen,
     ClearData,
 }
 
@@ -133,8 +132,7 @@ impl App {
             KeyCode::Char('q') => Action::Quit,
             KeyCode::Char('o') => Action::OpenApp,
             KeyCode::Char('k') => Action::KillApp,
-            KeyCode::Char('d') => Action::ClearData,
-            KeyCode::Char('f') => Action::ClearDataAndOpen,
+            KeyCode::Char('c') => Action::ClearData,
             KeyCode::Char(c @ '1'..='6') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -321,15 +319,9 @@ mod tests {
     }
 
     #[test]
-    fn d_clears_data() {
+    fn c_clears_data() {
         let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Char('d')), Action::ClearData));
-    }
-
-    #[test]
-    fn f_clears_data_and_opens() {
-        let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Char('f')), Action::ClearDataAndOpen));
+        assert!(matches!(app.handle_key(KeyCode::Char('c')), Action::ClearData));
     }
 
     #[test]

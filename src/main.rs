@@ -185,11 +185,6 @@ fn run_app(
                             adb.clear_app_data(s, p)
                         });
                     }
-                    Action::ClearDataAndOpen => {
-                        spawn_app_action(&adb, &device.serial, package, |adb, s, p| {
-                            adb.clear_app_data(s, p).and_then(|_| adb.launch_app(s, p))
-                        });
-                    }
                     Action::None => {}
                 }
             }

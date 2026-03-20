@@ -11,11 +11,10 @@ use ratatui::{
 
 use crate::app::{App, InputMode, LogcatFilter};
 
-const COMMAND_LABELS: [&str; 4] = [
+const COMMAND_LABELS: [&str; 3] = [
     "open app",
     "kill app",
-    "delete data",
-    "fresh start",
+    "clear data",
 ];
 use crate::battery;
 use crate::logcat;
