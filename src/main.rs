@@ -10,10 +10,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use crossterm::event::{self, Event, KeyEventKind};
 
 use adb::{Adb, Device, RealAdb};
-use app::App;
+use app::{Action, App};
 use boot::BootResult;
 
 fn main() -> Result<()> {
@@ -60,12 +60,8 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                    KeyCode::Char(c @ '1'..='6') => {
-                        app.select_panel(c as u8 - b'0');
-                    }
-                    _ => {}
+                if matches!(app.handle_key(key.code), Action::Quit) {
+                    return Ok(());
                 }
             }
         }
