@@ -73,7 +73,7 @@ pub fn render_app(
         Span::styled(" 1", key_style),
         Span::styled("-", hint_style),
         Span::styled("7", key_style),
-        Span::styled(" toggle ", hint_style),
+        Span::styled(" toggle visibility ", hint_style),
         Span::styled("│", hint_style),
         Span::styled(" q", key_style),
         Span::styled("/", hint_style),
