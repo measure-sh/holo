@@ -46,20 +46,20 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
     let mut battery_level: Option<u8> = None;
 
     let apps_rx = apps::spawn_poller(adb, device.serial.clone());
-    let mut packages: Vec<String> = Vec::new();
+    let mut packages: Option<Vec<String>> = None;
 
     loop {
         while let Ok(level) = battery_rx.try_recv() {
             battery_level = Some(level);
         }
         while let Ok(pkgs) = apps_rx.try_recv() {
-            packages = pkgs;
+            packages = Some(pkgs);
         }
 
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, app.panel_visibility(), &packages)
+            ui::render_app(frame, &title, &time_str, battery_level, app.panel_visibility(), packages.as_deref())
         })?;
 
         if event::poll(Duration::from_secs(1))? {

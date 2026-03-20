@@ -33,7 +33,7 @@ pub fn render_app(
     time: &str,
     battery_level: Option<u8>,
     visible: &[bool; 7],
-    packages: &[String],
+    packages: Option<&[String]>,
 ) {
     let area = frame.area();
 
@@ -69,7 +69,7 @@ pub fn render_app(
 }
 
 /// Level 1: vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: &[String]) {
+fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: Option<&[String]>) {
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
 
@@ -89,7 +89,7 @@ fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: &[Str
 }
 
 /// Level 2a: horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: &[String]) {
+fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: Option<&[String]>) {
     match (vis[0], vis[1]) {
         (true, true) => {
             let cols = Layout::default()
@@ -105,7 +105,7 @@ fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: &[St
     }
 }
 
-fn render_apps_panel(frame: &mut Frame, area: Rect, packages: &[String]) {
+fn render_apps_panel(frame: &mut Frame, area: Rect, packages: Option<&[String]>) {
     let block = panel_block(1);
     let inner = block.inner(area);
     frame.render_widget(block, area);

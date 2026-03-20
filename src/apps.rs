@@ -28,7 +28,16 @@ pub fn spawn_poller(adb: Arc<dyn Adb>, serial: String) -> mpsc::Receiver<Vec<Str
     rx
 }
 
-pub fn render_apps(frame: &mut Frame, area: Rect, packages: &[String]) {
+pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>) {
+    let Some(packages) = packages else {
+        let list = List::new(vec![ListItem::new(Span::styled(
+            "Loading…",
+            Style::new().fg(theme::MUTED),
+        ))]);
+        frame.render_widget(list, area);
+        return;
+    };
+
     let mut items: Vec<ListItem> = Vec::with_capacity(packages.len() + 1);
     items.push(ListItem::new(Span::styled(
         format!("{} packages", packages.len()),
