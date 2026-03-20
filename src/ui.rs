@@ -3,7 +3,7 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, List, ListItem, ListState, Scrollbar, ScrollbarOrientation,
+        Block, BorderType, Borders, List, ListItem, Scrollbar, ScrollbarOrientation,
         ScrollbarState,
     },
     Frame,
@@ -11,7 +11,12 @@ use ratatui::{
 
 use crate::app::{App, InputMode, LogcatFilter};
 
-const COMMAND_LABELS: [&str; 4] = ["Open app", "Kill app", "Clear data", "Clear data & open"];
+const COMMAND_LABELS: [(&str, &str); 4] = [
+    ("o", "open app"),
+    ("k", "kill app"),
+    ("d", "clear data"),
+    ("f", "clear data & open"),
+];
 use crate::battery;
 use crate::logcat;
 use crate::panel;
@@ -138,11 +143,11 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
-            render_commands_panel(frame, cols[0], is_focused(app, 1), app.commands_cursor());
+            render_commands_panel(frame, cols[0]);
             render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid, app);
         }
         (true, false) => {
-            render_commands_panel(frame, area, is_focused(app, 1), app.commands_cursor())
+            render_commands_panel(frame, area)
         }
         (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid, app),
         (false, false) => {}
@@ -319,27 +324,23 @@ fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
     Line::from(vec![label, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
 }
 
-fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: usize) {
-    let block = panel_block(1, focused);
+fn render_commands_panel(frame: &mut Frame, area: Rect) {
+    let block = panel_block(1, false);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let items: Vec<ListItem> = COMMAND_LABELS
         .iter()
-        .map(|&label| ListItem::new(Span::styled(label, Style::new().fg(theme::FG))))
+        .map(|&(key, label)| {
+            ListItem::new(Line::from(vec![
+                Span::styled(key, Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
+                Span::styled(format!(" {}", label), Style::new().fg(theme::FG)),
+            ]))
+        })
         .collect();
 
-    let list = List::new(items)
-        .highlight_style(
-            Style::new()
-                .fg(theme::ACCENT)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▸ ");
-
-    let selected = if focused { Some(cursor) } else { None };
-    let mut state = ListState::default().with_selected(selected);
-    frame.render_stateful_widget(list, inner, &mut state);
+    let list = List::new(items);
+    frame.render_widget(list, inner);
 }
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {

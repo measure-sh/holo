@@ -11,8 +11,6 @@ pub enum Action {
     ClearData,
 }
 
-const COMMAND_COUNT: usize = 4;
-
 const LEVELS: [Option<char>; 7] = [
     None,
     Some('V'),
@@ -49,7 +47,6 @@ pub enum InputMode {
 pub struct App {
     visible: [bool; 6],
     focused: Option<u8>,
-    commands_cursor: usize,
     logcat_filter: LogcatFilter,
     input_mode: InputMode,
     logcat_scroll: usize,
@@ -59,8 +56,7 @@ impl App {
     pub fn new() -> Self {
         Self {
             visible: [true; 6],
-            focused: Some(1),
-            commands_cursor: 0,
+            focused: None,
             logcat_filter: LogcatFilter::new(),
             input_mode: InputMode::Normal,
             logcat_scroll: 0,
@@ -88,30 +84,6 @@ impl App {
                 return Action::None;
             }
             InputMode::Normal => {}
-        }
-
-        if self.focused == Some(1) {
-            match code {
-                KeyCode::Up => {
-                    self.commands_cursor = self.commands_cursor.saturating_sub(1);
-                    return Action::None;
-                }
-                KeyCode::Down => {
-                    self.commands_cursor =
-                        (self.commands_cursor + 1).min(COMMAND_COUNT - 1);
-                    return Action::None;
-                }
-                KeyCode::Enter => {
-                    return match self.commands_cursor {
-                        0 => Action::OpenApp,
-                        1 => Action::KillApp,
-                        2 => Action::ClearData,
-                        3 => Action::ClearDataAndOpen,
-                        _ => Action::None,
-                    };
-                }
-                _ => {}
-            }
         }
 
         if self.focused == Some(2) {
@@ -159,6 +131,10 @@ impl App {
 
         match code {
             KeyCode::Char('q') => Action::Quit,
+            KeyCode::Char('o') => Action::OpenApp,
+            KeyCode::Char('k') => Action::KillApp,
+            KeyCode::Char('d') => Action::ClearData,
+            KeyCode::Char('f') => Action::ClearDataAndOpen,
             KeyCode::Char(c @ '1'..='6') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -210,10 +186,6 @@ impl App {
         self.focused
     }
 
-    pub fn commands_cursor(&self) -> usize {
-        self.commands_cursor
-    }
-
     pub fn logcat_filter(&self) -> &LogcatFilter {
         &self.logcat_filter
     }
@@ -249,9 +221,9 @@ mod tests {
     }
 
     #[test]
-    fn new_app_focuses_commands() {
+    fn new_app_has_no_focus() {
         let app = App::new();
-        assert_eq!(app.focused_panel(), Some(1));
+        assert_eq!(app.focused_panel(), None);
     }
 
     #[test]
@@ -330,74 +302,34 @@ mod tests {
     #[test]
     fn focus_toggles_on_same_key() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('c'));
-        assert_eq!(app.focused_panel(), None);
-        app.handle_key(KeyCode::Char('c'));
-        assert_eq!(app.focused_panel(), Some(1));
-    }
-
-    #[test]
-    fn focus_switches_between_panels() {
-        let mut app = App::new();
-        assert_eq!(app.focused_panel(), Some(1));
         app.handle_key(KeyCode::Char('l'));
         assert_eq!(app.focused_panel(), Some(2));
-        app.handle_key(KeyCode::Char('c'));
-        assert_eq!(app.focused_panel(), Some(1));
-    }
-
-    #[test]
-    fn commands_cursor_moves_when_focused() {
-        let mut app = App::new();
-        assert_eq!(app.focused_panel(), Some(1));
-        app.handle_key(KeyCode::Down);
-        assert_eq!(app.commands_cursor(), 1);
-        app.handle_key(KeyCode::Down);
-        assert_eq!(app.commands_cursor(), 2);
-        app.handle_key(KeyCode::Up);
-        assert_eq!(app.commands_cursor(), 1);
-    }
-
-    #[test]
-    fn commands_cursor_does_not_go_below_zero() {
-        let mut app = App::new();
-        app.handle_key(KeyCode::Up);
-        assert_eq!(app.commands_cursor(), 0);
-    }
-
-    #[test]
-    fn commands_cursor_does_not_exceed_max() {
-        let mut app = App::new();
-        for _ in 0..10 {
-            app.handle_key(KeyCode::Down);
-        }
-        assert_eq!(app.commands_cursor(), COMMAND_COUNT - 1);
-    }
-
-    #[test]
-    fn enter_on_commands_returns_action() {
-        let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Enter), Action::OpenApp));
-        app.handle_key(KeyCode::Down);
-        assert!(matches!(app.handle_key(KeyCode::Enter), Action::KillApp));
-        app.handle_key(KeyCode::Down);
-        assert!(matches!(
-            app.handle_key(KeyCode::Enter),
-            Action::ClearData
-        ));
-        app.handle_key(KeyCode::Down);
-        assert!(matches!(
-            app.handle_key(KeyCode::Enter),
-            Action::ClearDataAndOpen
-        ));
-    }
-
-    #[test]
-    fn arrows_ignored_when_commands_not_focused() {
-        let mut app = App::new();
         app.handle_key(KeyCode::Char('l'));
-        app.handle_key(KeyCode::Down);
-        assert_eq!(app.commands_cursor(), 0);
+        assert_eq!(app.focused_panel(), None);
+    }
+
+    #[test]
+    fn o_opens_app() {
+        let mut app = App::new();
+        assert!(matches!(app.handle_key(KeyCode::Char('o')), Action::OpenApp));
+    }
+
+    #[test]
+    fn k_kills_app() {
+        let mut app = App::new();
+        assert!(matches!(app.handle_key(KeyCode::Char('k')), Action::KillApp));
+    }
+
+    #[test]
+    fn d_clears_data() {
+        let mut app = App::new();
+        assert!(matches!(app.handle_key(KeyCode::Char('d')), Action::ClearData));
+    }
+
+    #[test]
+    fn f_clears_data_and_opens() {
+        let mut app = App::new();
+        assert!(matches!(app.handle_key(KeyCode::Char('f')), Action::ClearDataAndOpen));
     }
 
     #[test]
@@ -417,9 +349,9 @@ mod tests {
     }
 
     #[test]
-    fn t_works_when_commands_focused() {
+    fn t_works_without_focus() {
         let mut app = App::new();
-        assert_eq!(app.focused_panel(), Some(1));
+        assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
         assert_eq!(app.focused_panel(), Some(2));
@@ -547,7 +479,7 @@ mod tests {
         app.handle_key(KeyCode::Up);
         app.handle_key(KeyCode::Up);
         assert_eq!(app.logcat_scroll(), 3);
-        app.handle_key(KeyCode::Char('c'));
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.logcat_scroll(), 0);
         assert_eq!(app.focused_panel(), Some(2));
@@ -564,7 +496,7 @@ mod tests {
     #[test]
     fn left_right_shifts_focus_to_logcat() {
         let mut app = App::new();
-        assert_eq!(app.focused_panel(), Some(1));
+        assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Right);
         assert_eq!(app.focused_panel(), Some(2));
     }
@@ -572,7 +504,7 @@ mod tests {
     #[test]
     fn scroll_ignored_when_logcat_not_focused() {
         let mut app = App::new();
-        assert_eq!(app.focused_panel(), Some(1));
+        assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Up);
         app.handle_key(KeyCode::Down);
         assert_eq!(app.logcat_scroll(), 0);
