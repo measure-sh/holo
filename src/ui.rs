@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, COMMAND_LABELS};
+use crate::app::App;
 use crate::battery;
 use crate::logcat;
 use crate::panel;
@@ -133,11 +133,11 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Stri
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
-            render_commands_panel(frame, cols[0], is_focused(app, 1), app.commands_cursor());
+            render_commands_panel(frame, cols[0], is_focused(app, 1), app);
             render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid);
         }
         (true, false) => {
-            render_commands_panel(frame, area, is_focused(app, 1), app.commands_cursor())
+            render_commands_panel(frame, area, is_focused(app, 1), app)
         }
         (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid),
         (false, false) => {}
@@ -191,14 +191,15 @@ fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
     Line::from(vec![label, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
 }
 
-fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: usize) {
+fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, app: &App) {
     let block = panel_block(1, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let items: Vec<ListItem> = COMMAND_LABELS
+    let labels = app.command_labels();
+    let items: Vec<ListItem> = labels
         .iter()
-        .map(|&label| ListItem::new(Span::styled(label, Style::new().fg(theme::FG))))
+        .map(|label| ListItem::new(Span::styled(label.as_str(), Style::new().fg(theme::FG))))
         .collect();
 
     let list = List::new(items)
@@ -209,7 +210,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: u
         )
         .highlight_symbol("▸ ");
 
-    let selected = if focused { Some(cursor) } else { None };
+    let selected = if focused { Some(app.commands_cursor()) } else { None };
     let mut state = ListState::default().with_selected(selected);
     frame.render_stateful_widget(list, inner, &mut state);
 }

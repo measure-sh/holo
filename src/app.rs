@@ -11,19 +11,47 @@ pub enum Action {
     ClearData,
 }
 
-const COMMAND_COUNT: usize = 4;
+const COMMAND_COUNT: usize = 7;
 
-pub const COMMAND_LABELS: [&str; COMMAND_COUNT] = [
-    "Open app",
-    "Kill app",
-    "Clear data",
-    "Clear data & open",
+const LEVELS: [Option<char>; 7] = [
+    None,
+    Some('V'),
+    Some('D'),
+    Some('I'),
+    Some('W'),
+    Some('E'),
+    Some('F'),
 ];
+
+pub struct LogcatFilter {
+    pub tag: String,
+    pub search: String,
+    pub level: Option<char>,
+}
+
+impl LogcatFilter {
+    fn new() -> Self {
+        Self {
+            tag: String::new(),
+            search: String::new(),
+            level: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InputMode {
+    Normal,
+    EditingTag,
+    EditingSearch,
+}
 
 pub struct App {
     visible: [bool; 6],
     focused: Option<u8>,
     commands_cursor: usize,
+    logcat_filter: LogcatFilter,
+    input_mode: InputMode,
 }
 
 impl App {
@@ -32,6 +60,8 @@ impl App {
             visible: [true; 6],
             focused: Some(2),
             commands_cursor: 0,
+            logcat_filter: LogcatFilter::new(),
+            input_mode: InputMode::Normal,
         }
     }
 
@@ -105,6 +135,30 @@ impl App {
 
     pub fn commands_cursor(&self) -> usize {
         self.commands_cursor
+    }
+
+    pub fn logcat_filter(&self) -> &LogcatFilter {
+        &self.logcat_filter
+    }
+
+    pub fn input_mode(&self) -> InputMode {
+        self.input_mode
+    }
+
+    pub fn command_labels(&self) -> Vec<String> {
+        let level_str = match self.logcat_filter.level {
+            Some(c) => c.to_string(),
+            None => "All".to_string(),
+        };
+        vec![
+            "Open app".to_string(),
+            "Kill app".to_string(),
+            "Clear data".to_string(),
+            "Clear data & open".to_string(),
+            format!("Tag: {}", self.logcat_filter.tag),
+            format!("Search: {}", self.logcat_filter.search),
+            format!("Level: {}", level_str),
+        ]
     }
 }
 
