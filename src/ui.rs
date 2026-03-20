@@ -30,7 +30,7 @@ pub fn render_app(
     title: &str,
     time: &str,
     battery_level: Option<u8>,
-    visible_panels: &[u8],
+    visible: &[bool; 6],
 ) {
     let area = frame.area();
 
@@ -62,106 +62,101 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, visible_panels);
+    render_panels(frame, inner, visible);
 }
 
-fn render_panels(frame: &mut Frame, area: Rect, visible_panels: &[u8]) {
-    match visible_panels.len() {
-        0 => {}
-        1 => {
-            frame.render_widget(panel_block(visible_panels[0]), area);
+/// Level 1: vertical split between top row and bottom section.
+fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+    let top_visible = vis[0] || vis[1];
+    let bot_visible = vis[2] || vis[3] || vis[4] || vis[5];
+
+    match (top_visible, bot_visible) {
+        (true, true) => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            render_top_row(frame, rows[0], vis);
+            render_bottom_section(frame, rows[1], vis);
         }
-        2 => {
+        (true, false) => render_top_row(frame, area, vis),
+        (false, true) => render_bottom_section(frame, area, vis),
+        (false, false) => {}
+    }
+}
+
+/// Level 2a: horizontal split within the top row (panels 1, 2).
+fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+    match (vis[0], vis[1]) {
+        (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
-            for (i, &col) in cols.iter().enumerate() {
-                frame.render_widget(panel_block(visible_panels[i]), col);
-            }
+            frame.render_widget(panel_block(1), cols[0]);
+            frame.render_widget(panel_block(2), cols[1]);
         }
-        3 => {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(34),
-                    Constraint::Percentage(33),
-                ])
-                .split(area);
-            for (i, &col) in cols.iter().enumerate() {
-                frame.render_widget(panel_block(visible_panels[i]), col);
-            }
+        (true, false) => frame.render_widget(panel_block(1), area),
+        (false, true) => frame.render_widget(panel_block(2), area),
+        (false, false) => {}
+    }
+}
+
+/// Level 2b: horizontal split within the bottom section (3 columns).
+fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+    let left_visible = vis[2] || vis[3];
+    let mid_visible = vis[4];
+    let right_visible = vis[5];
+
+    let mut columns: Vec<(Constraint, BottomColumn)> = Vec::new();
+    if left_visible {
+        columns.push((Constraint::Ratio(1, 1), BottomColumn::Left));
+    }
+    if mid_visible {
+        columns.push((Constraint::Ratio(1, 1), BottomColumn::Mid));
+    }
+    if right_visible {
+        columns.push((Constraint::Ratio(1, 1), BottomColumn::Right));
+    }
+
+    if columns.is_empty() {
+        return;
+    }
+
+    let constraints: Vec<Constraint> = columns.iter().map(|(c, _)| *c).collect();
+    let areas = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, (_, col_type)) in columns.iter().enumerate() {
+        match col_type {
+            BottomColumn::Left => render_left_column(frame, areas[i], vis),
+            BottomColumn::Mid => frame.render_widget(panel_block(5), areas[i]),
+            BottomColumn::Right => frame.render_widget(panel_block(6), areas[i]),
         }
-        4 => {
+    }
+}
+
+enum BottomColumn {
+    Left,
+    Mid,
+    Right,
+}
+
+/// Level 3: vertical split within the left column (panels 3, 4).
+fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+    match (vis[2], vis[3]) {
+        (true, true) => {
             let rows = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            let top = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(rows[0]);
-            let bot = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(rows[1]);
-            frame.render_widget(panel_block(visible_panels[0]), top[0]);
-            frame.render_widget(panel_block(visible_panels[1]), top[1]);
-            frame.render_widget(panel_block(visible_panels[2]), bot[0]);
-            frame.render_widget(panel_block(visible_panels[3]), bot[1]);
+            frame.render_widget(panel_block(3), rows[0]);
+            frame.render_widget(panel_block(4), rows[1]);
         }
-        5 => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            let top = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(34),
-                    Constraint::Percentage(33),
-                ])
-                .split(rows[0]);
-            let bot = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(rows[1]);
-            frame.render_widget(panel_block(visible_panels[0]), top[0]);
-            frame.render_widget(panel_block(visible_panels[1]), top[1]);
-            frame.render_widget(panel_block(visible_panels[2]), top[2]);
-            frame.render_widget(panel_block(visible_panels[3]), bot[0]);
-            frame.render_widget(panel_block(visible_panels[4]), bot[1]);
-        }
-        _ => {
-            // 6 panels: 3×2 grid
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            let top = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(34),
-                    Constraint::Percentage(33),
-                ])
-                .split(rows[0]);
-            let bot = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(33),
-                    Constraint::Percentage(34),
-                    Constraint::Percentage(33),
-                ])
-                .split(rows[1]);
-            frame.render_widget(panel_block(visible_panels[0]), top[0]);
-            frame.render_widget(panel_block(visible_panels[1]), top[1]);
-            frame.render_widget(panel_block(visible_panels[2]), top[2]);
-            frame.render_widget(panel_block(visible_panels[3]), bot[0]);
-            frame.render_widget(panel_block(visible_panels[4]), bot[1]);
-            frame.render_widget(panel_block(visible_panels[5]), bot[2]);
-        }
+        (true, false) => frame.render_widget(panel_block(3), area),
+        (false, true) => frame.render_widget(panel_block(4), area),
+        (false, false) => {}
     }
 }

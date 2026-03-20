@@ -39,13 +39,8 @@ impl App {
         self.visible[idx] = !self.visible[idx];
     }
 
-    pub fn visible_panels(&self) -> Vec<u8> {
-        self.visible
-            .iter()
-            .enumerate()
-            .filter(|(_, v)| **v)
-            .map(|(i, _)| (i + 1) as u8)
-            .collect()
+    pub fn panel_visibility(&self) -> &[bool; 6] {
+        &self.visible
     }
 }
 
@@ -56,14 +51,14 @@ mod tests {
     #[test]
     fn new_app_all_panels_visible() {
         let app = App::new();
-        assert_eq!(app.visible_panels(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(app.panel_visibility(), &[true; 6]);
     }
 
     #[test]
     fn toggle_hides_panel() {
         let mut app = App::new();
         app.toggle_panel(3);
-        assert_eq!(app.visible_panels(), vec![1, 2, 4, 5, 6]);
+        assert_eq!(app.panel_visibility(), &[true, true, false, true, true, true]);
     }
 
     #[test]
@@ -71,20 +66,19 @@ mod tests {
         let mut app = App::new();
         app.toggle_panel(3);
         app.toggle_panel(3);
-        assert_eq!(app.visible_panels(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(app.panel_visibility(), &[true; 6]);
     }
 
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new();
-        // Hide all but panel 1
         for n in 2..=6 {
             app.toggle_panel(n);
         }
-        assert_eq!(app.visible_panels(), vec![1]);
+        assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false]);
         // Try to hide the last one — should be prevented
         app.toggle_panel(1);
-        assert_eq!(app.visible_panels(), vec![1]);
+        assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false]);
     }
 
     #[test]
@@ -92,7 +86,7 @@ mod tests {
         let mut app = App::new();
         app.toggle_panel(0);
         app.toggle_panel(7);
-        assert_eq!(app.visible_panels(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(app.panel_visibility(), &[true; 6]);
     }
 
     #[test]
@@ -111,13 +105,13 @@ mod tests {
     fn handle_key_panel_number_toggles() {
         let mut app = App::new();
         assert!(matches!(app.handle_key(KeyCode::Char('3')), Action::None));
-        assert_eq!(app.visible_panels(), vec![1, 2, 4, 5, 6]);
+        assert_eq!(app.panel_visibility(), &[true, true, false, true, true, true]);
     }
 
     #[test]
     fn handle_key_unknown_is_none() {
         let mut app = App::new();
         assert!(matches!(app.handle_key(KeyCode::Char('x')), Action::None));
-        assert_eq!(app.visible_panels(), vec![1, 2, 3, 4, 5, 6]);
+        assert_eq!(app.panel_visibility(), &[true; 6]);
     }
 }
