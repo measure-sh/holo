@@ -20,6 +20,22 @@ use adb::{Adb, Device, RealAdb};
 use app::{Action, App};
 use boot::BootResult;
 
+fn spawn_app_action(
+    adb: &Arc<dyn Adb>,
+    serial: &str,
+    packages: &Option<Vec<String>>,
+    idx: usize,
+    f: impl FnOnce(Arc<dyn Adb>, &str, &str) -> Result<()> + Send + 'static,
+) {
+    if let Some(pkg) = packages.as_ref().and_then(|p| p.get(idx)).cloned() {
+        let adb = adb.clone();
+        let serial = serial.to_string();
+        std::thread::spawn(move || {
+            let _ = f(adb, &serial, &pkg);
+        });
+    }
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
@@ -51,7 +67,7 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
     let procs_rx = processes::spawn_poller(adb.clone(), device.serial.clone());
     let mut process_map: Option<HashMap<String, u32>> = None;
 
-    let apps_rx = apps::spawn_poller(adb, device.serial.clone());
+    let apps_rx = apps::spawn_poller(adb.clone(), device.serial.clone());
     let mut packages: Option<Vec<String>> = None;
 
     loop {
@@ -76,8 +92,23 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
-                if matches!(app.handle_key(key.code, packages.as_ref().map_or(0, |p| p.len())), Action::Quit) {
-                    return Ok(());
+                match app.handle_key(key.code, packages.as_ref().map_or(0, |p| p.len())) {
+                    Action::Quit => return Ok(()),
+                    Action::OpenApp(idx) => {
+                        spawn_app_action(&adb, &device.serial, &packages, idx, |adb, s, p| adb.launch_app(s, p));
+                    }
+                    Action::KillApp(idx) => {
+                        spawn_app_action(&adb, &device.serial, &packages, idx, |adb, s, p| adb.kill_app(s, p));
+                    }
+                    Action::ClearData(idx) => {
+                        spawn_app_action(&adb, &device.serial, &packages, idx, |adb, s, p| adb.clear_app_data(s, p));
+                    }
+                    Action::ClearDataAndOpen(idx) => {
+                        spawn_app_action(&adb, &device.serial, &packages, idx, |adb, s, p| {
+                            adb.clear_app_data(s, p).and_then(|_| adb.launch_app(s, p))
+                        });
+                    }
+                    Action::None => {}
                 }
             }
         }
