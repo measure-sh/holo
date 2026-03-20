@@ -7,6 +7,8 @@ use ratatui::{
 };
 
 use crate::app::{App, InputMode, LogcatFilter};
+
+const COMMAND_LABELS: [&str; 4] = ["Open app", "Kill app", "Clear data", "Clear data & open"];
 use crate::battery;
 use crate::logcat;
 use crate::panel;
@@ -98,14 +100,14 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, app, logcat_lines, monitored_pid, app.logcat_filter());
+    render_panels(frame, inner, app, logcat_lines, monitored_pid);
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
     app.focused_panel() == Some(panel_number)
 }
 
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>, filter: &LogcatFilter) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5];
@@ -116,16 +118,16 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Strin
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], app, logcat_lines, monitored_pid, filter);
+            render_top_row(frame, rows[0], app, logcat_lines, monitored_pid);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, app, logcat_lines, monitored_pid, filter),
+        (true, false) => render_top_row(frame, area, app, logcat_lines, monitored_pid),
         (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
-fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>, filter: &LogcatFilter) {
+fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let vis = app.panel_visibility();
     match (vis[0], vis[1]) {
         (true, true) => {
@@ -133,15 +135,72 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Stri
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
-            render_commands_panel(frame, cols[0], is_focused(app, 1), app);
-            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid, filter);
+            render_commands_panel(frame, cols[0], is_focused(app, 1), app.commands_cursor());
+            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid, app.logcat_filter(), app);
         }
         (true, false) => {
-            render_commands_panel(frame, area, is_focused(app, 1), app)
+            render_commands_panel(frame, area, is_focused(app, 1), app.commands_cursor())
         }
-        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid, filter),
+        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid, app.logcat_filter(), app),
         (false, false) => {}
     }
+}
+
+fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode) -> Line<'static> {
+    let mut spans = Vec::new();
+    let sep = Span::styled(" │ ", Style::new().fg(theme::SURFACE));
+
+    let tag_value = if filter.tag.is_empty() {
+        "*".to_string()
+    } else {
+        filter.tag.clone()
+    };
+    let tag_display = match input_mode {
+        InputMode::EditingTag => format!("{}|", tag_value.replace('*', "")),
+        _ => tag_value,
+    };
+    spans.push(Span::styled(" ", Style::new()));
+    spans.push(Span::styled("t", Style::new().fg(theme::KEY_HINT)));
+    spans.push(Span::styled(
+        format!("ag:{} ", tag_display),
+        Style::new().fg(theme::FG),
+    ));
+
+    spans.push(sep.clone());
+
+    let search_value = if filter.search.is_empty() {
+        String::new()
+    } else {
+        filter.search.clone()
+    };
+    let search_display = match input_mode {
+        InputMode::EditingSearch => format!("{}|", search_value),
+        _ => {
+            if search_value.is_empty() {
+                "*".to_string()
+            } else {
+                search_value
+            }
+        }
+    };
+    spans.push(Span::styled("/", Style::new().fg(theme::KEY_HINT)));
+    spans.push(Span::styled(
+        format!(":{} ", search_display),
+        Style::new().fg(theme::FG),
+    ));
+
+    spans.push(sep);
+
+    let level_str = match filter.level {
+        Some(c) => c.to_string(),
+        None => "All".to_string(),
+    };
+    spans.push(Span::styled(
+        format!("\u{25C2}{}\u{25B8} ", level_str),
+        Style::new().fg(theme::FG),
+    ));
+
+    Line::from(spans)
 }
 
 fn render_logcat_panel(
@@ -151,8 +210,15 @@ fn render_logcat_panel(
     logcat_lines: &[String],
     monitored_pid: Option<u32>,
     filter: &LogcatFilter,
+    app: &App,
 ) {
-    let block = panel_block(2, focused);
+    let color = panel::by_number(2).border_color(focused);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(panel_title(2, focused))
+        .title_bottom(logcat_filter_bar(filter, app.input_mode()))
+        .border_style(Style::new().fg(color));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -214,45 +280,15 @@ fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
     Line::from(vec![label, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
 }
 
-fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, app: &App) {
+fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: usize) {
     let block = panel_block(1, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let filter = app.logcat_filter();
-    let input_mode = app.input_mode();
-
-    let tag_label = match input_mode {
-        InputMode::EditingTag => format!("Tag: {}|", filter.tag),
-        _ => format!("Tag: {}", filter.tag),
-    };
-    let search_label = match input_mode {
-        InputMode::EditingSearch => format!("Search: {}|", filter.search),
-        _ => format!("Search: {}", filter.search),
-    };
-    let level_str = match filter.level {
-        Some(c) => c.to_string(),
-        None => "All".to_string(),
-    };
-    let level_label = format!("Level: \u{25C2} {} \u{25B8}", level_str);
-
-    let action_labels = ["Open app", "Kill app", "Clear data", "Clear data & open"];
-    let mut items: Vec<ListItem> = action_labels
+    let items: Vec<ListItem> = COMMAND_LABELS
         .iter()
         .map(|&label| ListItem::new(Span::styled(label, Style::new().fg(theme::FG))))
         .collect();
-
-    items.push(ListItem::new(Span::styled(
-        "───",
-        Style::new().fg(theme::SURFACE),
-    )));
-
-    for label in [&tag_label, &search_label, &level_label] {
-        items.push(ListItem::new(Span::styled(
-            label.as_str(),
-            Style::new().fg(theme::FG),
-        )));
-    }
 
     let list = List::new(items)
         .highlight_style(
@@ -262,9 +298,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, app: &App
         )
         .highlight_symbol("▸ ");
 
-    let cursor = app.commands_cursor();
-    let display_index = if cursor < 4 { cursor } else { cursor + 1 };
-    let selected = if focused { Some(display_index) } else { None };
+    let selected = if focused { Some(cursor) } else { None };
     let mut state = ListState::default().with_selected(selected);
     frame.render_stateful_widget(list, inner, &mut state);
 }

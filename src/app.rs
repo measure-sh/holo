@@ -11,7 +11,7 @@ pub enum Action {
     ClearData,
 }
 
-const COMMAND_COUNT: usize = 7;
+const COMMAND_COUNT: usize = 4;
 
 const LEVELS: [Option<char>; 7] = [
     None,
@@ -105,16 +105,28 @@ impl App {
                         1 => Action::KillApp,
                         2 => Action::ClearData,
                         3 => Action::ClearDataAndOpen,
-                        4 => { self.input_mode = InputMode::EditingTag; Action::None }
-                        5 => { self.input_mode = InputMode::EditingSearch; Action::None }
                         _ => Action::None,
                     };
                 }
-                KeyCode::Right if self.commands_cursor == 6 => {
+                _ => {}
+            }
+        }
+
+        if self.focused == Some(2) {
+            match code {
+                KeyCode::Char('t') => {
+                    self.input_mode = InputMode::EditingTag;
+                    return Action::None;
+                }
+                KeyCode::Char('/') => {
+                    self.input_mode = InputMode::EditingSearch;
+                    return Action::None;
+                }
+                KeyCode::Right => {
                     self.cycle_level(true);
                     return Action::None;
                 }
-                KeyCode::Left if self.commands_cursor == 6 => {
+                KeyCode::Left => {
                     self.cycle_level(false);
                     return Action::None;
                 }
@@ -355,42 +367,34 @@ mod tests {
         assert_eq!(app.commands_cursor(), 0);
     }
 
-    fn focus_commands(app: &mut App) {
-        app.handle_key(KeyCode::Char('c'));
-        assert_eq!(app.focused_panel(), Some(1));
-    }
-
-    fn move_to_command(app: &mut App, index: usize) {
-        for _ in 0..index {
-            app.handle_key(KeyCode::Down);
-        }
-        assert_eq!(app.commands_cursor(), index);
-    }
-
     #[test]
-    fn enter_tag_enters_editing_mode() {
+    fn t_enters_tag_editing_when_logcat_focused() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 4);
-        app.handle_key(KeyCode::Enter);
+        assert_eq!(app.focused_panel(), Some(2));
+        app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
     }
 
     #[test]
-    fn enter_search_enters_editing_mode() {
+    fn slash_enters_search_editing_when_logcat_focused() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 5);
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('/'));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
+    }
+
+    #[test]
+    fn t_ignored_when_logcat_not_focused() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('c'));
+        assert_eq!(app.focused_panel(), Some(1));
+        app.handle_key(KeyCode::Char('t'));
+        assert_eq!(app.input_mode(), InputMode::Normal);
     }
 
     #[test]
     fn typing_appends_to_tag() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 4);
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('t'));
         app.handle_key(KeyCode::Char('a'));
         app.handle_key(KeyCode::Char('b'));
         assert_eq!(app.logcat_filter().tag, "ab");
@@ -399,9 +403,7 @@ mod tests {
     #[test]
     fn typing_appends_to_search() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 5);
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('/'));
         app.handle_key(KeyCode::Char('x'));
         app.handle_key(KeyCode::Char('y'));
         assert_eq!(app.logcat_filter().search, "xy");
@@ -410,9 +412,7 @@ mod tests {
     #[test]
     fn backspace_removes_from_tag() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 4);
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('t'));
         app.handle_key(KeyCode::Char('a'));
         app.handle_key(KeyCode::Char('b'));
         app.handle_key(KeyCode::Backspace);
@@ -422,9 +422,7 @@ mod tests {
     #[test]
     fn esc_exits_editing_mode() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 4);
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.input_mode(), InputMode::Normal);
@@ -433,9 +431,7 @@ mod tests {
     #[test]
     fn enter_exits_editing_mode() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 5);
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('/'));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
         app.handle_key(KeyCode::Enter);
         assert_eq!(app.input_mode(), InputMode::Normal);
@@ -444,8 +440,6 @@ mod tests {
     #[test]
     fn level_cycles_forward_with_right() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 6);
         assert_eq!(app.logcat_filter().level, None);
         app.handle_key(KeyCode::Right);
         assert_eq!(app.logcat_filter().level, Some('V'));
@@ -456,8 +450,6 @@ mod tests {
     #[test]
     fn level_cycles_backward_with_left() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 6);
         app.handle_key(KeyCode::Left);
         assert_eq!(app.logcat_filter().level, Some('F'));
     }
@@ -465,21 +457,9 @@ mod tests {
     #[test]
     fn level_wraps_around() {
         let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 6);
         for _ in 0..7 {
             app.handle_key(KeyCode::Right);
         }
-        assert_eq!(app.logcat_filter().level, None);
-    }
-
-    #[test]
-    fn enter_on_level_does_nothing() {
-        let mut app = App::new();
-        focus_commands(&mut app);
-        move_to_command(&mut app, 6);
-        app.handle_key(KeyCode::Enter);
-        assert_eq!(app.input_mode(), InputMode::Normal);
         assert_eq!(app.logcat_filter().level, None);
     }
 }
