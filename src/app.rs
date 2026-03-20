@@ -363,4 +363,118 @@ mod tests {
         app.handle_key(KeyCode::Down);
         assert_eq!(app.commands_cursor(), 0);
     }
+
+    fn logcat_app(lines: usize) -> App {
+        let mut app = App::new();
+        app.set_logcat_len(lines);
+        app
+    }
+
+    #[test]
+    fn logcat_up_activates_cursor_at_last_line() {
+        let mut app = logcat_app(50);
+        assert_eq!(app.logcat_cursor(), None);
+        app.handle_key(KeyCode::Up);
+        assert_eq!(app.logcat_cursor(), Some(49));
+    }
+
+    #[test]
+    fn logcat_cursor_moves_within_bounds() {
+        let mut app = logcat_app(50);
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Up);
+        assert_eq!(app.logcat_cursor(), Some(48));
+        app.handle_key(KeyCode::Down);
+        assert_eq!(app.logcat_cursor(), Some(49));
+    }
+
+    #[test]
+    fn logcat_cursor_clamps_at_zero() {
+        let mut app = logcat_app(3);
+        app.handle_key(KeyCode::Up);
+        for _ in 0..10 {
+            app.handle_key(KeyCode::Up);
+        }
+        assert_eq!(app.logcat_cursor(), Some(0));
+    }
+
+    #[test]
+    fn logcat_down_clamps_at_end() {
+        let mut app = logcat_app(5);
+        app.handle_key(KeyCode::Up);
+        for _ in 0..10 {
+            app.handle_key(KeyCode::Down);
+        }
+        assert_eq!(app.logcat_cursor(), Some(4));
+    }
+
+    #[test]
+    fn logcat_space_toggles_selection_and_advances() {
+        let mut app = logcat_app(10);
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Up);
+        assert_eq!(app.logcat_cursor(), Some(8));
+        app.handle_key(KeyCode::Char(' '));
+        assert!(app.logcat_selected().contains(&8));
+        assert_eq!(app.logcat_cursor(), Some(9));
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Char(' '));
+        assert!(!app.logcat_selected().contains(&8));
+    }
+
+    #[test]
+    fn logcat_esc_clears_cursor_and_selection() {
+        let mut app = logcat_app(10);
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Char(' '));
+        assert!(app.logcat_cursor().is_some());
+        assert!(!app.logcat_selected().is_empty());
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.logcat_cursor(), None);
+        assert!(app.logcat_selected().is_empty());
+    }
+
+    #[test]
+    fn logcat_enter_returns_copy_action() {
+        let mut app = logcat_app(10);
+        app.handle_key(KeyCode::Up);
+        assert!(matches!(
+            app.handle_key(KeyCode::Enter),
+            Action::CopyLogcat
+        ));
+    }
+
+    #[test]
+    fn logcat_enter_without_cursor_does_not_copy() {
+        let mut app = logcat_app(10);
+        assert!(matches!(app.handle_key(KeyCode::Enter), Action::None));
+    }
+
+    #[test]
+    fn logcat_down_without_cursor_is_noop() {
+        let mut app = logcat_app(10);
+        app.handle_key(KeyCode::Down);
+        assert_eq!(app.logcat_cursor(), None);
+    }
+
+    #[test]
+    fn logcat_scroll_offset_tails_in_default_mode() {
+        let mut app = App::new();
+        app.set_logcat_len(100);
+        assert_eq!(app.logcat_scroll_offset(20), 80);
+    }
+
+    #[test]
+    fn logcat_scroll_offset_centers_on_cursor() {
+        let mut app = App::new();
+        app.set_logcat_len(100);
+        app.handle_key(KeyCode::Up);
+        for _ in 0..50 {
+            app.handle_key(KeyCode::Up);
+        }
+        let offset = app.logcat_scroll_offset(20);
+        let cursor = app.logcat_cursor().unwrap();
+        assert!(cursor >= offset);
+        assert!(cursor < offset + 20);
+    }
 }
