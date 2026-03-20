@@ -31,7 +31,7 @@ fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
         let first = chars.next().unwrap();
         spans.push(Span::styled(
             String::from(first),
-            Style::new().fg(color),
+            Style::new().fg(color).add_modifier(Modifier::UNDERLINED),
         ));
         spans.push(Span::styled(
             format!("{} ", chars.as_str()),
@@ -152,20 +152,20 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[S
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
-            render_apps_panel(frame, cols[0], is_focused(app, 1), packages);
+            render_apps_panel(frame, cols[0], is_focused(app, 1), packages, app.selected_app());
             frame.render_widget(panel_block(2, is_focused(app, 2)), cols[1]);
         }
-        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages),
+        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages, app.selected_app()),
         (false, true) => frame.render_widget(panel_block(2, is_focused(app, 2)), area),
         (false, false) => {}
     }
 }
 
-fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>) {
+fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Option<&[String]>, selected: Option<usize>) {
     let block = panel_block(1, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    apps::render_apps(frame, inner, packages);
+    apps::render_apps(frame, inner, packages, selected);
 }
 
 /// Horizontal split within the bottom section (3 columns).
