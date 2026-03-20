@@ -32,6 +32,31 @@ impl Adb for RealAdb {
         let stdout = String::from_utf8_lossy(&output.stdout);
         parse_battery_level(&stdout).ok_or_else(|| color_eyre::eyre::eyre!("could not parse battery level"))
     }
+
+    fn list_packages(&self, serial: &str) -> Result<Vec<String>> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "pm", "list", "packages", "-3"])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb pm list packages failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_package_list(&stdout))
+    }
+}
+
+fn parse_package_list(output: &str) -> Vec<String> {
+    let mut packages: Vec<String> = output
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("package:"))
+        .filter(|name| !name.is_empty())
+        .map(|name| name.to_string())
+        .collect();
+    packages.sort();
+    packages
 }
 
 fn parse_battery_level(output: &str) -> Option<u8> {
@@ -132,6 +157,26 @@ mod tests {
     fn returns_none_for_missing_level() {
         let output = "Current Battery Service state:\n  AC powered: false\n";
         assert_eq!(parse_battery_level(output), None);
+    }
+
+    #[test]
+    fn parses_package_list() {
+        let output = "package:com.spotify.music\npackage:com.whatsapp\npackage:com.android.chrome\n";
+        let packages = parse_package_list(output);
+        assert_eq!(packages, vec!["com.android.chrome", "com.spotify.music", "com.whatsapp"]);
+    }
+
+    #[test]
+    fn returns_empty_for_no_packages() {
+        assert!(parse_package_list("").is_empty());
+        assert!(parse_package_list("\n\n").is_empty());
+    }
+
+    #[test]
+    fn skips_lines_without_package_prefix() {
+        let output = "package:com.example.app\nWarning: some adb warning\npackage:com.other.app\n";
+        let packages = parse_package_list(output);
+        assert_eq!(packages, vec!["com.example.app", "com.other.app"]);
     }
 
     #[test]

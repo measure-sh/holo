@@ -1,5 +1,6 @@
 mod adb;
 mod app;
+mod apps;
 mod battery;
 mod boot;
 mod selector;
@@ -41,18 +42,24 @@ fn run_app(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, device: &D
     let title = format!(" {} ", selector::selector_label(device));
     let mut app = App::new();
 
-    let battery_rx = battery::spawn_poller(adb, device.serial.clone());
+    let battery_rx = battery::spawn_poller(adb.clone(), device.serial.clone());
     let mut battery_level: Option<u8> = None;
+
+    let apps_rx = apps::spawn_poller(adb, device.serial.clone());
+    let mut packages: Vec<String> = Vec::new();
 
     loop {
         while let Ok(level) = battery_rx.try_recv() {
             battery_level = Some(level);
         }
+        while let Ok(pkgs) = apps_rx.try_recv() {
+            packages = pkgs;
+        }
 
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, app.panel_visibility())
+            ui::render_app(frame, &title, &time_str, battery_level, app.panel_visibility(), &packages)
         })?;
 
         if event::poll(Duration::from_secs(1))? {

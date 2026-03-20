@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 
+use crate::apps;
 use crate::battery;
 use crate::theme;
 
@@ -32,6 +33,7 @@ pub fn render_app(
     time: &str,
     battery_level: Option<u8>,
     visible: &[bool; 7],
+    packages: &[String],
 ) {
     let area = frame.area();
 
@@ -63,11 +65,11 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, visible);
+    render_panels(frame, inner, visible, packages);
 }
 
 /// Level 1: vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
+fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: &[String]) {
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
 
@@ -77,30 +79,37 @@ fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], vis);
+            render_top_row(frame, rows[0], vis, packages);
             render_bottom_section(frame, rows[1], vis);
         }
-        (true, false) => render_top_row(frame, area, vis),
+        (true, false) => render_top_row(frame, area, vis, packages),
         (false, true) => render_bottom_section(frame, area, vis),
         (false, false) => {}
     }
 }
 
 /// Level 2a: horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
+fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7], packages: &[String]) {
     match (vis[0], vis[1]) {
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
-            frame.render_widget(panel_block(1), cols[0]);
+            render_apps_panel(frame, cols[0], packages);
             frame.render_widget(panel_block(2), cols[1]);
         }
-        (true, false) => frame.render_widget(panel_block(1), area),
+        (true, false) => render_apps_panel(frame, area, packages),
         (false, true) => frame.render_widget(panel_block(2), area),
         (false, false) => {}
     }
+}
+
+fn render_apps_panel(frame: &mut Frame, area: Rect, packages: &[String]) {
+    let block = panel_block(1);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    apps::render_apps(frame, inner, packages);
 }
 
 /// Level 2b: horizontal split within the bottom section (3 columns).
