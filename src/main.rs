@@ -122,6 +122,7 @@ fn run_app(
 
     let mut logcat_handle: Option<logcat::LogcatHandle> = None;
     let mut logcat_lines: Vec<String> = Vec::new();
+    let mut monitored_pid: Option<u32> = None;
     const MAX_LOGCAT_LINES: usize = 1000;
 
     loop {
@@ -135,6 +136,7 @@ fn run_app(
         if logcat_handle.is_none() {
             if let Some(pid) = process_map.as_ref().and_then(|m| m.get(package).copied()) {
                 logcat_handle = logcat::LogcatHandle::spawn(&device.serial, pid);
+                monitored_pid = Some(pid);
             }
         }
 
@@ -150,7 +152,7 @@ fn run_app(
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, &app, &logcat_lines)
+            ui::render_app(frame, &title, &time_str, battery_level, &app, &logcat_lines, monitored_pid)
         })?;
 
         if event::poll(Duration::from_secs(1))? {

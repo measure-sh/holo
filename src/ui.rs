@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::app::{App, COMMAND_LABELS};
 use crate::battery;
+use crate::logcat;
 use crate::panel;
 use crate::theme;
 
@@ -63,6 +64,7 @@ pub fn render_app(
     battery_level: Option<u8>,
     app: &App,
     logcat_lines: &[String],
+    monitored_pid: Option<u32>,
 ) {
     let area = frame.area();
 
@@ -96,14 +98,14 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, app, logcat_lines);
+    render_panels(frame, inner, app, logcat_lines, monitored_pid);
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
     app.focused_panel() == Some(panel_number)
 }
 
-fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String]) {
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5];
@@ -114,16 +116,16 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Strin
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], app, logcat_lines);
+            render_top_row(frame, rows[0], app, logcat_lines, monitored_pid);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, app, logcat_lines),
+        (true, false) => render_top_row(frame, area, app, logcat_lines, monitored_pid),
         (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
-fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String]) {
+fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let vis = app.panel_visibility();
     match (vis[0], vis[1]) {
         (true, true) => {
@@ -132,30 +134,61 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &App, logcat_lines: &[Stri
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
             render_commands_panel(frame, cols[0], is_focused(app, 1), app.commands_cursor());
-            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines);
+            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid);
         }
         (true, false) => {
             render_commands_panel(frame, area, is_focused(app, 1), app.commands_cursor())
         }
-        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines),
+        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid),
         (false, false) => {}
     }
 }
 
-fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, logcat_lines: &[String]) {
+fn render_logcat_panel(frame: &mut Frame, area: Rect, focused: bool, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let block = panel_block(2, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
+
+    let pid_str = monitored_pid.map(|p| p.to_string());
 
     let visible_height = inner.height as usize;
     let start = logcat_lines.len().saturating_sub(visible_height);
     let visible: Vec<Line> = logcat_lines[start..]
         .iter()
-        .map(|l| Line::from(l.as_str()))
+        .map(|l| style_logcat_line(l, pid_str.as_deref()))
         .collect();
 
     let paragraph = Paragraph::new(visible).wrap(Wrap { trim: false });
     frame.render_widget(paragraph, inner);
+}
+
+fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
+    let Some(parsed) = logcat::parse(raw) else {
+        return Line::from(raw);
+    };
+
+    let bg_color = theme::level_color(parsed.level);
+    let badge = Span::styled(
+        format!(" {} ", parsed.level),
+        Style::new().fg(theme::BG).bg(bg_color).add_modifier(Modifier::BOLD),
+    );
+
+    let sep = Span::raw(" ");
+
+    let timestamp = Span::styled(parsed.timestamp, Style::new().fg(theme::MUTED));
+
+    let is_main = pid.is_some_and(|p| parsed.tid == p);
+    let thread = if is_main {
+        Span::styled("main", Style::new().fg(theme::ACCENT))
+    } else {
+        Span::styled(parsed.tid, Style::new().fg(theme::MUTED))
+    };
+
+    let tag = Span::styled(parsed.tag, Style::new().fg(theme::FG).add_modifier(Modifier::BOLD));
+
+    let message = Span::styled(format!(": {}", parsed.message), Style::new().fg(theme::FG));
+
+    Line::from(vec![badge, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
 }
 
 fn render_commands_panel(frame: &mut Frame, area: Rect, focused: bool, cursor: usize) {

@@ -22,3 +22,15 @@ pub const DIM_CYAN: Color = Color::Rgb(0x2a, 0x6a, 0x7a);
 pub const DIM_MAGENTA: Color = Color::Rgb(0x6a, 0x5a, 0x8c);
 pub const DIM_RED: Color = Color::Rgb(0x8c, 0x4a, 0x54);
 pub const DIM_TEAL: Color = Color::Rgb(0x3a, 0x70, 0x6a);
+
+pub fn level_color(level: char) -> Color {
+    match level {
+        'V' => MUTED,
+        'D' => ACCENT,
+        'I' => GREEN,
+        'W' => YELLOW,
+        'E' => RED,
+        'F' => MAGENTA,
+        _ => MUTED,
+    }
+}
