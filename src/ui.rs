@@ -6,52 +6,32 @@ use ratatui::{
     Frame,
 };
 
+use crate::app::App;
 use crate::apps;
 use crate::battery;
+use crate::panel;
 use crate::theme;
-
-const PANEL_INFO: [(&str, ratatui::style::Color); 7] = [
-    ("installed apps", theme::DIM_BLUE),
-    ("logcat",         theme::DIM_GREEN),
-    ("network",        theme::DIM_YELLOW),
-    ("cpu",            theme::DIM_CYAN),
-    ("memory",         theme::DIM_MAGENTA),
-    ("disk usage",     theme::DIM_RED),
-    ("commands",       theme::DIM_TEAL),
-];
 
 const SUPERSCRIPT_DIGITS: [char; 8] = ['\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}'];
 
-const FOCUSABLE_PANELS: [u8; 3] = [1, 2, 7];
-
-fn bright_color(index: u8) -> ratatui::style::Color {
-    match index {
-        1 => theme::ACCENT,
-        2 => theme::GREEN,
-        7 => theme::CYAN,
-        _ => PANEL_INFO[(index - 1) as usize].1,
-    }
-}
-
-fn panel_title(index: u8, focused: bool) -> Line<'static> {
-    let (name, color) = PANEL_INFO[(index - 1) as usize];
-    let border_color = if focused { bright_color(index) } else { color };
-    let superscript = SUPERSCRIPT_DIGITS[(index - 1) as usize];
-    let focusable = FOCUSABLE_PANELS.contains(&index);
+fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
+    let def = panel::by_number(panel_number);
+    let color = def.border_color(focused);
+    let superscript = SUPERSCRIPT_DIGITS[(panel_number - 1) as usize];
 
     let mut spans = vec![
         Span::styled(
             format!(" {}", superscript),
-            Style::new().fg(border_color).add_modifier(Modifier::BOLD),
+            Style::new().fg(color).add_modifier(Modifier::BOLD),
         ),
     ];
 
-    if focusable {
-        let mut chars = name.chars();
+    if def.is_focusable() {
+        let mut chars = def.name.chars();
         let first = chars.next().unwrap();
         spans.push(Span::styled(
             String::from(first),
-            Style::new().fg(border_color),
+            Style::new().fg(color),
         ));
         spans.push(Span::styled(
             format!("{} ", chars.as_str()),
@@ -59,7 +39,7 @@ fn panel_title(index: u8, focused: bool) -> Line<'static> {
         ));
     } else {
         spans.push(Span::styled(
-            format!("{} ", name),
+            format!("{} ", def.name),
             Style::new().fg(theme::MUTED),
         ));
     }
@@ -67,14 +47,13 @@ fn panel_title(index: u8, focused: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-fn panel_block(index: u8, focused: bool) -> Block<'static> {
-    let (_, color) = PANEL_INFO[(index - 1) as usize];
-    let border_color = if focused { bright_color(index) } else { color };
+fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
+    let color = panel::by_number(panel_number).border_color(focused);
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(panel_title(index, focused))
-        .border_style(Style::new().fg(border_color))
+        .title(panel_title(panel_number, focused))
+        .border_style(Style::new().fg(color))
 }
 
 pub fn render_app(
@@ -82,8 +61,7 @@ pub fn render_app(
     title: &str,
     time: &str,
     battery_level: Option<u8>,
-    visible: &[bool; 7],
-    focused: Option<u8>,
+    app: &App,
     packages: Option<&[String]>,
 ) {
     let area = frame.area();
@@ -137,11 +115,16 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, visible, focused, packages);
+    render_panels(frame, inner, app, packages);
 }
 
-/// Level 1: vertical split between top row and bottom section.
-fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], focused: Option<u8>, packages: Option<&[String]>) {
+fn is_focused(app: &App, panel_number: u8) -> bool {
+    app.focused_panel() == Some(panel_number)
+}
+
+/// Vertical split between top row and bottom section.
+fn render_panels(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>) {
+    let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
     let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
 
@@ -151,29 +134,29 @@ fn render_panels(frame: &mut Frame, area: Rect, vis: &[bool; 7], focused: Option
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_top_row(frame, rows[0], vis, focused, packages);
-            render_bottom_section(frame, rows[1], vis, focused);
+            render_top_row(frame, rows[0], app, packages);
+            render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, vis, focused, packages),
-        (false, true) => render_bottom_section(frame, area, vis, focused),
+        (true, false) => render_top_row(frame, area, app, packages),
+        (false, true) => render_bottom_section(frame, area, app),
         (false, false) => {}
     }
 }
 
-/// Level 2a: horizontal split within the top row (panels 1, 2).
-fn render_top_row(frame: &mut Frame, area: Rect, vis: &[bool; 7], focused: Option<u8>, packages: Option<&[String]>) {
-    let f = |n: u8| focused == Some(n);
+/// Horizontal split within the top row (panels 1, 2).
+fn render_top_row(frame: &mut Frame, area: Rect, app: &App, packages: Option<&[String]>) {
+    let vis = app.panel_visibility();
     match (vis[0], vis[1]) {
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(area);
-            render_apps_panel(frame, cols[0], f(1), packages);
-            frame.render_widget(panel_block(2, f(2)), cols[1]);
+            render_apps_panel(frame, cols[0], is_focused(app, 1), packages);
+            frame.render_widget(panel_block(2, is_focused(app, 2)), cols[1]);
         }
-        (true, false) => render_apps_panel(frame, area, f(1), packages),
-        (false, true) => frame.render_widget(panel_block(2, f(2)), area),
+        (true, false) => render_apps_panel(frame, area, is_focused(app, 1), packages),
+        (false, true) => frame.render_widget(panel_block(2, is_focused(app, 2)), area),
         (false, false) => {}
     }
 }
@@ -185,8 +168,9 @@ fn render_apps_panel(frame: &mut Frame, area: Rect, focused: bool, packages: Opt
     apps::render_apps(frame, inner, packages);
 }
 
-/// Level 2b: horizontal split within the bottom section (3 columns).
-fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 7], focused: Option<u8>) {
+/// Horizontal split within the bottom section (3 columns).
+fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {
+    let vis = app.panel_visibility();
     let left_visible = vis[2] || vis[3];
     let mid_visible = vis[4] || vis[5];
     let right_visible = vis[6];
@@ -216,7 +200,7 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, vis: &[bool; 7], focused
         match col_type {
             BottomColumn::Left => render_left_column(frame, areas[i], vis),
             BottomColumn::Mid => render_mid_column(frame, areas[i], vis),
-            BottomColumn::Right => frame.render_widget(panel_block(7, focused == Some(7)), areas[i]),
+            BottomColumn::Right => frame.render_widget(panel_block(7, is_focused(app, 7)), areas[i]),
         }
     }
 }
@@ -227,7 +211,7 @@ enum BottomColumn {
     Right,
 }
 
-/// Level 3a: vertical split within the left column (panels 3, 4).
+/// Vertical split within the left column (panels 3, 4).
 fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     match (vis[2], vis[3]) {
         (true, true) => {
@@ -244,7 +228,7 @@ fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     }
 }
 
-/// Level 3b: vertical split within the mid column (panels 5, 6).
+/// Vertical split within the mid column (panels 5, 6).
 fn render_mid_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     match (vis[4], vis[5]) {
         (true, true) => {
