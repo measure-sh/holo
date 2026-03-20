@@ -11,18 +11,31 @@ pub struct LogcatLine<'a> {
     pub message: &'a str,
 }
 
+fn split_next_token(s: &str) -> Option<(&str, &str)> {
+    let s = s.trim_start();
+    if s.is_empty() {
+        return None;
+    }
+    match s.find(' ') {
+        Some(i) => Some((&s[..i], &s[i + 1..])),
+        None => Some((s, "")),
+    }
+}
+
 pub fn parse(line: &str) -> Option<LogcatLine<'_>> {
-    let mut parts = line.splitn(6, ' ');
-    let _date = parts.next()?;
-    let timestamp = parts.next()?;
-    let pid = parts.next()?;
-    let tid = parts.next()?;
-    let level_str = parts.next()?;
+    let mut rest = line;
+
+    let (_date, r) = split_next_token(rest)?;
+    let (timestamp, r) = split_next_token(r)?;
+    let (pid, r) = split_next_token(r)?;
+    let (tid, r) = split_next_token(r)?;
+    let (level_str, r) = split_next_token(r)?;
+    rest = r;
+
     let level = level_str.chars().next()?;
     if !matches!(level, 'V' | 'D' | 'I' | 'W' | 'E' | 'F') {
         return None;
     }
-    let rest = parts.next()?;
     let (tag, message) = if let Some((t, m)) = rest.split_once(": ") {
         (t.trim(), m)
     } else if let Some(t) = rest.strip_suffix(':') {
@@ -65,6 +78,18 @@ mod tests {
         assert_eq!(parsed.tid, "17010");
         assert_eq!(parsed.level, 'I');
         assert_eq!(parsed.tag, "ActivityManager");
+    }
+
+    #[test]
+    fn parse_line_with_padded_fields() {
+        let line = "03-20 21:35:22.958  3725  3742 D Measure : Span processed: SampleApp.onCreate, 102ms";
+        let parsed = parse(line).unwrap();
+        assert_eq!(parsed.timestamp, "21:35:22.958");
+        assert_eq!(parsed.pid, "3725");
+        assert_eq!(parsed.tid, "3742");
+        assert_eq!(parsed.level, 'D');
+        assert_eq!(parsed.tag, "Measure");
+        assert_eq!(parsed.message, "Span processed: SampleApp.onCreate, 102ms");
     }
 
     #[test]
