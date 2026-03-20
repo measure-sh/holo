@@ -58,14 +58,15 @@ pub fn render_apps(frame: &mut Frame, area: Rect, packages: Option<&[String]>, s
     let items: Vec<ListItem> = packages
         .iter()
         .map(|name| {
-            let pid_str = processes
-                .and_then(|p| p.get(name.as_str()))
-                .map(|pid| format!("{pid:<width$}", width = PID_WIDTH as usize))
-                .unwrap_or_else(|| " ".repeat(PID_WIDTH as usize));
+            let (pid_str, pid_color, name_color) = if let Some(pid) = processes.and_then(|p| p.get(name.as_str())) {
+                (format!("{pid:<width$}", width = PID_WIDTH as usize), theme::MUTED, theme::FG)
+            } else {
+                (format!("{:>width$}", "zzz", width = PID_WIDTH as usize), theme::SURFACE, theme::SURFACE)
+            };
 
             ListItem::new(Line::from(vec![
-                Span::styled(pid_str, Style::new().fg(theme::MUTED)),
-                Span::styled(name.clone(), Style::new().fg(theme::FG)),
+                Span::styled(pid_str, Style::new().fg(pid_color)),
+                Span::styled(name.clone(), Style::new().fg(name_color)),
             ]))
         })
         .collect();
