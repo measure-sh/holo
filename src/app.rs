@@ -115,47 +115,35 @@ impl App {
                     }
                     return Action::None;
                 }
-                KeyCode::Enter => {
-                    if self.db_state.selected_db.is_none() {
-                        self.db_state.select_db();
-                        if self.db_state.selected_db.is_some() {
-                            self.input_mode = InputMode::EditingQuery;
-                        }
+                KeyCode::Enter if self.db_state.selected_db.is_none() => {
+                    self.db_state.select_db();
+                    if self.db_state.selected_db.is_some() {
+                        self.input_mode = InputMode::EditingQuery;
                     }
                     return Action::None;
                 }
-                KeyCode::Esc if self.db_state.selected_db.is_none() => {
-                    self.focused = None;
-                    return Action::None;
-                }
-                _ => {}
-            }
-        }
-
-        if self.db_state.selected_db.is_some() {
-            match code {
-                KeyCode::Char('p') => {
+                KeyCode::Char('p') if self.db_state.selected_db.is_some() => {
                     self.db_state.confirming_pull = self.db_state.selected_db.clone();
                     return Action::None;
                 }
-                KeyCode::Char('e') => {
-                    self.focused = Some(panel::DATABASE);
+                KeyCode::Char('e') if self.db_state.selected_db.is_some() => {
                     self.input_mode = InputMode::EditingQuery;
                     return Action::None;
                 }
-                KeyCode::Esc => {
-                    self.focused = Some(panel::DATABASE);
-                    self.db_state.deselect_db();
-                    return Action::None;
-                }
-                KeyCode::Up => {
-                    self.focused = Some(panel::DATABASE);
+                KeyCode::Up if self.db_state.selected_db.is_some() => {
                     self.db_state.move_up();
                     return Action::None;
                 }
-                KeyCode::Down => {
-                    self.focused = Some(panel::DATABASE);
+                KeyCode::Down if self.db_state.selected_db.is_some() => {
                     self.db_state.move_down();
+                    return Action::None;
+                }
+                KeyCode::Esc if self.db_state.selected_db.is_some() => {
+                    self.db_state.deselect_db();
+                    return Action::None;
+                }
+                KeyCode::Esc => {
+                    self.focused = None;
                     return Action::None;
                 }
                 _ => {}
@@ -172,37 +160,36 @@ impl App {
                     self.logcat_state.scroll = self.logcat_state.scroll.saturating_sub(1);
                     return Action::None;
                 }
+                KeyCode::Esc if self.logcat_state.scroll > 0 => {
+                    self.logcat_state.scroll = 0;
+                    return Action::None;
+                }
+                KeyCode::Esc => {
+                    self.focused = None;
+                    return Action::None;
+                }
+                KeyCode::Char('t') => {
+                    self.input_mode = InputMode::EditingTag;
+                    return Action::None;
+                }
+                KeyCode::Char('s') => {
+                    self.input_mode = InputMode::EditingSearch;
+                    return Action::None;
+                }
+                KeyCode::Right => {
+                    self.logcat_state.cycle_level(true);
+                    return Action::None;
+                }
+                KeyCode::Left => {
+                    self.logcat_state.cycle_level(false);
+                    return Action::None;
+                }
+                KeyCode::Char('r') => {
+                    self.logcat_state.reset();
+                    return Action::ResetLogcat;
+                }
                 _ => {}
             }
-        }
-
-        if code == KeyCode::Esc && self.logcat_state.scroll > 0 {
-            self.focused = Some(panel::LOGCAT);
-            self.logcat_state.scroll = 0;
-            return Action::None;
-        }
-        match code {
-            KeyCode::Char('t') => {
-                self.focused = Some(panel::LOGCAT);
-                self.input_mode = InputMode::EditingTag;
-                return Action::None;
-            }
-            KeyCode::Char('s') => {
-                self.focused = Some(panel::LOGCAT);
-                self.input_mode = InputMode::EditingSearch;
-                return Action::None;
-            }
-            KeyCode::Right => {
-                self.focused = Some(panel::LOGCAT);
-                self.logcat_state.cycle_level(true);
-                return Action::None;
-            }
-            KeyCode::Left => {
-                self.focused = Some(panel::LOGCAT);
-                self.logcat_state.cycle_level(false);
-                return Action::None;
-            }
-            _ => {}
         }
 
         match code {
@@ -210,10 +197,6 @@ impl App {
             KeyCode::Char('o') => Action::OpenApp,
             KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('c') => Action::ClearData,
-            KeyCode::Char('r') => {
-                self.logcat_state.reset();
-                Action::ResetLogcat
-            }
             KeyCode::Char(c @ '1'..='5') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -395,33 +378,35 @@ mod tests {
     }
 
     #[test]
-    fn t_enters_tag_editing() {
+    fn t_enters_tag_editing_when_focused() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
         assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
-    fn s_enters_search_editing() {
+    fn s_enters_search_editing_when_focused() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('s'));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
         assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
-    fn t_works_without_focus() {
+    fn t_ignored_without_focus() {
         let mut app = App::new();
         assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Char('t'));
-        assert_eq!(app.input_mode(), InputMode::EditingTag);
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.input_mode(), InputMode::Normal);
     }
 
     #[test]
     fn typing_appends_to_tag() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         app.handle_key(KeyCode::Char('a'));
         app.handle_key(KeyCode::Char('b'));
@@ -431,6 +416,7 @@ mod tests {
     #[test]
     fn typing_appends_to_search() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('s'));
         app.handle_key(KeyCode::Char('x'));
         app.handle_key(KeyCode::Char('y'));
@@ -440,6 +426,7 @@ mod tests {
     #[test]
     fn backspace_removes_from_tag() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         app.handle_key(KeyCode::Char('a'));
         app.handle_key(KeyCode::Char('b'));
@@ -450,6 +437,7 @@ mod tests {
     #[test]
     fn enter_exits_editing_mode() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('s'));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
         app.handle_key(KeyCode::Enter);
@@ -459,6 +447,7 @@ mod tests {
     #[test]
     fn esc_exits_tag_editing_preserving_input() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         app.handle_key(KeyCode::Char('a'));
         app.handle_key(KeyCode::Char('b'));
@@ -470,6 +459,7 @@ mod tests {
     #[test]
     fn esc_exits_search_editing_preserving_input() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('s'));
         app.handle_key(KeyCode::Char('x'));
         app.handle_key(KeyCode::Char('y'));
@@ -481,10 +471,10 @@ mod tests {
     #[test]
     fn level_cycles_forward_with_right() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         assert_eq!(app.logcat_state().filter.level, None);
         app.handle_key(KeyCode::Right);
         assert_eq!(app.logcat_state().filter.level, Some('V'));
-        assert_eq!(app.focused_panel(), Some(2));
         app.handle_key(KeyCode::Right);
         assert_eq!(app.logcat_state().filter.level, Some('D'));
     }
@@ -492,6 +482,7 @@ mod tests {
     #[test]
     fn level_cycles_backward_with_left() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Left);
         assert_eq!(app.logcat_state().filter.level, Some('F'));
     }
@@ -499,6 +490,7 @@ mod tests {
     #[test]
     fn level_wraps_around() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         for _ in 0..7 {
             app.handle_key(KeyCode::Right);
         }
@@ -541,31 +533,32 @@ mod tests {
         app.handle_key(KeyCode::Up);
         app.handle_key(KeyCode::Up);
         assert_eq!(app.logcat_state().scroll, 3);
-        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.logcat_state().scroll, 0);
         assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
-    fn esc_does_nothing_when_already_at_bottom() {
+    fn esc_unfocuses_logcat_when_at_bottom() {
         let mut app = App::new();
-        assert_eq!(app.logcat_state().scroll, 0);
+        app.handle_key(KeyCode::Char('l'));
+        assert_eq!(app.focused_panel(), Some(2));
         app.handle_key(KeyCode::Esc);
-        assert_eq!(app.logcat_state().scroll, 0);
+        assert_eq!(app.focused_panel(), None);
     }
 
     #[test]
-    fn left_right_shifts_focus_to_logcat() {
+    fn left_right_ignored_without_focus() {
         let mut app = App::new();
         assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Right);
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.logcat_state().filter.level, None);
     }
 
     #[test]
     fn r_resets_logcat_filters_and_scroll() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         app.handle_key(KeyCode::Char('a'));
         app.handle_key(KeyCode::Enter);
@@ -576,7 +569,6 @@ mod tests {
         assert_eq!(app.logcat_state().filter.tag, "a");
         assert_eq!(app.logcat_state().filter.search, "b");
         assert!(app.logcat_state().filter.level.is_some());
-        assert_eq!(app.focused_panel(), Some(2));
         app.handle_key(KeyCode::Up);
         app.handle_key(KeyCode::Up);
         assert_eq!(app.logcat_state().scroll, 2);
@@ -586,6 +578,12 @@ mod tests {
         assert_eq!(app.logcat_state().filter.search, "");
         assert_eq!(app.logcat_state().filter.level, None);
         assert_eq!(app.logcat_state().scroll, 0);
+    }
+
+    #[test]
+    fn r_ignored_without_focus() {
+        let mut app = App::new();
+        assert!(matches!(app.handle_key(KeyCode::Char('r')), Action::None));
     }
 
     #[test]
@@ -671,43 +669,50 @@ mod tests {
     }
 
     #[test]
-    fn e_from_unfocused_with_selected_db_enters_editing() {
+    fn e_ignored_without_db_focus() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.db_state_mut().selected_db = Some("a.db".into());
+        app.handle_key(KeyCode::Char('e'));
+        assert_eq!(app.input_mode(), InputMode::Normal);
+    }
+
+    #[test]
+    fn e_enters_editing_when_focused_with_selected_db() {
         let mut app = App::new();
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(KeyCode::Char('d'));
         app.handle_key(KeyCode::Enter);
         app.handle_key(KeyCode::Esc); // exit EditingQuery
-        app.handle_key(KeyCode::Esc); // deselect -> now global
-        // Re-select a DB manually for the test
-        app.db_state_mut().selected_db = Some("a.db".into());
-        app.focused = None;
         app.handle_key(KeyCode::Char('e'));
         assert_eq!(app.input_mode(), InputMode::EditingQuery);
         assert_eq!(app.focused_panel(), Some(5));
     }
 
     #[test]
-    fn up_down_with_selected_db_from_unfocused_scrolls_history() {
+    fn up_down_with_selected_db_scrolls_history_when_focused() {
         let mut app = App::new();
-        app.db_state_mut().selected_db = Some("a.db".into());
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Esc); // exit EditingQuery
         app.db_state_mut().history = vec![
             crate::database::ReplLine::Input("SELECT 1".into()),
             crate::database::ReplLine::Output("1".into()),
         ];
-        assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Up);
         assert_eq!(app.db_state().scroll, 1);
-        assert_eq!(app.focused_panel(), Some(5));
     }
 
     #[test]
-    fn esc_with_selected_db_from_unfocused_deselects() {
+    fn up_down_ignored_without_db_focus() {
         let mut app = App::new();
         app.db_state_mut().selected_db = Some("a.db".into());
-        assert_eq!(app.focused_panel(), None);
-        app.handle_key(KeyCode::Esc);
-        assert!(app.db_state().selected_db.is_none());
-        assert_eq!(app.focused_panel(), Some(5));
+        app.db_state_mut().history = vec![
+            crate::database::ReplLine::Input("SELECT 1".into()),
+        ];
+        app.handle_key(KeyCode::Up);
+        assert_eq!(app.db_state().scroll, 0);
     }
 
     #[test]
@@ -768,6 +773,7 @@ mod tests {
     #[test]
     fn toggle_focus_clears_tag_editing() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
         app.handle_key(KeyCode::Esc);
@@ -778,6 +784,7 @@ mod tests {
     #[test]
     fn toggle_focus_clears_search_editing() {
         let mut app = App::new();
+        app.handle_key(KeyCode::Char('l'));
         app.handle_key(KeyCode::Char('s'));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
         app.handle_key(KeyCode::Esc);
@@ -793,8 +800,6 @@ mod tests {
         app.handle_key(KeyCode::Enter);
         assert_eq!(app.input_mode(), InputMode::EditingQuery);
         app.handle_key(KeyCode::Esc);
-        app.handle_key(KeyCode::Esc);
-        app.db_state_mut().selected_db = Some("a.db".into());
         app.handle_key(KeyCode::Char('e'));
         assert_eq!(app.input_mode(), InputMode::EditingQuery);
         app.handle_key(KeyCode::Esc);
