@@ -115,7 +115,7 @@ impl Adb for RealAdb {
     fn query_database(&self, serial: &str, package: &str, db_name: &str, sql: &str) -> Result<String> {
         let escaped_sql = sql.replace('\'', "'\\''");
         let shell_cmd = format!(
-            "run-as {package} sqlite3 databases/{db_name} -header -separator '|' '{escaped_sql}'"
+            "run-as {package} sqlite3 databases/{db_name} '{escaped_sql}'"
         );
         let output = Command::new("adb")
             .args(["-s", serial, "shell", &shell_cmd])

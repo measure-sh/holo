@@ -173,7 +173,10 @@ fn run_app(
         }
         if let Some(rx) = &db_query_rx {
             if let Ok(result) = rx.try_recv() {
-                app.db_state_mut().query_result = Some(result.map_err(|e| e.to_string()));
+                match result {
+                    Ok(output) => app.db_state_mut().push_result(&output),
+                    Err(e) => app.db_state_mut().push_error(&e),
+                }
                 db_query_rx = None;
             }
         }
@@ -216,13 +219,6 @@ fn run_app(
                             package.to_string(),
                             db,
                             sql,
-                        ));
-                    }
-                    Action::RefreshDatabases => {
-                        db_detect_rx = Some(database::spawn_db_detector(
-                            adb.clone(),
-                            device.serial.clone(),
-                            package.to_string(),
                         ));
                     }
                     Action::None => {}

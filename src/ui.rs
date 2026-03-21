@@ -349,7 +349,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect) {
     frame.render_widget(list, inner);
 }
 
-fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {
+fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
     let left_visible = vis[2] || vis[3];
     let right_visible = vis[4] || vis[5] || vis[6];
@@ -385,7 +385,7 @@ fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     }
 }
 
-fn render_right_column(frame: &mut Frame, area: Rect, app: &App) {
+fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
     let panels: Vec<u8> = [5, 6, 7]
         .iter()
@@ -406,7 +406,8 @@ fn render_right_column(frame: &mut Frame, area: Rect, app: &App) {
 
     for (i, &pn) in panels.iter().enumerate() {
         if pn == 7 {
-            render_database_panel(frame, rows[i], is_focused(app, 7), app.db_state(), app.input_mode());
+            let im = app.input_mode();
+            render_database_panel(frame, rows[i], is_focused(app, 7), app.db_state_mut(), im);
         } else {
             frame.render_widget(panel_block(pn, false), rows[i]);
         }
@@ -417,7 +418,7 @@ fn render_database_panel(
     frame: &mut Frame,
     area: Rect,
     focused: bool,
-    db_state: &DatabaseState,
+    db_state: &mut DatabaseState,
     input_mode: InputMode,
 ) {
     let accent = Style::new().fg(theme::KEY_HINT);
@@ -442,24 +443,13 @@ fn render_database_panel(
             Span::styled(format!("atabase: {} ", db_name), Style::new().fg(theme::FG)),
         ]);
 
-        let query_display = if matches!(input_mode, InputMode::EditingQuery) {
-            db_state.query_input.clone()
-        } else if db_state.query_input.is_empty() {
-            String::new()
-        } else {
-            db_state.query_input.clone()
-        };
-
-        let mut bottom_spans = vec![
+        let bottom_spans = vec![
             Span::styled(" e", accent),
-            Span::styled(format!("dit query:{} ", query_display), muted),
+            Span::styled("nter query ", muted),
+            Span::styled("───", Style::new().fg(panel::by_number(7).border_color(focused))),
+            Span::styled(" esc", accent),
+            Span::styled(" back ", muted),
         ];
-        if matches!(input_mode, InputMode::EditingQuery) {
-            bottom_spans.push(Span::styled("↩ ", Style::new().fg(theme::RED)));
-        }
-        bottom_spans.push(Span::styled("───", Style::new().fg(panel::by_number(7).border_color(focused))));
-        bottom_spans.push(Span::styled(" esc", accent));
-        bottom_spans.push(Span::styled(" back ", muted));
 
         let color = panel::by_number(7).border_color(focused);
         let block = Block::default()
@@ -471,28 +461,53 @@ fn render_database_panel(
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        match &db_state.query_result {
-            Some(Ok(raw)) => {
-                let rows = crate::database::parse_query_result(raw);
-                let items: Vec<ListItem> = rows
-                    .iter()
-                    .map(|cols| {
-                        let text = cols.join(" | ");
-                        ListItem::new(Line::from(Span::styled(text, Style::new().fg(theme::FG))))
-                    })
-                    .collect();
-                let visible_height = inner.height as usize;
-                let total = items.len();
-                let end = total.saturating_sub(db_state.result_scroll);
-                let start = end.saturating_sub(visible_height);
-                let visible_items: Vec<ListItem> = items[start..end].to_vec();
-                frame.render_widget(List::new(visible_items), inner);
-            }
-            Some(Err(e)) => {
-                let item = ListItem::new(Line::from(Span::styled(e.as_str(), Style::new().fg(theme::RED))));
-                frame.render_widget(List::new(vec![item]), inner);
-            }
-            None => {}
+        let editing = matches!(input_mode, InputMode::EditingQuery);
+
+        let input_row = Rect {
+            x: inner.x,
+            y: inner.y + inner.height.saturating_sub(1),
+            width: inner.width,
+            height: 1.min(inner.height),
+        };
+        let history_area = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: inner.width,
+            height: inner.height.saturating_sub(1),
+        };
+
+        let input_line = if editing {
+            Line::from(vec![
+                Span::styled("> ", Style::new().fg(theme::ACCENT)),
+                Span::styled(db_state.input.clone(), Style::new().fg(theme::FG)),
+            ])
+        } else if db_state.history.is_empty() {
+            Line::from(Span::styled("press e to enter a query", muted))
+        } else {
+            Line::from(Span::styled("> ", Style::new().fg(theme::MUTED)))
+        };
+        frame.render_widget(input_line, input_row);
+
+        if !db_state.history.is_empty() {
+            let visible_height = history_area.height as usize;
+            let total = db_state.history.len();
+            db_state.clamp_scroll(total, visible_height);
+            let end = total.saturating_sub(db_state.scroll);
+            let start = end.saturating_sub(visible_height);
+            let items: Vec<ListItem> = db_state.history[start..end].iter().map(|line| {
+                match line {
+                    crate::database::ReplLine::Input(s) => {
+                        ListItem::new(Line::from(Span::styled(format!("> {s}"), Style::new().fg(theme::ACCENT))))
+                    }
+                    crate::database::ReplLine::Output(s) => {
+                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(theme::FG))))
+                    }
+                    crate::database::ReplLine::Error(s) => {
+                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(theme::RED))))
+                    }
+                }
+            }).collect();
+            frame.render_widget(List::new(items), history_area);
         }
     } else {
         let block = panel_block(7, focused);

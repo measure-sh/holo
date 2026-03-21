@@ -11,7 +11,6 @@ pub enum Action {
     ClearData,
     ResetLogcat,
     RunQuery(String, String),
-    RefreshDatabases,
 }
 
 const LEVELS: [Option<char>; 7] = [
@@ -91,14 +90,16 @@ impl App {
             }
             InputMode::EditingQuery => {
                 match code {
-                    KeyCode::Char(c) => self.db_state.query_input.push(c),
-                    KeyCode::Backspace => { self.db_state.query_input.pop(); }
+                    KeyCode::Char(c) => self.db_state.input.push(c),
+                    KeyCode::Backspace => { self.db_state.input.pop(); }
                     KeyCode::Enter => {
-                        self.input_mode = InputMode::Normal;
                         if let Some(db) = self.db_state.selected_db.clone() {
-                            let sql = self.db_state.query_input.clone();
+                            let sql = self.db_state.input.clone();
                             if !sql.is_empty() {
-                                self.db_state.result_scroll = 0;
+                                self.db_state.push_query(&sql);
+                                self.db_state.input.clear();
+                                self.db_state.scroll = 0;
+                                self.input_mode = InputMode::Normal;
                                 return Action::RunQuery(db, sql);
                             }
                         }
@@ -124,6 +125,9 @@ impl App {
                 KeyCode::Enter => {
                     if self.db_state.selected_db.is_none() {
                         self.db_state.select_db();
+                        if self.db_state.selected_db.is_some() {
+                            self.input_mode = InputMode::EditingQuery;
+                        }
                     }
                     return Action::None;
                 }
@@ -245,6 +249,7 @@ impl App {
         &self.visible
     }
 
+    #[cfg(test)]
     pub fn db_state(&self) -> &DatabaseState {
         &self.db_state
     }
@@ -616,6 +621,7 @@ mod tests {
         assert_eq!(app.db_state().selected_index, 1);
         app.handle_key(KeyCode::Enter);
         assert_eq!(app.db_state().selected_db.as_deref(), Some("b.db"));
+        assert_eq!(app.input_mode(), InputMode::EditingQuery);
     }
 
     #[test]
@@ -625,6 +631,9 @@ mod tests {
         app.handle_key(KeyCode::Char('d'));
         app.handle_key(KeyCode::Enter);
         assert!(app.db_state().selected_db.is_some());
+        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.input_mode(), InputMode::Normal);
         app.handle_key(KeyCode::Esc);
         assert!(app.db_state().selected_db.is_none());
         assert_eq!(app.focused_panel(), Some(7));
@@ -633,28 +642,40 @@ mod tests {
     }
 
     #[test]
+    fn db_panel_select_auto_enters_editing() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+    }
+
+    #[test]
     fn db_panel_e_enters_query_editing() {
         let mut app = App::new();
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(KeyCode::Char('d'));
         app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.input_mode(), InputMode::Normal);
         app.handle_key(KeyCode::Char('e'));
         assert_eq!(app.input_mode(), InputMode::EditingQuery);
     }
 
     #[test]
-    fn query_editing_enter_returns_run_query() {
+    fn query_editing_enter_returns_run_query_and_appends_history() {
         let mut app = App::new();
         app.db_state_mut().databases = vec!["test.db".into()];
         app.handle_key(KeyCode::Char('d'));
         app.handle_key(KeyCode::Enter);
-        app.handle_key(KeyCode::Char('e'));
         app.handle_key(KeyCode::Char('S'));
         app.handle_key(KeyCode::Char('Q'));
         app.handle_key(KeyCode::Char('L'));
         let action = app.handle_key(KeyCode::Enter);
         assert!(matches!(action, Action::RunQuery(_, _)));
         assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(app.db_state().input.is_empty());
+        assert_eq!(app.db_state().history.len(), 1);
     }
 
     #[test]
