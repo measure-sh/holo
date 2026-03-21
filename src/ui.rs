@@ -208,6 +208,11 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
     spans.push(Span::styled(format!("level:{}", level_str), muted));
     spans.push(Span::styled("\u{25B8} ", accent));
 
+    spans.push(Span::styled("───", border));
+
+    spans.push(Span::styled(" r", accent));
+    spans.push(Span::styled("eset ", muted));
+
     Line::from(spans)
 }
 

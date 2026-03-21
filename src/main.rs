@@ -185,6 +185,9 @@ fn run_app(
                             adb.clear_app_data(s, p)
                         });
                     }
+                    Action::ResetLogcat => {
+                        logcat_lines.clear();
+                    }
                     Action::None => {}
                 }
             }

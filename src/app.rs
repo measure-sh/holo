@@ -8,6 +8,7 @@ pub enum Action {
     OpenApp,
     KillApp,
     ClearData,
+    ResetLogcat,
 }
 
 const LEVELS: [Option<char>; 7] = [
@@ -133,6 +134,11 @@ impl App {
             KeyCode::Char('o') => Action::OpenApp,
             KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('c') => Action::ClearData,
+            KeyCode::Char('r') => {
+                self.logcat_filter = LogcatFilter::new();
+                self.logcat_scroll = 0;
+                Action::ResetLogcat
+            }
             KeyCode::Char(c @ '1'..='6') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -491,6 +497,31 @@ mod tests {
         assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Right);
         assert_eq!(app.focused_panel(), Some(2));
+    }
+
+    #[test]
+    fn r_resets_logcat_filters_and_scroll() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('t'));
+        app.handle_key(KeyCode::Char('a'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('s'));
+        app.handle_key(KeyCode::Char('b'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Right);
+        assert_eq!(app.logcat_filter().tag, "a");
+        assert_eq!(app.logcat_filter().search, "b");
+        assert!(app.logcat_filter().level.is_some());
+        assert_eq!(app.focused_panel(), Some(2));
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Up);
+        assert_eq!(app.logcat_scroll(), 2);
+
+        assert!(matches!(app.handle_key(KeyCode::Char('r')), Action::ResetLogcat));
+        assert_eq!(app.logcat_filter().tag, "");
+        assert_eq!(app.logcat_filter().search, "");
+        assert_eq!(app.logcat_filter().level, None);
+        assert_eq!(app.logcat_scroll(), 0);
     }
 
     #[test]
