@@ -97,6 +97,37 @@ impl Adb for RealAdb {
         }
         Ok(())
     }
+
+    fn list_databases(&self, serial: &str, package: &str) -> Result<Vec<String>> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "run-as", package, "ls", "databases/"])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("listing databases failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_database_list(&stdout))
+    }
+
+    fn query_database(&self, serial: &str, package: &str, db_name: &str, sql: &str) -> Result<String> {
+        let db_path = format!("databases/{db_name}");
+        let output = Command::new("adb")
+            .args([
+                "-s", serial, "shell", "run-as", package,
+                "sqlite3", &db_path, "-header", "-separator", "|", sql,
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("{stderr}");
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
 }
 
 fn parse_package_list(output: &str) -> Vec<String> {
@@ -134,6 +165,16 @@ fn parse_process_list(output: &str) -> HashMap<String, u32> {
         map.insert(name.to_string(), pid);
     }
     map
+}
+
+pub fn parse_database_list(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .filter(|l| !l.ends_with("-journal") && !l.ends_with("-wal") && !l.ends_with("-shm"))
+        .map(|l| l.to_string())
+        .collect()
 }
 
 pub fn parse_device_list(output: &str) -> Vec<Device> {
@@ -274,6 +315,26 @@ mod tests {
         let procs = parse_process_list(output);
         assert_eq!(procs.get("init"), Some(&1));
         assert_eq!(procs.len(), 1);
+    }
+
+    #[test]
+    fn parses_database_list() {
+        let output = "app.db\napp.db-journal\napp.db-wal\napp.db-shm\ncache.db\n";
+        let dbs = parse_database_list(output);
+        assert_eq!(dbs, vec!["app.db", "cache.db"]);
+    }
+
+    #[test]
+    fn returns_empty_for_no_databases() {
+        assert!(parse_database_list("").is_empty());
+        assert!(parse_database_list("\n\n").is_empty());
+    }
+
+    #[test]
+    fn filters_all_journal_variants() {
+        let output = "main.db\nmain.db-journal\nmain.db-wal\nmain.db-shm\n";
+        let dbs = parse_database_list(output);
+        assert_eq!(dbs, vec!["main.db"]);
     }
 
     #[test]

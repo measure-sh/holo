@@ -4,6 +4,7 @@ mod apps;
 mod battery;
 mod boot;
 mod boot_ui;
+mod database;
 mod logcat;
 mod panel;
 mod processes;
@@ -125,6 +126,10 @@ fn run_app(
     let mut monitored_pid: Option<u32> = None;
     const MAX_LOGCAT_LINES: usize = 1000;
 
+    let mut db_detect_rx: Option<mpsc::Receiver<Result<Vec<String>, String>>> =
+        Some(database::spawn_db_detector(adb.clone(), device.serial.clone(), package.to_string()));
+    let mut db_query_rx: Option<mpsc::Receiver<Result<String, String>>> = None;
+
     loop {
         while let Ok(level) = battery_rx.try_recv() {
             battery_level = Some(level);
@@ -154,6 +159,22 @@ fn run_app(
                 if logcat_lines.len() > MAX_LOGCAT_LINES {
                     logcat_lines.drain(..logcat_lines.len() - MAX_LOGCAT_LINES);
                 }
+            }
+        }
+
+        if let Some(rx) = &db_detect_rx {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(dbs) => app.db_state_mut().databases = dbs,
+                    Err(e) => app.db_state_mut().error = Some(e),
+                }
+                db_detect_rx = None;
+            }
+        }
+        if let Some(rx) = &db_query_rx {
+            if let Ok(result) = rx.try_recv() {
+                app.db_state_mut().query_result = Some(result.map_err(|e| e.to_string()));
+                db_query_rx = None;
             }
         }
 
@@ -187,6 +208,22 @@ fn run_app(
                     }
                     Action::ResetLogcat => {
                         logcat_lines.clear();
+                    }
+                    Action::RunQuery(db, sql) => {
+                        db_query_rx = Some(database::spawn_query(
+                            adb.clone(),
+                            device.serial.clone(),
+                            package.to_string(),
+                            db,
+                            sql,
+                        ));
+                    }
+                    Action::RefreshDatabases => {
+                        db_detect_rx = Some(database::spawn_db_detector(
+                            adb.clone(),
+                            device.serial.clone(),
+                            package.to_string(),
+                        ));
                     }
                     Action::None => {}
                 }

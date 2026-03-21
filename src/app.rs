@@ -1,5 +1,6 @@
 use crossterm::event::KeyCode;
 
+use crate::database::DatabaseState;
 use crate::panel;
 
 pub enum Action {
@@ -9,6 +10,8 @@ pub enum Action {
     KillApp,
     ClearData,
     ResetLogcat,
+    RunQuery(String, String),
+    RefreshDatabases,
 }
 
 const LEVELS: [Option<char>; 7] = [
@@ -42,24 +45,27 @@ pub enum InputMode {
     Normal,
     EditingTag,
     EditingSearch,
+    EditingQuery,
 }
 
 pub struct App {
-    visible: [bool; 6],
+    visible: [bool; 7],
     focused: Option<u8>,
     logcat_filter: LogcatFilter,
     input_mode: InputMode,
     logcat_scroll: usize,
+    db_state: DatabaseState,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
-            visible: [true; 6],
+            visible: [true; 7],
             focused: None,
             logcat_filter: LogcatFilter::new(),
             input_mode: InputMode::Normal,
             logcat_scroll: 0,
+            db_state: DatabaseState::new(),
         }
     }
 
@@ -83,7 +89,60 @@ impl App {
                 }
                 return Action::None;
             }
+            InputMode::EditingQuery => {
+                match code {
+                    KeyCode::Char(c) => self.db_state.query_input.push(c),
+                    KeyCode::Backspace => { self.db_state.query_input.pop(); }
+                    KeyCode::Enter => {
+                        self.input_mode = InputMode::Normal;
+                        if let Some(db) = self.db_state.selected_db.clone() {
+                            let sql = self.db_state.query_input.clone();
+                            if !sql.is_empty() {
+                                self.db_state.result_scroll = 0;
+                                return Action::RunQuery(db, sql);
+                            }
+                        }
+                    }
+                    KeyCode::Esc => self.input_mode = InputMode::Normal,
+                    _ => {}
+                }
+                return Action::None;
+            }
             InputMode::Normal => {}
+        }
+
+        if self.focused == Some(7) {
+            match code {
+                KeyCode::Up => {
+                    self.db_state.move_up();
+                    return Action::None;
+                }
+                KeyCode::Down => {
+                    self.db_state.move_down();
+                    return Action::None;
+                }
+                KeyCode::Enter => {
+                    if self.db_state.selected_db.is_none() {
+                        self.db_state.select_db();
+                    }
+                    return Action::None;
+                }
+                KeyCode::Char('e') => {
+                    if self.db_state.selected_db.is_some() {
+                        self.input_mode = InputMode::EditingQuery;
+                    }
+                    return Action::None;
+                }
+                KeyCode::Esc => {
+                    if self.db_state.selected_db.is_some() {
+                        self.db_state.deselect_db();
+                    } else {
+                        self.focused = None;
+                    }
+                    return Action::None;
+                }
+                _ => {}
+            }
         }
 
         if self.focused == Some(2) {
@@ -139,7 +198,7 @@ impl App {
                 self.logcat_scroll = 0;
                 Action::ResetLogcat
             }
-            KeyCode::Char(c @ '1'..='6') => {
+            KeyCode::Char(c @ '1'..='7') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
             }
@@ -164,7 +223,7 @@ impl App {
     }
 
     fn toggle_visibility(&mut self, n: u8) {
-        if !(1..=6).contains(&n) {
+        if !(1..=7).contains(&n) {
             return;
         }
         let idx = (n - 1) as usize;
@@ -182,8 +241,16 @@ impl App {
         }
     }
 
-    pub fn panel_visibility(&self) -> &[bool; 6] {
+    pub fn panel_visibility(&self) -> &[bool; 7] {
         &self.visible
+    }
+
+    pub fn db_state(&self) -> &DatabaseState {
+        &self.db_state
+    }
+
+    pub fn db_state_mut(&mut self) -> &mut DatabaseState {
+        &mut self.db_state
     }
 
     pub fn focused_panel(&self) -> Option<u8> {
@@ -221,7 +288,7 @@ mod tests {
     #[test]
     fn new_app_all_panels_visible() {
         let app = App::new();
-        assert_eq!(app.panel_visibility(), &[true; 6]);
+        assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
@@ -236,7 +303,7 @@ mod tests {
         app.toggle_visibility(3);
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true]
+            &[true, true, false, true, true, true, true]
         );
     }
 
@@ -245,23 +312,23 @@ mod tests {
         let mut app = App::new();
         app.toggle_visibility(3);
         app.toggle_visibility(3);
-        assert_eq!(app.panel_visibility(), &[true; 6]);
+        assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new();
-        for n in 2..=6 {
+        for n in 2..=7 {
             app.toggle_visibility(n);
         }
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false]
+            &[true, false, false, false, false, false, false]
         );
         app.toggle_visibility(1);
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false]
+            &[true, false, false, false, false, false, false]
         );
     }
 
@@ -269,9 +336,9 @@ mod tests {
     fn out_of_range_is_ignored() {
         let mut app = App::new();
         app.toggle_visibility(0);
-        app.toggle_visibility(7);
         app.toggle_visibility(8);
-        assert_eq!(app.panel_visibility(), &[true; 6]);
+        app.toggle_visibility(9);
+        assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
@@ -289,7 +356,7 @@ mod tests {
         ));
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true]
+            &[true, true, false, true, true, true, true]
         );
     }
 
@@ -300,7 +367,7 @@ mod tests {
             app.handle_key(KeyCode::Char('x')),
             Action::None
         ));
-        assert_eq!(app.panel_visibility(), &[true; 6]);
+        assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
@@ -531,5 +598,71 @@ mod tests {
         app.handle_key(KeyCode::Up);
         app.handle_key(KeyCode::Down);
         assert_eq!(app.logcat_scroll(), 0);
+    }
+
+    #[test]
+    fn d_focuses_database_panel() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('d'));
+        assert_eq!(app.focused_panel(), Some(7));
+    }
+
+    #[test]
+    fn db_panel_navigate_and_select() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into(), "b.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Down);
+        assert_eq!(app.db_state().selected_index, 1);
+        app.handle_key(KeyCode::Enter);
+        assert_eq!(app.db_state().selected_db.as_deref(), Some("b.db"));
+    }
+
+    #[test]
+    fn db_panel_esc_deselects_then_unfocuses() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        assert!(app.db_state().selected_db.is_some());
+        app.handle_key(KeyCode::Esc);
+        assert!(app.db_state().selected_db.is_none());
+        assert_eq!(app.focused_panel(), Some(7));
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.focused_panel(), None);
+    }
+
+    #[test]
+    fn db_panel_e_enters_query_editing() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('e'));
+        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+    }
+
+    #[test]
+    fn query_editing_enter_returns_run_query() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["test.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('e'));
+        app.handle_key(KeyCode::Char('S'));
+        app.handle_key(KeyCode::Char('Q'));
+        app.handle_key(KeyCode::Char('L'));
+        let action = app.handle_key(KeyCode::Enter);
+        assert!(matches!(action, Action::RunQuery(_, _)));
+        assert_eq!(app.input_mode(), InputMode::Normal);
+    }
+
+    #[test]
+    fn toggle_panel_7_visibility() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('7'));
+        assert!(!app.panel_visibility()[6]);
+        app.handle_key(KeyCode::Char('7'));
+        assert!(app.panel_visibility()[6]);
     }
 }

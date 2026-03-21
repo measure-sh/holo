@@ -10,6 +10,7 @@ use ratatui::{
 };
 
 use crate::app::{App, InputMode, LogcatFilter};
+use crate::database::DatabaseState;
 
 const COMMAND_LABELS: [&str; 3] = [
     "open app",
@@ -22,8 +23,7 @@ use crate::panel;
 use crate::theme;
 
 const SUPERSCRIPT_DIGITS: [char; 8] = [
-    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}',
-    '\u{2078}',
+    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}',
 ];
 
 fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
@@ -117,7 +117,7 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
-    let bot_visible = vis[2] || vis[3] || vis[4] || vis[5];
+    let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
 
     match (top_visible, bot_visible) {
         (true, true) => {
@@ -352,7 +352,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect) {
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {
     let vis = app.panel_visibility();
     let left_visible = vis[2] || vis[3];
-    let right_visible = vis[4] || vis[5];
+    let right_visible = vis[4] || vis[5] || vis[6];
 
     match (left_visible, right_visible) {
         (true, true) => {
@@ -361,15 +361,15 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &App) {
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
             render_left_column(frame, cols[0], vis);
-            render_right_column(frame, cols[1], vis);
+            render_right_column(frame, cols[1], app);
         }
         (true, false) => render_left_column(frame, area, vis),
-        (false, true) => render_right_column(frame, area, vis),
+        (false, true) => render_right_column(frame, area, app),
         (false, false) => {}
     }
 }
 
-fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
+fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
     match (vis[2], vis[3]) {
         (true, true) => {
             let rows = Layout::default()
@@ -385,18 +385,139 @@ fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
     }
 }
 
-fn render_right_column(frame: &mut Frame, area: Rect, vis: &[bool; 6]) {
-    match (vis[4], vis[5]) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            frame.render_widget(panel_block(5, false), rows[0]);
-            frame.render_widget(panel_block(6, false), rows[1]);
+fn render_right_column(frame: &mut Frame, area: Rect, app: &App) {
+    let vis = app.panel_visibility();
+    let panels: Vec<u8> = [5, 6, 7]
+        .iter()
+        .copied()
+        .filter(|&n| vis[(n - 1) as usize])
+        .collect();
+
+    if panels.is_empty() {
+        return;
+    }
+
+    let pct = 100 / panels.len() as u16;
+    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Percentage(pct)).collect();
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, &pn) in panels.iter().enumerate() {
+        if pn == 7 {
+            render_database_panel(frame, rows[i], is_focused(app, 7), app.db_state(), app.input_mode());
+        } else {
+            frame.render_widget(panel_block(pn, false), rows[i]);
         }
-        (true, false) => frame.render_widget(panel_block(5, false), area),
-        (false, true) => frame.render_widget(panel_block(6, false), area),
-        (false, false) => {}
+    }
+}
+
+fn render_database_panel(
+    frame: &mut Frame,
+    area: Rect,
+    focused: bool,
+    db_state: &DatabaseState,
+    input_mode: InputMode,
+) {
+    let accent = Style::new().fg(theme::KEY_HINT);
+    let muted = Style::new().fg(theme::MUTED);
+
+    if let Some(ref err) = db_state.error {
+        let block = panel_block(7, focused);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+        let item = ListItem::new(Line::from(Span::styled(err.as_str(), Style::new().fg(theme::RED))));
+        frame.render_widget(List::new(vec![item]), inner);
+        return;
+    }
+
+    if let Some(ref db_name) = db_state.selected_db {
+        let title = Line::from(vec![
+            Span::styled(
+                format!(" {} ", SUPERSCRIPT_DIGITS[6]),
+                Style::new().fg(panel::by_number(7).border_color(focused)).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("d", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(format!("atabase: {} ", db_name), Style::new().fg(theme::FG)),
+        ]);
+
+        let query_display = if matches!(input_mode, InputMode::EditingQuery) {
+            db_state.query_input.clone()
+        } else if db_state.query_input.is_empty() {
+            String::new()
+        } else {
+            db_state.query_input.clone()
+        };
+
+        let mut bottom_spans = vec![
+            Span::styled(" e", accent),
+            Span::styled(format!("dit query:{} ", query_display), muted),
+        ];
+        if matches!(input_mode, InputMode::EditingQuery) {
+            bottom_spans.push(Span::styled("↩ ", Style::new().fg(theme::RED)));
+        }
+        bottom_spans.push(Span::styled("───", Style::new().fg(panel::by_number(7).border_color(focused))));
+        bottom_spans.push(Span::styled(" esc", accent));
+        bottom_spans.push(Span::styled(" back ", muted));
+
+        let color = panel::by_number(7).border_color(focused);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(title)
+            .title_bottom(Line::from(bottom_spans))
+            .border_style(Style::new().fg(color));
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        match &db_state.query_result {
+            Some(Ok(raw)) => {
+                let rows = crate::database::parse_query_result(raw);
+                let items: Vec<ListItem> = rows
+                    .iter()
+                    .map(|cols| {
+                        let text = cols.join(" | ");
+                        ListItem::new(Line::from(Span::styled(text, Style::new().fg(theme::FG))))
+                    })
+                    .collect();
+                let visible_height = inner.height as usize;
+                let total = items.len();
+                let end = total.saturating_sub(db_state.result_scroll);
+                let start = end.saturating_sub(visible_height);
+                let visible_items: Vec<ListItem> = items[start..end].to_vec();
+                frame.render_widget(List::new(visible_items), inner);
+            }
+            Some(Err(e)) => {
+                let item = ListItem::new(Line::from(Span::styled(e.as_str(), Style::new().fg(theme::RED))));
+                frame.render_widget(List::new(vec![item]), inner);
+            }
+            None => {}
+        }
+    } else {
+        let block = panel_block(7, focused);
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        if db_state.databases.is_empty() {
+            let item = ListItem::new(Line::from(Span::styled("detecting databases…", muted)));
+            frame.render_widget(List::new(vec![item]), inner);
+        } else {
+            let items: Vec<ListItem> = db_state
+                .databases
+                .iter()
+                .enumerate()
+                .map(|(i, name)| {
+                    let style = if i == db_state.selected_index && focused {
+                        Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::new().fg(theme::FG)
+                    };
+                    let prefix = if i == db_state.selected_index && focused { "▸ " } else { "  " };
+                    ListItem::new(Line::from(Span::styled(format!("{prefix}{name}"), style)))
+                })
+                .collect();
+            frame.render_widget(List::new(items), inner);
+        }
     }
 }

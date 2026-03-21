@@ -20,13 +20,14 @@ impl PanelDef {
     }
 }
 
-pub const PANELS: [PanelDef; 6] = [
+pub const PANELS: [PanelDef; 7] = [
     PanelDef { number: 1, name: "commands",    dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: None },
     PanelDef { number: 2, name: "logcat",      dim_color: theme::DIM_GREEN,   bright_color: theme::GREEN,   focus_key: Some('l') },
     PanelDef { number: 3, name: "network",     dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: None },
     PanelDef { number: 4, name: "cpu",          dim_color: theme::DIM_CYAN,    bright_color: theme::CYAN,    focus_key: None },
     PanelDef { number: 5, name: "memory",       dim_color: theme::DIM_MAGENTA, bright_color: theme::MAGENTA, focus_key: None },
     PanelDef { number: 6, name: "disk usage",   dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
+    PanelDef { number: 7, name: "database",     dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: Some('d') },
 ];
 
 pub fn by_number(n: u8) -> &'static PanelDef {
