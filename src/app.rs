@@ -114,12 +114,12 @@ impl App {
 
         if self.focused == Some(7) {
             match code {
-                KeyCode::Up => {
-                    self.db_state.move_up();
-                    return Action::None;
-                }
-                KeyCode::Down => {
-                    self.db_state.move_down();
+                KeyCode::Up | KeyCode::Down if self.db_state.selected_db.is_none() => {
+                    if code == KeyCode::Up {
+                        self.db_state.move_up();
+                    } else {
+                        self.db_state.move_down();
+                    }
                     return Action::None;
                 }
                 KeyCode::Enter => {
@@ -131,18 +131,34 @@ impl App {
                     }
                     return Action::None;
                 }
+                KeyCode::Esc if self.db_state.selected_db.is_none() => {
+                    self.focused = None;
+                    return Action::None;
+                }
+                _ => {}
+            }
+        }
+
+        if self.db_state.selected_db.is_some() {
+            match code {
                 KeyCode::Char('e') => {
-                    if self.db_state.selected_db.is_some() {
-                        self.input_mode = InputMode::EditingQuery;
-                    }
+                    self.focused = Some(7);
+                    self.input_mode = InputMode::EditingQuery;
                     return Action::None;
                 }
                 KeyCode::Esc => {
-                    if self.db_state.selected_db.is_some() {
-                        self.db_state.deselect_db();
-                    } else {
-                        self.focused = None;
-                    }
+                    self.focused = Some(7);
+                    self.db_state.deselect_db();
+                    return Action::None;
+                }
+                KeyCode::Up => {
+                    self.focused = Some(7);
+                    self.db_state.move_up();
+                    return Action::None;
+                }
+                KeyCode::Down => {
+                    self.focused = Some(7);
+                    self.db_state.move_down();
                     return Action::None;
                 }
                 _ => {}
@@ -676,6 +692,46 @@ mod tests {
         assert_eq!(app.input_mode(), InputMode::Normal);
         assert!(app.db_state().input.is_empty());
         assert_eq!(app.db_state().history.len(), 1);
+    }
+
+    #[test]
+    fn e_from_unfocused_with_selected_db_enters_editing() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Esc); // exit EditingQuery
+        app.handle_key(KeyCode::Esc); // deselect -> now global
+        // Re-select a DB manually for the test
+        app.db_state_mut().selected_db = Some("a.db".into());
+        app.focused = None;
+        app.handle_key(KeyCode::Char('e'));
+        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert_eq!(app.focused_panel(), Some(7));
+    }
+
+    #[test]
+    fn up_down_with_selected_db_from_unfocused_scrolls_history() {
+        let mut app = App::new();
+        app.db_state_mut().selected_db = Some("a.db".into());
+        app.db_state_mut().history = vec![
+            crate::database::ReplLine::Input("SELECT 1".into()),
+            crate::database::ReplLine::Output("1".into()),
+        ];
+        assert_eq!(app.focused_panel(), None);
+        app.handle_key(KeyCode::Up);
+        assert_eq!(app.db_state().scroll, 1);
+        assert_eq!(app.focused_panel(), Some(7));
+    }
+
+    #[test]
+    fn esc_with_selected_db_from_unfocused_deselects() {
+        let mut app = App::new();
+        app.db_state_mut().selected_db = Some("a.db".into());
+        assert_eq!(app.focused_panel(), None);
+        app.handle_key(KeyCode::Esc);
+        assert!(app.db_state().selected_db.is_none());
+        assert_eq!(app.focused_panel(), Some(7));
     }
 
     #[test]
