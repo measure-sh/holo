@@ -496,7 +496,20 @@ fn render_database_panel(
             }
         }
     } else {
-        let block = panel_block(5, focused);
+        let color = panel::by_number(5).border_color(focused);
+        let block = if focused && !db_state.databases.is_empty() {
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(panel_title(5, focused))
+                .title_bottom(Line::from(vec![
+                    Span::styled(" p", accent),
+                    Span::styled("ull ", muted),
+                ]))
+                .border_style(Style::new().fg(color))
+        } else {
+            panel_block(5, focused)
+        };
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
