@@ -99,7 +99,7 @@ impl App {
             };
         }
 
-        if self.focused == Some(5) {
+        if self.focused == Some(panel::DATABASE) {
             match code {
                 KeyCode::Up | KeyCode::Down if self.db_state.selected_db.is_none() => {
                     if code == KeyCode::Up {
@@ -139,22 +139,22 @@ impl App {
                     return Action::None;
                 }
                 KeyCode::Char('e') => {
-                    self.focused = Some(5);
+                    self.focused = Some(panel::DATABASE);
                     self.input_mode = InputMode::EditingQuery;
                     return Action::None;
                 }
                 KeyCode::Esc => {
-                    self.focused = Some(5);
+                    self.focused = Some(panel::DATABASE);
                     self.db_state.deselect_db();
                     return Action::None;
                 }
                 KeyCode::Up => {
-                    self.focused = Some(5);
+                    self.focused = Some(panel::DATABASE);
                     self.db_state.move_up();
                     return Action::None;
                 }
                 KeyCode::Down => {
-                    self.focused = Some(5);
+                    self.focused = Some(panel::DATABASE);
                     self.db_state.move_down();
                     return Action::None;
                 }
@@ -162,7 +162,7 @@ impl App {
             }
         }
 
-        if self.focused == Some(2) {
+        if self.focused == Some(panel::LOGCAT) {
             match code {
                 KeyCode::Up => {
                     self.logcat_state.scroll += 1;
@@ -177,28 +177,28 @@ impl App {
         }
 
         if code == KeyCode::Esc && self.logcat_state.scroll > 0 {
-            self.focused = Some(2);
+            self.focused = Some(panel::LOGCAT);
             self.logcat_state.scroll = 0;
             return Action::None;
         }
         match code {
             KeyCode::Char('t') => {
-                self.focused = Some(2);
+                self.focused = Some(panel::LOGCAT);
                 self.input_mode = InputMode::EditingTag;
                 return Action::None;
             }
             KeyCode::Char('s') => {
-                self.focused = Some(2);
+                self.focused = Some(panel::LOGCAT);
                 self.input_mode = InputMode::EditingSearch;
                 return Action::None;
             }
             KeyCode::Right => {
-                self.focused = Some(2);
+                self.focused = Some(panel::LOGCAT);
                 self.logcat_state.cycle_level(true);
                 return Action::None;
             }
             KeyCode::Left => {
-                self.focused = Some(2);
+                self.focused = Some(panel::LOGCAT);
                 self.logcat_state.cycle_level(false);
                 return Action::None;
             }

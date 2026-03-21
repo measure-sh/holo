@@ -144,12 +144,12 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
             render_commands_panel(frame, cols[0]);
-            render_logcat_panel(frame, cols[1], is_focused(app, 2), logcat_lines, monitored_pid, app);
+            render_logcat_panel(frame, cols[1], is_focused(app, panel::LOGCAT), logcat_lines, monitored_pid, app);
         }
         (true, false) => {
             render_commands_panel(frame, area)
         }
-        (false, true) => render_logcat_panel(frame, area, is_focused(app, 2), logcat_lines, monitored_pid, app),
+        (false, true) => render_logcat_panel(frame, area, is_focused(app, panel::LOGCAT), logcat_lines, monitored_pid, app),
         (false, false) => {}
     }
 }
@@ -157,7 +157,7 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[
 fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool) -> Line<'static> {
     let accent = Style::new().fg(theme::KEY_HINT);
     let muted = Style::new().fg(theme::MUTED);
-    let border = Style::new().fg(panel::by_number(2).border_color(focused));
+    let border = Style::new().fg(panel::by_number(panel::LOGCAT).border_color(focused));
 
     let mut spans = Vec::new();
 
@@ -238,11 +238,11 @@ fn render_logcat_panel(
     let filter_level = app.logcat_state().filter.level;
     let input_mode = app.input_mode();
 
-    let color = panel::by_number(2).border_color(focused);
+    let color = panel::by_number(panel::LOGCAT).border_color(focused);
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(panel_title(2, focused))
+        .title(panel_title(panel::LOGCAT, focused))
         .title_bottom(logcat_filter_bar(&app.logcat_state().filter, input_mode, focused))
         .border_style(Style::new().fg(color));
     let inner = block.inner(area);
@@ -338,7 +338,7 @@ fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
 }
 
 fn render_commands_panel(frame: &mut Frame, area: Rect) {
-    let block = panel_block(1, false);
+    let block = panel_block(panel::COMMANDS, false);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -380,7 +380,7 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     for (i, &pn) in panels.iter().enumerate() {
         if pn == 5 {
             let im = app.input_mode();
-            render_database_panel(frame, cols[i], is_focused(app, 5), app.db_state_mut(), im);
+            render_database_panel(frame, cols[i], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
         } else {
             frame.render_widget(panel_block(pn, false), cols[i]);
         }
@@ -398,7 +398,7 @@ fn render_database_panel(
     let muted = Style::new().fg(theme::MUTED);
 
     if let Some(ref err) = db_state.error {
-        let block = panel_block(5, focused);
+        let block = panel_block(panel::DATABASE, focused);
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let item = ListItem::new(Line::from(Span::styled(err.as_str(), Style::new().fg(theme::RED))));
@@ -409,8 +409,8 @@ fn render_database_panel(
     if let Some(ref db_name) = db_state.selected_db {
         let title = Line::from(vec![
             Span::styled(
-                format!(" {} ", SUPERSCRIPT_DIGITS[4]),
-                Style::new().fg(panel::by_number(5).border_color(focused)).add_modifier(Modifier::BOLD),
+                format!(" {} ", SUPERSCRIPT_DIGITS[(panel::DATABASE - 1) as usize]),
+                Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused)).add_modifier(Modifier::BOLD),
             ),
             Span::styled("d", Style::new().fg(theme::KEY_HINT)),
             Span::styled(format!("atabase: {} ", db_name), Style::new().fg(theme::FG)),
@@ -421,7 +421,7 @@ fn render_database_panel(
                 Span::styled(" pull? ", Style::new().fg(theme::YELLOW)),
                 Span::styled("enter", accent),
                 Span::styled(" confirm ", muted),
-                Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
+                Span::styled("───", Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused))),
                 Span::styled(" any key", accent),
                 Span::styled(" cancel ", muted),
             ]
@@ -429,16 +429,16 @@ fn render_database_panel(
             vec![
                 Span::styled(" e", accent),
                 Span::styled("nter query ", muted),
-                Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
+                Span::styled("───", Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused))),
                 Span::styled(" p", accent),
                 Span::styled("ull ", muted),
-                Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
+                Span::styled("───", Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused))),
                 Span::styled(" esc", accent),
                 Span::styled(" back ", muted),
             ]
         };
 
-        let color = panel::by_number(5).border_color(focused);
+        let color = panel::by_number(panel::DATABASE).border_color(focused);
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
@@ -506,19 +506,19 @@ fn render_database_panel(
             }
         }
     } else {
-        let color = panel::by_number(5).border_color(focused);
+        let color = panel::by_number(panel::DATABASE).border_color(focused);
         let block = if focused && !db_state.databases.is_empty() {
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title(panel_title(5, focused))
+                .title(panel_title(panel::DATABASE, focused))
                 .title_bottom(Line::from(vec![
                     Span::styled(" p", accent),
                     Span::styled("ull ", muted),
                 ]))
                 .border_style(Style::new().fg(color))
         } else {
-            panel_block(5, focused)
+            panel_block(panel::DATABASE, focused)
         };
         let inner = block.inner(area);
         frame.render_widget(block, area);
