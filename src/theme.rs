@@ -37,13 +37,13 @@ pub fn level_color(level: char) -> Color {
 
 pub fn level_label(level: char) -> &'static str {
     match level {
-        'V' => "VERB",
-        'D' => "DEBU",
-        'I' => "INFO",
-        'W' => "WARN",
-        'E' => "ERRO",
-        'F' => "FATA",
-        _ => "????",
+        'V' => "V",
+        'D' => "D",
+        'I' => "I",
+        'W' => "W",
+        'E' => "E",
+        'F' => "F",
+        _ => "?",
     }
 }
 
