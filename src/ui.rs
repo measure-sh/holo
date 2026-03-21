@@ -2,32 +2,28 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, BorderType, Borders, List, ListItem, Scrollbar, ScrollbarOrientation,
-        ScrollbarState,
-    },
+    widgets::{Block, BorderType, Borders, List, ListItem},
     Frame,
 };
 
-use crate::app::{App, InputMode};
-use crate::database::DatabaseState;
-use crate::logcat_state::LogcatFilter;
+use crate::app::App;
+use crate::battery;
+use crate::database_ui;
+use crate::logcat_ui;
+use crate::panel;
+use crate::theme;
 
 const COMMAND_LABELS: [&str; 3] = [
     "open app",
     "kill app",
     "clear data",
 ];
-use crate::battery;
-use crate::logcat;
-use crate::panel;
-use crate::theme;
 
-const SUPERSCRIPT_DIGITS: [char; 5] = [
+pub const SUPERSCRIPT_DIGITS: [char; 5] = [
     '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}',
 ];
 
-fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
+pub fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
     let def = panel::by_number(panel_number);
     let color = def.border_color(focused);
     let superscript = SUPERSCRIPT_DIGITS[(panel_number - 1) as usize];
@@ -58,7 +54,7 @@ fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
     Line::from(spans)
 }
 
-fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
+pub fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
     let color = panel::by_number(panel_number).border_color(focused);
     Block::default()
         .borders(Borders::ALL)
@@ -144,197 +140,14 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
             render_commands_panel(frame, cols[0]);
-            render_logcat_panel(frame, cols[1], is_focused(app, panel::LOGCAT), logcat_lines, monitored_pid, app);
+            logcat_ui::render_logcat_panel(frame, cols[1], is_focused(app, panel::LOGCAT), logcat_lines, monitored_pid, app);
         }
         (true, false) => {
             render_commands_panel(frame, area)
         }
-        (false, true) => render_logcat_panel(frame, area, is_focused(app, panel::LOGCAT), logcat_lines, monitored_pid, app),
+        (false, true) => logcat_ui::render_logcat_panel(frame, area, is_focused(app, panel::LOGCAT), logcat_lines, monitored_pid, app),
         (false, false) => {}
     }
-}
-
-fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool) -> Line<'static> {
-    let accent = Style::new().fg(theme::KEY_HINT);
-    let muted = Style::new().fg(theme::MUTED);
-    let border = Style::new().fg(panel::by_number(panel::LOGCAT).border_color(focused));
-
-    let mut spans = Vec::new();
-
-    let tag_value = if filter.tag.is_empty() {
-        "*".to_string()
-    } else {
-        filter.tag.clone()
-    };
-    let tag_display = match input_mode {
-        InputMode::EditingTag => tag_value.replace('*', ""),
-        _ => tag_value,
-    };
-    spans.push(Span::styled(" t", accent));
-    spans.push(Span::styled("ag:", muted));
-    spans.push(Span::styled(format!("{}", tag_display), Style::new().fg(theme::FG)));
-    if matches!(input_mode, InputMode::EditingTag) {
-        spans.push(Span::styled("_", Style::new().fg(theme::FG)));
-        spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
-    } else {
-        spans.push(Span::styled(" ", muted));
-    }
-
-    spans.push(Span::styled("───", border));
-
-    let search_value = if filter.search.is_empty() {
-        String::new()
-    } else {
-        filter.search.clone()
-    };
-    let search_display = match input_mode {
-        InputMode::EditingSearch => search_value.clone(),
-        _ => {
-            if search_value.is_empty() {
-                "*".to_string()
-            } else {
-                search_value
-            }
-        }
-    };
-    spans.push(Span::styled(" s", accent));
-    spans.push(Span::styled("earch:", muted));
-    spans.push(Span::styled(format!("{}", search_display), Style::new().fg(theme::FG)));
-    if matches!(input_mode, InputMode::EditingSearch) {
-        spans.push(Span::styled("_", Style::new().fg(theme::FG)));
-        spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
-    } else {
-        spans.push(Span::styled(" ", muted));
-    }
-
-    spans.push(Span::styled("───", border));
-
-    let level_str = match filter.level {
-        Some(c) => theme::level_name(c),
-        None => "All",
-    };
-    spans.push(Span::styled(" \u{25C2}", accent));
-    spans.push(Span::styled(format!("level:{}", level_str), muted));
-    spans.push(Span::styled("\u{25B8} ", accent));
-
-    spans.push(Span::styled("───", border));
-
-    spans.push(Span::styled(" r", accent));
-    spans.push(Span::styled("eset ", muted));
-
-    Line::from(spans)
-}
-
-fn render_logcat_panel(
-    frame: &mut Frame,
-    area: Rect,
-    focused: bool,
-    logcat_lines: &[String],
-    monitored_pid: Option<u32>,
-    app: &mut App,
-) {
-    let filter_tag = app.logcat_state().filter.tag.clone();
-    let filter_search = app.logcat_state().filter.search.clone();
-    let filter_level = app.logcat_state().filter.level;
-    let input_mode = app.input_mode();
-
-    let color = panel::by_number(panel::LOGCAT).border_color(focused);
-    let mut block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .title(panel_title(panel::LOGCAT, focused))
-        .title_bottom(logcat_filter_bar(&app.logcat_state().filter, input_mode, focused))
-        .border_style(Style::new().fg(color));
-    let inner = block.inner(area);
-
-    let pid_str = monitored_pid.map(|p| p.to_string());
-
-    let filtered: Vec<&String> = logcat_lines
-        .iter()
-        .filter(|line| {
-            let Some(parsed) = logcat::parse(line) else {
-                return true;
-            };
-            let tag_ok = filter_tag.is_empty()
-                || parsed.tag.to_lowercase().contains(&filter_tag.to_lowercase());
-            let search_ok = filter_search.is_empty()
-                || line.to_lowercase().contains(&filter_search.to_lowercase());
-            let level_ok =
-                filter_level.is_none() || Some(parsed.level) == filter_level;
-            tag_ok && search_ok && level_ok
-        })
-        .collect();
-
-    let visible_height = inner.height as usize;
-    app.logcat_state_mut().clamp_scroll(filtered.len(), visible_height);
-    let logcat_scroll = app.logcat_state().scroll;
-    let end = filtered.len().saturating_sub(logcat_scroll);
-    let start = end.saturating_sub(visible_height);
-
-    if logcat_scroll > 0 {
-        block = block.title_top(
-            Line::from(vec![
-                Span::styled(
-                    format!(" ↑{} ", logcat_scroll),
-                    Style::new().fg(theme::MUTED),
-                ),
-                Span::styled(
-                    " esc",
-                    Style::new().fg(theme::KEY_HINT).add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(" resume ", Style::new().fg(theme::MUTED)),
-            ])
-            .alignment(Alignment::Right),
-        );
-    }
-
-    frame.render_widget(block, area);
-
-    let items: Vec<ListItem> = filtered[start..end]
-        .iter()
-        .map(|l| ListItem::new(style_logcat_line(l, pid_str.as_deref())))
-        .collect();
-
-    let list = List::new(items);
-    frame.render_widget(list, inner);
-
-    if filtered.len() > visible_height {
-        let mut scrollbar_state =
-            ScrollbarState::new(filtered.len().saturating_sub(visible_height)).position(start);
-        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::new().fg(theme::MUTED))
-            .track_style(Style::new().fg(theme::SURFACE));
-        frame.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
-    }
-}
-
-fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
-    let Some(parsed) = logcat::parse(raw) else {
-        return Line::from(raw);
-    };
-
-    let level_fg = theme::level_color(parsed.level);
-    let label = Span::styled(
-        theme::level_label(parsed.level),
-        Style::new().fg(level_fg).add_modifier(Modifier::BOLD),
-    );
-
-    let sep = Span::raw(" ");
-
-    let timestamp = Span::styled(parsed.timestamp, Style::new().fg(theme::MUTED));
-
-    let is_main = pid.is_some_and(|p| parsed.tid == p);
-    let thread = if is_main {
-        Span::styled("main", Style::new().fg(theme::MUTED))
-    } else {
-        Span::styled(parsed.tid, Style::new().fg(theme::MUTED))
-    };
-
-    let tag = Span::styled(parsed.tag, Style::new().fg(level_fg).add_modifier(Modifier::BOLD));
-
-    let message = Span::styled(format!(": {}", parsed.message), Style::new().fg(theme::FG));
-
-    Line::from(vec![label, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
 }
 
 fn render_commands_panel(frame: &mut Frame, area: Rect) {
@@ -360,7 +173,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let panels: Vec<u8> = [3, 4, 5]
+    let panels: Vec<u8> = [panel::NETWORK, panel::SYSTEM, panel::DATABASE]
         .iter()
         .copied()
         .filter(|&n| vis[(n - 1) as usize])
@@ -378,183 +191,11 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
         .split(area);
 
     for (i, &pn) in panels.iter().enumerate() {
-        if pn == 5 {
+        if pn == panel::DATABASE {
             let im = app.input_mode();
-            render_database_panel(frame, cols[i], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
+            database_ui::render_database_panel(frame, cols[i], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
         } else {
             frame.render_widget(panel_block(pn, false), cols[i]);
-        }
-    }
-}
-
-fn render_database_panel(
-    frame: &mut Frame,
-    area: Rect,
-    focused: bool,
-    db_state: &mut DatabaseState,
-    input_mode: InputMode,
-) {
-    let accent = Style::new().fg(theme::KEY_HINT);
-    let muted = Style::new().fg(theme::MUTED);
-
-    if let Some(ref err) = db_state.error {
-        let block = panel_block(panel::DATABASE, focused);
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-        let item = ListItem::new(Line::from(Span::styled(err.as_str(), Style::new().fg(theme::RED))));
-        frame.render_widget(List::new(vec![item]), inner);
-        return;
-    }
-
-    if let Some(ref db_name) = db_state.selected_db {
-        let title = Line::from(vec![
-            Span::styled(
-                format!(" {} ", SUPERSCRIPT_DIGITS[(panel::DATABASE - 1) as usize]),
-                Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused)).add_modifier(Modifier::BOLD),
-            ),
-            Span::styled("d", Style::new().fg(theme::KEY_HINT)),
-            Span::styled(format!("atabase: {} ", db_name), Style::new().fg(theme::FG)),
-        ]);
-
-        let bottom_spans = if db_state.confirming_pull.is_some() {
-            vec![
-                Span::styled(" pull? ", Style::new().fg(theme::YELLOW)),
-                Span::styled("enter", accent),
-                Span::styled(" confirm ", muted),
-                Span::styled("───", Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused))),
-                Span::styled(" any key", accent),
-                Span::styled(" cancel ", muted),
-            ]
-        } else {
-            vec![
-                Span::styled(" e", accent),
-                Span::styled("nter query ", muted),
-                Span::styled("───", Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused))),
-                Span::styled(" p", accent),
-                Span::styled("ull ", muted),
-                Span::styled("───", Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused))),
-                Span::styled(" esc", accent),
-                Span::styled(" back ", muted),
-            ]
-        };
-
-        let color = panel::by_number(panel::DATABASE).border_color(focused);
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title(title)
-            .title_bottom(Line::from(bottom_spans))
-            .border_style(Style::new().fg(color));
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-
-        let editing = matches!(input_mode, InputMode::EditingQuery);
-
-        let input_row = Rect {
-            x: inner.x,
-            y: inner.y + inner.height.saturating_sub(1),
-            width: inner.width,
-            height: 1.min(inner.height),
-        };
-        let history_area = Rect {
-            x: inner.x,
-            y: inner.y,
-            width: inner.width,
-            height: inner.height.saturating_sub(1),
-        };
-
-        let input_line = if editing {
-            Line::from(vec![
-                Span::styled("> ", Style::new().fg(theme::ACCENT)),
-                Span::styled(db_state.input.clone(), Style::new().fg(theme::FG)),
-                Span::styled("_", Style::new().fg(theme::FG)),
-            ])
-        } else if db_state.history.is_empty() {
-            Line::from(Span::styled("press e to enter a query", muted))
-        } else {
-            Line::from(Span::styled("> ", Style::new().fg(theme::MUTED)))
-        };
-        frame.render_widget(input_line, input_row);
-
-        if !db_state.history.is_empty() {
-            let visible_height = history_area.height as usize;
-            let total = db_state.history.len();
-            db_state.clamp_scroll(total, visible_height);
-            let end = total.saturating_sub(db_state.scroll);
-            let start = end.saturating_sub(visible_height);
-            let items: Vec<ListItem> = db_state.history[start..end].iter().map(|line| {
-                match line {
-                    crate::database::ReplLine::Input(s) => {
-                        ListItem::new(Line::from(Span::styled(format!("> {s}"), Style::new().fg(theme::ACCENT))))
-                    }
-                    crate::database::ReplLine::Output(s) => {
-                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(theme::FG))))
-                    }
-                    crate::database::ReplLine::Error(s) => {
-                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(theme::RED))))
-                    }
-                }
-            }).collect();
-            frame.render_widget(List::new(items), history_area);
-            if total > visible_height {
-                let mut scrollbar_state =
-                    ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
-                let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                    .thumb_style(Style::new().fg(theme::MUTED))
-                    .track_style(Style::new().fg(theme::SURFACE));
-                frame.render_stateful_widget(scrollbar, history_area, &mut scrollbar_state);
-            }
-        }
-    } else {
-        let color = panel::by_number(panel::DATABASE).border_color(focused);
-        let block = if focused && !db_state.databases.is_empty() {
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(panel_title(panel::DATABASE, focused))
-                .title_bottom(Line::from(vec![
-                    Span::styled(" p", accent),
-                    Span::styled("ull ", muted),
-                ]))
-                .border_style(Style::new().fg(color))
-        } else {
-            panel_block(panel::DATABASE, focused)
-        };
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-
-        if db_state.databases.is_empty() {
-            let item = ListItem::new(Line::from(Span::styled("detecting databases…", muted)));
-            frame.render_widget(List::new(vec![item]), inner);
-        } else {
-            let confirming = db_state.confirming_pull.is_some();
-            let items: Vec<ListItem> = db_state
-                .databases
-                .iter()
-                .enumerate()
-                .map(|(i, name)| {
-                    let selected = i == db_state.selected_index && focused;
-                    if selected && confirming {
-                        ListItem::new(Line::from(vec![
-                            Span::styled("▸ ", Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)),
-                            Span::styled(format!("pull {name}? "), Style::new().fg(theme::YELLOW)),
-                            Span::styled("enter", Style::new().fg(theme::KEY_HINT)),
-                            Span::styled(" confirm  ", Style::new().fg(theme::MUTED)),
-                            Span::styled("any key", Style::new().fg(theme::KEY_HINT)),
-                            Span::styled(" cancel", Style::new().fg(theme::MUTED)),
-                        ]))
-                    } else {
-                        let style = if selected {
-                            Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)
-                        } else {
-                            Style::new().fg(theme::FG)
-                        };
-                        let prefix = if selected { "▸ " } else { "  " };
-                        ListItem::new(Line::from(Span::styled(format!("{prefix}{name}"), style)))
-                    }
-                })
-                .collect();
-            frame.render_widget(List::new(items), inner);
         }
     }
 }
