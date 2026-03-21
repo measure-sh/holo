@@ -85,6 +85,25 @@ impl DatabaseState {
         let max = total.saturating_sub(visible);
         self.scroll = self.scroll.min(max);
     }
+
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    pub fn last_output(&self) -> Option<String> {
+        let mut lines = Vec::new();
+        for entry in self.history.iter().rev() {
+            match entry {
+                ReplLine::Output(s) | ReplLine::Error(s) => lines.push(s.as_str()),
+                ReplLine::Input(_) => break,
+            }
+        }
+        if lines.is_empty() {
+            return None;
+        }
+        lines.reverse();
+        Some(lines.join("\n"))
+    }
 }
 
 pub fn spawn_db_detector(
@@ -236,5 +255,49 @@ mod tests {
         state.push_result("1");
         state.select_db();
         assert!(state.history.is_empty());
+    }
+
+    #[test]
+    fn reset_clears_everything() {
+        let mut state = DatabaseState::new();
+        state.databases = vec!["a.db".into()];
+        state.select_db();
+        state.push_query("SELECT 1");
+        state.push_result("1");
+        state.reset();
+        assert!(state.databases.is_empty());
+        assert!(state.selected_db.is_none());
+        assert!(state.history.is_empty());
+    }
+
+    #[test]
+    fn last_output_returns_most_recent() {
+        let mut state = DatabaseState::new();
+        state.push_query("SELECT 1");
+        state.push_result("1");
+        state.push_query("SELECT 2");
+        state.push_result("row1\nrow2");
+        assert_eq!(state.last_output().as_deref(), Some("row1\nrow2"));
+    }
+
+    #[test]
+    fn last_output_returns_none_when_empty() {
+        let state = DatabaseState::new();
+        assert_eq!(state.last_output(), None);
+    }
+
+    #[test]
+    fn last_output_returns_none_after_query_without_result() {
+        let mut state = DatabaseState::new();
+        state.push_query("SELECT 1");
+        assert_eq!(state.last_output(), None);
+    }
+
+    #[test]
+    fn last_output_includes_errors() {
+        let mut state = DatabaseState::new();
+        state.push_query("bad sql");
+        state.push_error("syntax error");
+        assert_eq!(state.last_output().as_deref(), Some("syntax error"));
     }
 }

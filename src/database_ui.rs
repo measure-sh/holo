@@ -59,8 +59,14 @@ pub fn render_database_panel(
                 Span::styled(" e", accent),
                 Span::styled("dit ", muted),
                 Span::styled("───", border_fg),
+                Span::styled(" c", accent),
+                Span::styled("opy ", muted),
+                Span::styled("───", border_fg),
                 Span::styled(" p", accent),
                 Span::styled("ull ", muted),
+                Span::styled("───", border_fg),
+                Span::styled(" r", accent),
+                Span::styled("eset ", muted),
                 Span::styled("───", border_fg),
                 Span::styled(" esc", accent),
                 Span::styled(" back ", muted),
@@ -150,6 +156,9 @@ pub fn render_database_panel(
             Line::from(vec![
                 Span::styled(" p", accent),
                 Span::styled("ull ", muted),
+                Span::styled("───", border_fg),
+                Span::styled(" r", accent),
+                Span::styled("eset ", muted),
             ])
         } else {
             Line::default()

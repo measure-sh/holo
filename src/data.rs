@@ -115,4 +115,8 @@ impl DataSources {
     pub fn start_pull(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, db: String) {
         self.db_pull_rx = Some(database::spawn_pull_db(adb, serial, package, db));
     }
+
+    pub fn restart_db_detection(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
+        self.db_detect_rx = Some(database::spawn_db_detector(adb, serial, package));
+    }
 }

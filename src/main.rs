@@ -54,6 +54,20 @@ fn spawn_app_action(
     });
 }
 
+fn copy_to_clipboard(text: &str) {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    if let Ok(mut child) = Command::new("pbcopy")
+        .stdin(Stdio::piped())
+        .spawn()
+    {
+        if let Some(stdin) = child.stdin.as_mut() {
+            let _ = stdin.write_all(text.as_bytes());
+        }
+        let _ = child.wait();
+    }
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
@@ -153,6 +167,12 @@ fn run_app(
                     }
                     Action::ResetLogcat => {
                         data.logcat_lines.clear();
+                    }
+                    Action::ResetDb => {
+                        data.restart_db_detection(adb.clone(), device.serial.clone(), package.to_string());
+                    }
+                    Action::CopyDbResult(text) => {
+                        copy_to_clipboard(&text);
                     }
                     Action::RunQuery(db, sql) => {
                         data.start_query(adb.clone(), device.serial.clone(), package.to_string(), db, sql);

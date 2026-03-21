@@ -11,6 +11,8 @@ pub enum Action {
     KillApp,
     ClearData,
     ResetLogcat,
+    ResetDb,
+    CopyDbResult(String),
     RunQuery(String, String),
     PullDb(String),
 }
@@ -129,6 +131,16 @@ impl App {
                 KeyCode::Char('e') if self.db_state.selected_db.is_some() => {
                     self.input_mode = InputMode::EditingQuery;
                     return Action::None;
+                }
+                KeyCode::Char('c') if self.db_state.selected_db.is_some() => {
+                    if let Some(text) = self.db_state.last_output() {
+                        return Action::CopyDbResult(text);
+                    }
+                    return Action::None;
+                }
+                KeyCode::Char('r') => {
+                    self.db_state.reset();
+                    return Action::ResetDb;
                 }
                 KeyCode::Up if self.db_state.selected_db.is_some() => {
                     self.db_state.move_up();
@@ -805,5 +817,58 @@ mod tests {
         app.handle_key(KeyCode::Esc);
         app.handle_key(KeyCode::Char('d'));
         assert_eq!(app.input_mode(), InputMode::Normal);
+    }
+
+    #[test]
+    fn r_resets_db_from_list_view() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        assert!(matches!(app.handle_key(KeyCode::Char('r')), Action::ResetDb));
+        assert!(app.db_state().databases.is_empty());
+    }
+
+    #[test]
+    fn r_resets_db_from_repl_view() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Esc);
+        assert!(app.db_state().selected_db.is_some());
+        assert!(matches!(app.handle_key(KeyCode::Char('r')), Action::ResetDb));
+        assert!(app.db_state().selected_db.is_none());
+        assert!(app.db_state().databases.is_empty());
+    }
+
+    #[test]
+    fn c_copies_last_output() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Esc);
+        app.db_state_mut().push_query("SELECT 1");
+        app.db_state_mut().push_result("1");
+        let action = app.handle_key(KeyCode::Char('c'));
+        assert!(matches!(action, Action::CopyDbResult(ref s) if s == "1"));
+    }
+
+    #[test]
+    fn c_noop_without_output() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Esc);
+        assert!(matches!(app.handle_key(KeyCode::Char('c')), Action::None));
+    }
+
+    #[test]
+    fn c_falls_through_to_clear_data_in_list_view() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        assert!(matches!(app.handle_key(KeyCode::Char('c')), Action::ClearData));
     }
 }
