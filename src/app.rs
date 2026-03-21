@@ -11,6 +11,7 @@ pub enum Action {
     ClearData,
     ResetLogcat,
     RunQuery(String, String),
+    PullDb(String),
 }
 
 const LEVELS: [Option<char>; 7] = [
@@ -122,6 +123,12 @@ impl App {
                     }
                     return Action::None;
                 }
+                KeyCode::Char('p') if self.db_state.selected_db.is_none() => {
+                    if let Some(db) = self.db_state.databases.get(self.db_state.selected_index).cloned() {
+                        return Action::PullDb(db);
+                    }
+                    return Action::None;
+                }
                 KeyCode::Enter => {
                     if self.db_state.selected_db.is_none() {
                         self.db_state.select_db();
@@ -141,6 +148,9 @@ impl App {
 
         if self.db_state.selected_db.is_some() {
             match code {
+                KeyCode::Char('p') => {
+                    return Action::PullDb(self.db_state.selected_db.clone().unwrap());
+                }
                 KeyCode::Char('e') => {
                     self.focused = Some(5);
                     self.input_mode = InputMode::EditingQuery;
@@ -741,5 +751,26 @@ mod tests {
         assert!(!app.panel_visibility()[4]);
         app.handle_key(KeyCode::Char('5'));
         assert!(app.panel_visibility()[4]);
+    }
+
+    #[test]
+    fn p_pulls_db_from_list_view() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into(), "b.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Down);
+        let action = app.handle_key(KeyCode::Char('p'));
+        assert!(matches!(action, Action::PullDb(db) if db == "b.db"));
+    }
+
+    #[test]
+    fn p_pulls_db_from_repl_view() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Esc);
+        let action = app.handle_key(KeyCode::Char('p'));
+        assert!(matches!(action, Action::PullDb(db) if db == "a.db"));
     }
 }

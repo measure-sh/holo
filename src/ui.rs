@@ -411,6 +411,9 @@ fn render_database_panel(
             Span::styled(" e", accent),
             Span::styled("nter query ", muted),
             Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
+            Span::styled(" p", accent),
+            Span::styled("ull ", muted),
+            Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
             Span::styled(" esc", accent),
             Span::styled(" back ", muted),
         ];
@@ -472,6 +475,14 @@ fn render_database_panel(
                 }
             }).collect();
             frame.render_widget(List::new(items), history_area);
+            if total > visible_height {
+                let mut scrollbar_state =
+                    ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
+                let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                    .thumb_style(Style::new().fg(theme::MUTED))
+                    .track_style(Style::new().fg(theme::SURFACE));
+                frame.render_stateful_widget(scrollbar, history_area, &mut scrollbar_state);
+            }
         }
     } else {
         let block = panel_block(5, focused);

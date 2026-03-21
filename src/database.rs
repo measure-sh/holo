@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 
 use crate::adb::Adb;
@@ -94,6 +95,28 @@ pub fn spawn_db_detector(
         let result = adb
             .list_databases(&serial, &package)
             .map_err(|e| e.to_string());
+        let _ = tx.send(result);
+    });
+    rx
+}
+
+pub fn spawn_pull_db(
+    adb: Arc<dyn Adb>,
+    serial: String,
+    package: String,
+    db: String,
+) -> mpsc::Receiver<Result<PathBuf, String>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let dest = PathBuf::from(format!("tmp/msh/{}/db/{}_{}/", package, timestamp, db));
+        let result = std::fs::create_dir_all(&dest)
+            .map_err(|e| e.to_string())
+            .and_then(|_| {
+                adb.pull_database(&serial, &package, &db, &dest)
+                    .map_err(|e| e.to_string())
+            })
+            .map(|_| dest);
         let _ = tx.send(result);
     });
     rx

@@ -23,4 +23,5 @@ pub trait Adb: Send + Sync {
     fn clear_app_data(&self, serial: &str, package: &str) -> Result<()>;
     fn list_databases(&self, serial: &str, package: &str) -> Result<Vec<String>>;
     fn query_database(&self, serial: &str, package: &str, db_name: &str, sql: &str) -> Result<String>;
+    fn pull_database(&self, serial: &str, package: &str, db_name: &str, dest: &std::path::Path) -> Result<()>;
 }

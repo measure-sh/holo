@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::process::Command;
 
 use color_eyre::{Result, eyre::bail};
+use std::io::Write;
 
 use super::{Adb, Device};
 
@@ -127,6 +128,29 @@ impl Adb for RealAdb {
         }
 
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    fn pull_database(&self, serial: &str, package: &str, db_name: &str, dest: &std::path::Path) -> Result<()> {
+        for suffix in ["", "-wal", "-shm"] {
+            let remote_path = format!("databases/{db_name}{suffix}");
+            let check = Command::new("adb")
+                .args(["-s", serial, "shell", "run-as", package, "ls", &remote_path])
+                .output()?;
+            if !check.status.success() {
+                continue;
+            }
+            let output = Command::new("adb")
+                .args(["-s", serial, "exec-out", "run-as", package, "cat", &remote_path])
+                .output()?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("pull {db_name}{suffix} failed: {stderr}");
+            }
+            let dest_file = dest.join(format!("{db_name}{suffix}"));
+            let mut file = std::fs::File::create(&dest_file)?;
+            file.write_all(&output.stdout)?;
+        }
+        Ok(())
     }
 }
 

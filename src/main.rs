@@ -13,6 +13,7 @@ mod theme;
 mod ui;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
@@ -129,6 +130,7 @@ fn run_app(
     let mut db_detect_rx: Option<mpsc::Receiver<Result<Vec<String>, String>>> =
         Some(database::spawn_db_detector(adb.clone(), device.serial.clone(), package.to_string()));
     let mut db_query_rx: Option<mpsc::Receiver<Result<String, String>>> = None;
+    let mut db_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>> = None;
 
     loop {
         while let Ok(level) = battery_rx.try_recv() {
@@ -180,6 +182,15 @@ fn run_app(
                 db_query_rx = None;
             }
         }
+        if let Some(rx) = &db_pull_rx {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(path) => app.db_state_mut().push_result(&format!("pulled to {}", path.display())),
+                    Err(e) => app.db_state_mut().push_error(&format!("pull failed: {e}")),
+                }
+                db_pull_rx = None;
+            }
+        }
 
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
@@ -219,6 +230,14 @@ fn run_app(
                             package.to_string(),
                             db,
                             sql,
+                        ));
+                    }
+                    Action::PullDb(db) => {
+                        db_pull_rx = Some(database::spawn_pull_db(
+                            adb.clone(),
+                            device.serial.clone(),
+                            package.to_string(),
+                            db,
                         ));
                     }
                     Action::None => {}
