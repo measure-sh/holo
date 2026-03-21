@@ -4,6 +4,7 @@ mod apps;
 mod battery;
 mod boot;
 mod boot_ui;
+mod data;
 mod database;
 mod database_ui;
 mod logcat;
@@ -15,8 +16,6 @@ mod selector;
 mod theme;
 mod ui;
 
-use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
@@ -26,6 +25,7 @@ use crossterm::event::{self, Event, KeyEventKind};
 use adb::{Adb, Device, RealAdb};
 use app::{Action, App};
 use boot::{BootAction, BootPhase};
+use data::DataSources;
 
 fn spawn_device_poller(adb: Arc<dyn Adb>) -> mpsc::Receiver<Vec<Device>> {
     let (tx, rx) = mpsc::channel();
@@ -118,87 +118,15 @@ fn run_app(
 ) -> Result<()> {
     let title = format!(" {} — {} ", selector::selector_label(device), package);
     let mut app = App::new();
-
-    let battery_rx = battery::spawn_poller(adb.clone(), device.serial.clone());
-    let mut battery_level: Option<u8> = None;
-
-    let procs_rx = processes::spawn_poller(adb.clone(), device.serial.clone());
-    let mut process_map: Option<HashMap<String, u32>> = None;
-
-    let mut logcat_handle: Option<logcat::LogcatHandle> = None;
-    let mut logcat_lines: Vec<String> = Vec::new();
-    let mut monitored_pid: Option<u32> = None;
-    const MAX_LOGCAT_LINES: usize = 1000;
-
-    let mut db_detect_rx: Option<mpsc::Receiver<Result<Vec<String>, String>>> =
-        Some(database::spawn_db_detector(adb.clone(), device.serial.clone(), package.to_string()));
-    let mut db_query_rx: Option<mpsc::Receiver<Result<String, String>>> = None;
-    let mut db_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>> = None;
+    let mut data = DataSources::new(adb.clone(), &device.serial, package);
 
     loop {
-        while let Ok(level) = battery_rx.try_recv() {
-            battery_level = Some(level);
-        }
-        while let Ok(procs) = procs_rx.try_recv() {
-            process_map = Some(procs);
-        }
-
-        let current_pid = process_map.as_ref().and_then(|m| m.get(package).copied());
-        if current_pid != monitored_pid {
-            logcat_handle = None;
-            monitored_pid = None;
-            if let Some(pid) = current_pid {
-                logcat_handle = logcat::LogcatHandle::spawn(&device.serial, pid);
-                monitored_pid = Some(pid);
-            }
-        }
-
-        if let Some(handle) = &logcat_handle {
-            let prev_len = logcat_lines.len();
-            while let Ok(line) = handle.rx().try_recv() {
-                logcat_lines.push(line);
-            }
-            let new_count = logcat_lines.len() - prev_len;
-            if new_count > 0 {
-                app.logcat_state_mut().adjust_scroll_for_new_lines(new_count);
-                if logcat_lines.len() > MAX_LOGCAT_LINES {
-                    logcat_lines.drain(..logcat_lines.len() - MAX_LOGCAT_LINES);
-                }
-            }
-        }
-
-        if let Some(rx) = &db_detect_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(dbs) => app.db_state_mut().databases = dbs,
-                    Err(e) => app.db_state_mut().error = Some(e),
-                }
-                db_detect_rx = None;
-            }
-        }
-        if let Some(rx) = &db_query_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(output) => app.db_state_mut().push_result(&output),
-                    Err(e) => app.db_state_mut().push_error(&e),
-                }
-                db_query_rx = None;
-            }
-        }
-        if let Some(rx) = &db_pull_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(path) => app.db_state_mut().push_result(&format!("pulled to {}", path.display())),
-                    Err(e) => app.db_state_mut().push_error(&format!("pull failed: {e}")),
-                }
-                db_pull_rx = None;
-            }
-        }
+        data.poll(&mut app, &device.serial, package);
 
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, battery_level, &mut app, &logcat_lines, monitored_pid)
+            ui::render_app(frame, &title, &time_str, data.battery_level, &mut app, &data.logcat_lines, data.monitored_pid)
         })?;
 
         if event::poll(Duration::from_secs(1))? {
@@ -224,24 +152,13 @@ fn run_app(
                         });
                     }
                     Action::ResetLogcat => {
-                        logcat_lines.clear();
+                        data.logcat_lines.clear();
                     }
                     Action::RunQuery(db, sql) => {
-                        db_query_rx = Some(database::spawn_query(
-                            adb.clone(),
-                            device.serial.clone(),
-                            package.to_string(),
-                            db,
-                            sql,
-                        ));
+                        data.start_query(adb.clone(), device.serial.clone(), package.to_string(), db, sql);
                     }
                     Action::PullDb(db) => {
-                        db_pull_rx = Some(database::spawn_pull_db(
-                            adb.clone(),
-                            device.serial.clone(),
-                            package.to_string(),
-                            db,
-                        ));
+                        data.start_pull(adb.clone(), device.serial.clone(), package.to_string(), db);
                     }
                     Action::None => {}
                 }
