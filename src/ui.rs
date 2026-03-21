@@ -22,8 +22,8 @@ use crate::logcat;
 use crate::panel;
 use crate::theme;
 
-const SUPERSCRIPT_DIGITS: [char; 8] = [
-    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}',
+const SUPERSCRIPT_DIGITS: [char; 5] = [
+    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}',
 ];
 
 fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
@@ -117,7 +117,7 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String], monitored_pid: Option<u32>) {
     let vis = app.panel_visibility();
     let top_visible = vis[0] || vis[1];
-    let bot_visible = vis[2] || vis[3] || vis[4] || vis[5] || vis[6];
+    let bot_visible = vis[2] || vis[3] || vis[4];
 
     match (top_visible, bot_visible) {
         (true, true) => {
@@ -351,43 +351,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let left_visible = vis[2] || vis[3];
-    let right_visible = vis[4] || vis[5] || vis[6];
-
-    match (left_visible, right_visible) {
-        (true, true) => {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            render_left_column(frame, cols[0], vis);
-            render_right_column(frame, cols[1], app);
-        }
-        (true, false) => render_left_column(frame, area, vis),
-        (false, true) => render_right_column(frame, area, app),
-        (false, false) => {}
-    }
-}
-
-fn render_left_column(frame: &mut Frame, area: Rect, vis: &[bool; 7]) {
-    match (vis[2], vis[3]) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            frame.render_widget(panel_block(3, false), rows[0]);
-            frame.render_widget(panel_block(4, false), rows[1]);
-        }
-        (true, false) => frame.render_widget(panel_block(3, false), area),
-        (false, true) => frame.render_widget(panel_block(4, false), area),
-        (false, false) => {}
-    }
-}
-
-fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
-    let vis = app.panel_visibility();
-    let panels: Vec<u8> = [5, 6, 7]
+    let panels: Vec<u8> = [3, 4, 5]
         .iter()
         .copied()
         .filter(|&n| vis[(n - 1) as usize])
@@ -399,17 +363,17 @@ fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let pct = 100 / panels.len() as u16;
     let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Percentage(pct)).collect();
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
         .constraints(constraints)
         .split(area);
 
     for (i, &pn) in panels.iter().enumerate() {
-        if pn == 7 {
+        if pn == 5 {
             let im = app.input_mode();
-            render_database_panel(frame, rows[i], is_focused(app, 7), app.db_state_mut(), im);
+            render_database_panel(frame, cols[i], is_focused(app, 5), app.db_state_mut(), im);
         } else {
-            frame.render_widget(panel_block(pn, false), rows[i]);
+            frame.render_widget(panel_block(pn, false), cols[i]);
         }
     }
 }
@@ -425,7 +389,7 @@ fn render_database_panel(
     let muted = Style::new().fg(theme::MUTED);
 
     if let Some(ref err) = db_state.error {
-        let block = panel_block(7, focused);
+        let block = panel_block(5, focused);
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let item = ListItem::new(Line::from(Span::styled(err.as_str(), Style::new().fg(theme::RED))));
@@ -436,8 +400,8 @@ fn render_database_panel(
     if let Some(ref db_name) = db_state.selected_db {
         let title = Line::from(vec![
             Span::styled(
-                format!(" {} ", SUPERSCRIPT_DIGITS[6]),
-                Style::new().fg(panel::by_number(7).border_color(focused)).add_modifier(Modifier::BOLD),
+                format!(" {} ", SUPERSCRIPT_DIGITS[4]),
+                Style::new().fg(panel::by_number(5).border_color(focused)).add_modifier(Modifier::BOLD),
             ),
             Span::styled("d", Style::new().fg(theme::KEY_HINT)),
             Span::styled(format!("atabase: {} ", db_name), Style::new().fg(theme::FG)),
@@ -446,12 +410,12 @@ fn render_database_panel(
         let bottom_spans = vec![
             Span::styled(" e", accent),
             Span::styled("nter query ", muted),
-            Span::styled("───", Style::new().fg(panel::by_number(7).border_color(focused))),
+            Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
             Span::styled(" esc", accent),
             Span::styled(" back ", muted),
         ];
 
-        let color = panel::by_number(7).border_color(focused);
+        let color = panel::by_number(5).border_color(focused);
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
@@ -510,7 +474,7 @@ fn render_database_panel(
             frame.render_widget(List::new(items), history_area);
         }
     } else {
-        let block = panel_block(7, focused);
+        let block = panel_block(5, focused);
         let inner = block.inner(area);
         frame.render_widget(block, area);
 

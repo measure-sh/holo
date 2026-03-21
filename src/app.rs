@@ -48,7 +48,7 @@ pub enum InputMode {
 }
 
 pub struct App {
-    visible: [bool; 7],
+    visible: [bool; 5],
     focused: Option<u8>,
     logcat_filter: LogcatFilter,
     input_mode: InputMode,
@@ -59,7 +59,7 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
-            visible: [true; 7],
+            visible: [true; 5],
             focused: None,
             logcat_filter: LogcatFilter::new(),
             input_mode: InputMode::Normal,
@@ -112,7 +112,7 @@ impl App {
             InputMode::Normal => {}
         }
 
-        if self.focused == Some(7) {
+        if self.focused == Some(5) {
             match code {
                 KeyCode::Up | KeyCode::Down if self.db_state.selected_db.is_none() => {
                     if code == KeyCode::Up {
@@ -142,22 +142,22 @@ impl App {
         if self.db_state.selected_db.is_some() {
             match code {
                 KeyCode::Char('e') => {
-                    self.focused = Some(7);
+                    self.focused = Some(5);
                     self.input_mode = InputMode::EditingQuery;
                     return Action::None;
                 }
                 KeyCode::Esc => {
-                    self.focused = Some(7);
+                    self.focused = Some(5);
                     self.db_state.deselect_db();
                     return Action::None;
                 }
                 KeyCode::Up => {
-                    self.focused = Some(7);
+                    self.focused = Some(5);
                     self.db_state.move_up();
                     return Action::None;
                 }
                 KeyCode::Down => {
-                    self.focused = Some(7);
+                    self.focused = Some(5);
                     self.db_state.move_down();
                     return Action::None;
                 }
@@ -218,7 +218,7 @@ impl App {
                 self.logcat_scroll = 0;
                 Action::ResetLogcat
             }
-            KeyCode::Char(c @ '1'..='7') => {
+            KeyCode::Char(c @ '1'..='5') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
             }
@@ -243,7 +243,7 @@ impl App {
     }
 
     fn toggle_visibility(&mut self, n: u8) {
-        if !(1..=7).contains(&n) {
+        if !(1..=5).contains(&n) {
             return;
         }
         let idx = (n - 1) as usize;
@@ -261,7 +261,7 @@ impl App {
         }
     }
 
-    pub fn panel_visibility(&self) -> &[bool; 7] {
+    pub fn panel_visibility(&self) -> &[bool; 5] {
         &self.visible
     }
 
@@ -309,7 +309,7 @@ mod tests {
     #[test]
     fn new_app_all_panels_visible() {
         let app = App::new();
-        assert_eq!(app.panel_visibility(), &[true; 7]);
+        assert_eq!(app.panel_visibility(), &[true; 5]);
     }
 
     #[test]
@@ -324,7 +324,7 @@ mod tests {
         app.toggle_visibility(3);
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true, true]
+            &[true, true, false, true, true]
         );
     }
 
@@ -333,23 +333,23 @@ mod tests {
         let mut app = App::new();
         app.toggle_visibility(3);
         app.toggle_visibility(3);
-        assert_eq!(app.panel_visibility(), &[true; 7]);
+        assert_eq!(app.panel_visibility(), &[true; 5]);
     }
 
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new();
-        for n in 2..=7 {
+        for n in 2..=5 {
             app.toggle_visibility(n);
         }
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false, false]
+            &[true, false, false, false, false]
         );
         app.toggle_visibility(1);
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false, false]
+            &[true, false, false, false, false]
         );
     }
 
@@ -359,7 +359,7 @@ mod tests {
         app.toggle_visibility(0);
         app.toggle_visibility(8);
         app.toggle_visibility(9);
-        assert_eq!(app.panel_visibility(), &[true; 7]);
+        assert_eq!(app.panel_visibility(), &[true; 5]);
     }
 
     #[test]
@@ -377,7 +377,7 @@ mod tests {
         ));
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true, true]
+            &[true, true, false, true, true]
         );
     }
 
@@ -388,7 +388,7 @@ mod tests {
             app.handle_key(KeyCode::Char('x')),
             Action::None
         ));
-        assert_eq!(app.panel_visibility(), &[true; 7]);
+        assert_eq!(app.panel_visibility(), &[true; 5]);
     }
 
     #[test]
@@ -625,7 +625,7 @@ mod tests {
     fn d_focuses_database_panel() {
         let mut app = App::new();
         app.handle_key(KeyCode::Char('d'));
-        assert_eq!(app.focused_panel(), Some(7));
+        assert_eq!(app.focused_panel(), Some(5));
     }
 
     #[test]
@@ -652,7 +652,7 @@ mod tests {
         assert_eq!(app.input_mode(), InputMode::Normal);
         app.handle_key(KeyCode::Esc);
         assert!(app.db_state().selected_db.is_none());
-        assert_eq!(app.focused_panel(), Some(7));
+        assert_eq!(app.focused_panel(), Some(5));
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.focused_panel(), None);
     }
@@ -707,7 +707,7 @@ mod tests {
         app.focused = None;
         app.handle_key(KeyCode::Char('e'));
         assert_eq!(app.input_mode(), InputMode::EditingQuery);
-        assert_eq!(app.focused_panel(), Some(7));
+        assert_eq!(app.focused_panel(), Some(5));
     }
 
     #[test]
@@ -721,7 +721,7 @@ mod tests {
         assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Up);
         assert_eq!(app.db_state().scroll, 1);
-        assert_eq!(app.focused_panel(), Some(7));
+        assert_eq!(app.focused_panel(), Some(5));
     }
 
     #[test]
@@ -731,15 +731,15 @@ mod tests {
         assert_eq!(app.focused_panel(), None);
         app.handle_key(KeyCode::Esc);
         assert!(app.db_state().selected_db.is_none());
-        assert_eq!(app.focused_panel(), Some(7));
+        assert_eq!(app.focused_panel(), Some(5));
     }
 
     #[test]
-    fn toggle_panel_7_visibility() {
+    fn toggle_panel_5_visibility() {
         let mut app = App::new();
-        app.handle_key(KeyCode::Char('7'));
-        assert!(!app.panel_visibility()[6]);
-        app.handle_key(KeyCode::Char('7'));
-        assert!(app.panel_visibility()[6]);
+        app.handle_key(KeyCode::Char('5'));
+        assert!(!app.panel_visibility()[4]);
+        app.handle_key(KeyCode::Char('5'));
+        assert!(app.panel_visibility()[4]);
     }
 }
