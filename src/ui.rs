@@ -9,8 +9,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, InputMode, LogcatFilter};
+use crate::app::{App, InputMode};
 use crate::database::DatabaseState;
+use crate::logcat_state::LogcatFilter;
 
 const COMMAND_LABELS: [&str; 3] = [
     "open app",
@@ -170,9 +171,13 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
         _ => tag_value,
     };
     spans.push(Span::styled(" t", accent));
-    spans.push(Span::styled(format!("ag:{} ", tag_display), muted));
+    spans.push(Span::styled("ag:", muted));
+    spans.push(Span::styled(format!("{}", tag_display), Style::new().fg(theme::FG)));
     if matches!(input_mode, InputMode::EditingTag) {
-        spans.push(Span::styled("↩ ", Style::new().fg(theme::RED)));
+        spans.push(Span::styled("_", Style::new().fg(theme::FG)));
+        spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
+    } else {
+        spans.push(Span::styled(" ", muted));
     }
 
     spans.push(Span::styled("───", border));
@@ -193,9 +198,13 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
         }
     };
     spans.push(Span::styled(" s", accent));
-    spans.push(Span::styled(format!("earch:{} ", search_display), muted));
+    spans.push(Span::styled("earch:", muted));
+    spans.push(Span::styled(format!("{}", search_display), Style::new().fg(theme::FG)));
     if matches!(input_mode, InputMode::EditingSearch) {
-        spans.push(Span::styled("↩ ", Style::new().fg(theme::RED)));
+        spans.push(Span::styled("_", Style::new().fg(theme::FG)));
+        spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
+    } else {
+        spans.push(Span::styled(" ", muted));
     }
 
     spans.push(Span::styled("───", border));
@@ -224,9 +233,9 @@ fn render_logcat_panel(
     monitored_pid: Option<u32>,
     app: &mut App,
 ) {
-    let filter_tag = app.logcat_filter().tag.clone();
-    let filter_search = app.logcat_filter().search.clone();
-    let filter_level = app.logcat_filter().level;
+    let filter_tag = app.logcat_state().filter.tag.clone();
+    let filter_search = app.logcat_state().filter.search.clone();
+    let filter_level = app.logcat_state().filter.level;
     let input_mode = app.input_mode();
 
     let color = panel::by_number(2).border_color(focused);
@@ -234,7 +243,7 @@ fn render_logcat_panel(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(panel_title(2, focused))
-        .title_bottom(logcat_filter_bar(app.logcat_filter(), input_mode, focused))
+        .title_bottom(logcat_filter_bar(&app.logcat_state().filter, input_mode, focused))
         .border_style(Style::new().fg(color));
     let inner = block.inner(area);
 
@@ -257,8 +266,8 @@ fn render_logcat_panel(
         .collect();
 
     let visible_height = inner.height as usize;
-    app.clamp_logcat_scroll(filtered.len(), visible_height);
-    let logcat_scroll = app.logcat_scroll();
+    app.logcat_state_mut().clamp_scroll(filtered.len(), visible_height);
+    let logcat_scroll = app.logcat_state().scroll;
     let end = filtered.len().saturating_sub(logcat_scroll);
     let start = end.saturating_sub(visible_height);
 
@@ -458,6 +467,7 @@ fn render_database_panel(
             Line::from(vec![
                 Span::styled("> ", Style::new().fg(theme::ACCENT)),
                 Span::styled(db_state.input.clone(), Style::new().fg(theme::FG)),
+                Span::styled("_", Style::new().fg(theme::FG)),
             ])
         } else if db_state.history.is_empty() {
             Line::from(Span::styled("press e to enter a query", muted))

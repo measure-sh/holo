@@ -6,6 +6,7 @@ mod boot;
 mod boot_ui;
 mod database;
 mod logcat;
+mod logcat_state;
 mod panel;
 mod processes;
 mod selector;
@@ -157,7 +158,7 @@ fn run_app(
             }
             let new_count = logcat_lines.len() - prev_len;
             if new_count > 0 {
-                app.adjust_logcat_scroll_for_new_lines(new_count);
+                app.logcat_state_mut().adjust_scroll_for_new_lines(new_count);
                 if logcat_lines.len() > MAX_LOGCAT_LINES {
                     logcat_lines.drain(..logcat_lines.len() - MAX_LOGCAT_LINES);
                 }
