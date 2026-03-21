@@ -407,16 +407,27 @@ fn render_database_panel(
             Span::styled(format!("atabase: {} ", db_name), Style::new().fg(theme::FG)),
         ]);
 
-        let bottom_spans = vec![
-            Span::styled(" e", accent),
-            Span::styled("nter query ", muted),
-            Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
-            Span::styled(" p", accent),
-            Span::styled("ull ", muted),
-            Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
-            Span::styled(" esc", accent),
-            Span::styled(" back ", muted),
-        ];
+        let bottom_spans = if db_state.confirming_pull.is_some() {
+            vec![
+                Span::styled(" pull? ", Style::new().fg(theme::YELLOW)),
+                Span::styled("enter", accent),
+                Span::styled(" confirm ", muted),
+                Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
+                Span::styled(" any key", accent),
+                Span::styled(" cancel ", muted),
+            ]
+        } else {
+            vec![
+                Span::styled(" e", accent),
+                Span::styled("nter query ", muted),
+                Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
+                Span::styled(" p", accent),
+                Span::styled("ull ", muted),
+                Span::styled("───", Style::new().fg(panel::by_number(5).border_color(focused))),
+                Span::styled(" esc", accent),
+                Span::styled(" back ", muted),
+            ]
+        };
 
         let color = panel::by_number(5).border_color(focused);
         let block = Block::default()
@@ -493,18 +504,31 @@ fn render_database_panel(
             let item = ListItem::new(Line::from(Span::styled("detecting databases…", muted)));
             frame.render_widget(List::new(vec![item]), inner);
         } else {
+            let confirming = db_state.confirming_pull.is_some();
             let items: Vec<ListItem> = db_state
                 .databases
                 .iter()
                 .enumerate()
                 .map(|(i, name)| {
-                    let style = if i == db_state.selected_index && focused {
-                        Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)
+                    let selected = i == db_state.selected_index && focused;
+                    if selected && confirming {
+                        ListItem::new(Line::from(vec![
+                            Span::styled("▸ ", Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)),
+                            Span::styled(format!("pull {name}? "), Style::new().fg(theme::YELLOW)),
+                            Span::styled("enter", Style::new().fg(theme::KEY_HINT)),
+                            Span::styled(" confirm  ", Style::new().fg(theme::MUTED)),
+                            Span::styled("any key", Style::new().fg(theme::KEY_HINT)),
+                            Span::styled(" cancel", Style::new().fg(theme::MUTED)),
+                        ]))
                     } else {
-                        Style::new().fg(theme::FG)
-                    };
-                    let prefix = if i == db_state.selected_index && focused { "▸ " } else { "  " };
-                    ListItem::new(Line::from(Span::styled(format!("{prefix}{name}"), style)))
+                        let style = if selected {
+                            Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::new().fg(theme::FG)
+                        };
+                        let prefix = if selected { "▸ " } else { "  " };
+                        ListItem::new(Line::from(Span::styled(format!("{prefix}{name}"), style)))
+                    }
                 })
                 .collect();
             frame.render_widget(List::new(items), inner);

@@ -113,6 +113,19 @@ impl App {
             InputMode::Normal => {}
         }
 
+        if self.db_state.confirming_pull.is_some() {
+            return match code {
+                KeyCode::Enter => {
+                    let db = self.db_state.confirming_pull.take().unwrap();
+                    Action::PullDb(db)
+                }
+                _ => {
+                    self.db_state.confirming_pull = None;
+                    Action::None
+                }
+            };
+        }
+
         if self.focused == Some(5) {
             match code {
                 KeyCode::Up | KeyCode::Down if self.db_state.selected_db.is_none() => {
@@ -125,7 +138,7 @@ impl App {
                 }
                 KeyCode::Char('p') if self.db_state.selected_db.is_none() => {
                     if let Some(db) = self.db_state.databases.get(self.db_state.selected_index).cloned() {
-                        return Action::PullDb(db);
+                        self.db_state.confirming_pull = Some(db);
                     }
                     return Action::None;
                 }
@@ -149,7 +162,8 @@ impl App {
         if self.db_state.selected_db.is_some() {
             match code {
                 KeyCode::Char('p') => {
-                    return Action::PullDb(self.db_state.selected_db.clone().unwrap());
+                    self.db_state.confirming_pull = self.db_state.selected_db.clone();
+                    return Action::None;
                 }
                 KeyCode::Char('e') => {
                     self.focused = Some(5);
@@ -754,23 +768,48 @@ mod tests {
     }
 
     #[test]
-    fn p_pulls_db_from_list_view() {
+    fn p_sets_confirming_pull_from_list_view() {
         let mut app = App::new();
         app.db_state_mut().databases = vec!["a.db".into(), "b.db".into()];
         app.handle_key(KeyCode::Char('d'));
         app.handle_key(KeyCode::Down);
         let action = app.handle_key(KeyCode::Char('p'));
-        assert!(matches!(action, Action::PullDb(db) if db == "b.db"));
+        assert!(matches!(action, Action::None));
+        assert_eq!(app.db_state().confirming_pull.as_deref(), Some("b.db"));
     }
 
     #[test]
-    fn p_pulls_db_from_repl_view() {
+    fn enter_confirms_pull() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Char('p'));
+        let action = app.handle_key(KeyCode::Enter);
+        assert!(matches!(action, Action::PullDb(db) if db == "a.db"));
+        assert!(app.db_state().confirming_pull.is_none());
+    }
+
+    #[test]
+    fn any_key_cancels_pull_confirmation() {
+        let mut app = App::new();
+        app.db_state_mut().databases = vec!["a.db".into()];
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Char('p'));
+        assert!(app.db_state().confirming_pull.is_some());
+        let action = app.handle_key(KeyCode::Esc);
+        assert!(matches!(action, Action::None));
+        assert!(app.db_state().confirming_pull.is_none());
+    }
+
+    #[test]
+    fn p_sets_confirming_pull_from_repl_view() {
         let mut app = App::new();
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(KeyCode::Char('d'));
         app.handle_key(KeyCode::Enter);
         app.handle_key(KeyCode::Esc);
         let action = app.handle_key(KeyCode::Char('p'));
-        assert!(matches!(action, Action::PullDb(db) if db == "a.db"));
+        assert!(matches!(action, Action::None));
+        assert_eq!(app.db_state().confirming_pull.as_deref(), Some("a.db"));
     }
 }

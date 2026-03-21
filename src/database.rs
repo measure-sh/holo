@@ -18,6 +18,7 @@ pub struct DatabaseState {
     pub input: String,
     pub scroll: usize,
     pub error: Option<String>,
+    pub confirming_pull: Option<String>,
 }
 
 impl DatabaseState {
@@ -30,6 +31,7 @@ impl DatabaseState {
             input: String::new(),
             scroll: 0,
             error: None,
+            confirming_pull: None,
         }
     }
 
