@@ -56,11 +56,7 @@ pub fn render_permissions_panel(
             let actual_index = start + i;
             let selected = actual_index == state.selected_index && focused;
             let name = PermissionsState::short_name(perm);
-            let (indicator, indicator_color) = if *granted {
-                ("●", theme::GREEN)
-            } else {
-                ("○", theme::MUTED)
-            };
+            let accent = panel::by_number(panel::PERMISSIONS).bright_color;
 
             let style = if selected {
                 Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)
@@ -69,11 +65,17 @@ pub fn render_permissions_panel(
             };
             let prefix = if selected { "▸ " } else { "  " };
 
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::styled(prefix, style),
-                Span::styled(format!("{indicator} "), Style::new().fg(indicator_color)),
-                Span::styled(name, style),
-            ]))
+            ];
+            if *granted {
+                spans.push(Span::styled("● ", Style::new().fg(accent)));
+            } else {
+                spans.push(Span::styled("  ", Style::default()));
+            }
+            spans.push(Span::styled(name, style));
+
+            ListItem::new(Line::from(spans))
         })
         .collect();
 

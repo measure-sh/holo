@@ -195,25 +195,33 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
 
-    let (indicator, indicator_color) = if app.layout_bounds() {
-        ("●", theme::GREEN)
-    } else {
-        ("·", theme::MUTED)
-    };
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled("b", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(format!("ounds {indicator}"), Style::new().fg(indicator_color)),
-    ])));
+    let accent = panel::by_number(panel::COMMANDS).bright_color;
 
-    let (indicator, indicator_color) = if app.airplane_mode() {
-        ("●", theme::GREEN)
+    if app.layout_bounds() {
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("b", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("ounds ", Style::new().fg(theme::MUTED)),
+            Span::styled("●", Style::new().fg(accent)),
+        ])));
     } else {
-        ("·", theme::MUTED)
-    };
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled("a", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(format!("irplane {indicator}"), Style::new().fg(indicator_color)),
-    ])));
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("b", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("ounds", Style::new().fg(theme::MUTED)),
+        ])));
+    }
+
+    if app.airplane_mode() {
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("a", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("irplane ", Style::new().fg(theme::MUTED)),
+            Span::styled("●", Style::new().fg(accent)),
+        ])));
+    } else {
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("a", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("irplane", Style::new().fg(theme::MUTED)),
+        ])));
+    }
 
     let list = List::new(items);
     frame.render_widget(list, inner);
