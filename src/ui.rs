@@ -209,12 +209,26 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let confirming_idx = if app.confirming_clear() {
+        Some(2)
+    } else if app.confirming_uninstall() {
+        Some(3)
+    } else {
+        None
+    };
+
     let mut items: Vec<ListItem> = COMMAND_LABELS
         .iter()
         .enumerate()
         .map(|(i, &label)| {
             if flash_idx == Some(i) {
                 ListItem::new(Line::from(Span::styled("done!", Style::new().fg(theme::GREEN))))
+            } else if confirming_idx == Some(i) {
+                let first = &label[..1];
+                ListItem::new(Line::from(vec![
+                    Span::styled(first, Style::new().fg(theme::KEY_HINT)),
+                    Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+                ]))
             } else {
                 let first = &label[..1];
                 let rest = &label[1..];

@@ -63,6 +63,8 @@ pub struct App {
     layout_bounds: bool,
     airplane_mode: bool,
     confirming_quit: bool,
+    confirming_clear: bool,
+    confirming_uninstall: bool,
     show_settings: bool,
     settings_index: usize,
     pub command_flash: Option<(usize, std::time::Instant)>,
@@ -82,6 +84,8 @@ impl App {
             layout_bounds: false,
             airplane_mode: false,
             confirming_quit: false,
+            confirming_clear: false,
+            confirming_uninstall: false,
             show_settings: false,
             settings_index: 0,
             command_flash: None,
@@ -132,6 +136,28 @@ impl App {
             self.confirming_quit = false;
             return match code {
                 KeyCode::Char('q') => Action::Quit,
+                _ => Action::None,
+            };
+        }
+
+        if self.confirming_clear {
+            self.confirming_clear = false;
+            return match code {
+                KeyCode::Char('c') => {
+                    self.command_flash = Some((2, std::time::Instant::now()));
+                    Action::ClearData
+                }
+                _ => Action::None,
+            };
+        }
+
+        if self.confirming_uninstall {
+            self.confirming_uninstall = false;
+            return match code {
+                KeyCode::Char('u') => {
+                    self.command_flash = Some((3, std::time::Instant::now()));
+                    Action::UninstallApp
+                }
                 _ => Action::None,
             };
         }
@@ -401,12 +427,12 @@ impl App {
                 Action::KillApp
             }
             KeyCode::Char('c') => {
-                self.command_flash = Some((2, std::time::Instant::now()));
-                Action::ClearData
+                self.confirming_clear = true;
+                Action::None
             }
             KeyCode::Char('u') => {
-                self.command_flash = Some((3, std::time::Instant::now()));
-                Action::UninstallApp
+                self.confirming_uninstall = true;
+                Action::None
             }
             KeyCode::Char('w') => {
                 self.command_flash = Some((4, std::time::Instant::now()));
@@ -517,6 +543,14 @@ impl App {
 
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
+    }
+
+    pub fn confirming_clear(&self) -> bool {
+        self.confirming_clear
+    }
+
+    pub fn confirming_uninstall(&self) -> bool {
+        self.confirming_uninstall
     }
 
     pub fn show_settings(&self) -> bool {
@@ -664,8 +698,10 @@ mod tests {
     }
 
     #[test]
-    fn c_clears_data() {
+    fn cc_clears_data() {
         let mut app = App::new("com.test");
+        assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::None));
+        assert!(app.confirming_clear());
         assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::ClearData));
     }
 
@@ -1154,10 +1190,12 @@ mod tests {
     }
 
     #[test]
-    fn c_falls_through_to_clear_data_in_list_view() {
+    fn cc_falls_through_to_clear_data_in_list_view() {
         let mut app = App::new("com.test");
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
+        assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::None));
+        assert!(app.confirming_clear());
         assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::ClearData));
     }
 
