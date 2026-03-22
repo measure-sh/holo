@@ -116,10 +116,19 @@ fn cpu_line(data: &[f32], spark_width: usize) -> Line<'static> {
     ])
 }
 
-fn net_line(label: &str, throughput: u64, color: ratatui::style::Color) -> Line<'static> {
+fn net_line(
+    label: &str,
+    data: &[u64],
+    color: ratatui::style::Color,
+    spark_width: usize,
+) -> Line<'static> {
+    let current = data.last().copied().unwrap_or(0);
+    let spark = sparkline_str(data, spark_width);
+
     Line::from(vec![
         Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
-        Span::styled(format_bytes_per_sec(throughput), Style::new().fg(color)),
+        Span::styled(spark, Style::new().fg(color)),
+        Span::styled(format!("  {:>8}", format_bytes_per_sec(current)), Style::new().fg(theme::FG)),
     ])
 }
 
@@ -157,7 +166,6 @@ pub fn render_monitor_panel(
     let java_data = state.sparkline_u64(|m| m.java_heap_kb);
     let native_data = state.sparkline_u64(|m| m.native_heap_kb);
     let cpu_data = state.sparkline_f32(|m| m.cpu_percent);
-    let (rx_throughput, tx_throughput) = state.net_throughput();
 
     let items: Vec<ListItem> = vec![
         section_header("── memory", true),
@@ -167,8 +175,8 @@ pub fn render_monitor_panel(
         section_header("── cpu", false),
         ListItem::new(cpu_line(&cpu_data, spark_width)),
         section_header("── network", false),
-        ListItem::new(net_line("↓ rx", rx_throughput, theme::CYAN)),
-        ListItem::new(net_line("↑ tx", tx_throughput, theme::YELLOW)),
+        ListItem::new(net_line("↓ download", &state.download_history, theme::CYAN, spark_width)),
+        ListItem::new(net_line("↑ upload", &state.upload_history, theme::YELLOW, spark_width)),
     ];
 
     frame.render_widget(List::new(items), inner);

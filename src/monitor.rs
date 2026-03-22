@@ -24,19 +24,33 @@ pub enum Trend {
 
 pub struct MonitorState {
     pub history: Vec<MonitorSample>,
+    pub download_history: Vec<u64>,
+    pub upload_history: Vec<u64>,
 }
 
 impl MonitorState {
     pub fn new() -> Self {
         Self {
             history: Vec::new(),
+            download_history: Vec::new(),
+            upload_history: Vec::new(),
         }
     }
 
     pub fn push(&mut self, sample: MonitorSample) {
+        if let Some(prev) = self.history.last() {
+            self.download_history.push(sample.net_rx_bytes.saturating_sub(prev.net_rx_bytes));
+            self.upload_history.push(sample.net_tx_bytes.saturating_sub(prev.net_tx_bytes));
+        }
         self.history.push(sample);
         if self.history.len() > MAX_SAMPLES {
             self.history.remove(0);
+        }
+        if self.download_history.len() > MAX_SAMPLES {
+            self.download_history.remove(0);
+        }
+        if self.upload_history.len() > MAX_SAMPLES {
+            self.upload_history.remove(0);
         }
     }
 
@@ -72,16 +86,6 @@ impl MonitorState {
         self.history.iter().map(extract).collect()
     }
 
-    pub fn net_throughput(&self) -> (u64, u64) {
-        if self.history.len() < 2 {
-            return (0, 0);
-        }
-        let curr = self.history.last().unwrap();
-        let prev = &self.history[self.history.len() - 2];
-        let rx = curr.net_rx_bytes.saturating_sub(prev.net_rx_bytes);
-        let tx = curr.net_tx_bytes.saturating_sub(prev.net_tx_bytes);
-        (rx, tx)
-    }
 }
 
 pub fn spawn_poller(
@@ -186,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn net_throughput_computes_delta() {
+    fn net_history_computes_deltas() {
         let mut state = MonitorState::new();
         state.push(MonitorSample {
             net_rx_bytes: 1000,
@@ -198,18 +202,18 @@ mod tests {
             net_tx_bytes: 3000,
             ..Default::default()
         });
-        let (rx, tx) = state.net_throughput();
-        assert_eq!(rx, 5000);
-        assert_eq!(tx, 2500);
+        assert_eq!(state.download_history, vec![5000]);
+        assert_eq!(state.upload_history, vec![2500]);
     }
 
     #[test]
-    fn net_throughput_zero_with_single_sample() {
+    fn net_history_empty_with_single_sample() {
         let mut state = MonitorState::new();
         state.push(MonitorSample {
             net_rx_bytes: 1000,
             ..Default::default()
         });
-        assert_eq!(state.net_throughput(), (0, 0));
+        assert!(state.download_history.is_empty());
+        assert!(state.upload_history.is_empty());
     }
 }
