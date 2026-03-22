@@ -11,8 +11,6 @@ pub struct MonitorSample {
     pub java_heap_kb: u64,
     pub native_heap_kb: u64,
     pub cpu_percent: f32,
-    pub net_rx_bytes: u64,
-    pub net_tx_bytes: u64,
     pub total_frames: u64,
     pub janky_frames: u64,
 }
@@ -26,8 +24,6 @@ pub enum Trend {
 
 pub struct MonitorState {
     pub history: Vec<MonitorSample>,
-    pub download_history: Vec<u64>,
-    pub upload_history: Vec<u64>,
     pub frame_count_history: Vec<u64>,
     pub janky_percent_history: Vec<f32>,
 }
@@ -36,8 +32,6 @@ impl MonitorState {
     pub fn new() -> Self {
         Self {
             history: Vec::new(),
-            download_history: Vec::new(),
-            upload_history: Vec::new(),
             frame_count_history: Vec::new(),
             janky_percent_history: Vec::new(),
         }
@@ -45,9 +39,6 @@ impl MonitorState {
 
     pub fn push(&mut self, sample: MonitorSample) {
         if let Some(prev) = self.history.last() {
-            self.download_history.push(sample.net_rx_bytes.saturating_sub(prev.net_rx_bytes));
-            self.upload_history.push(sample.net_tx_bytes.saturating_sub(prev.net_tx_bytes));
-
             let frame_delta = sample.total_frames.saturating_sub(prev.total_frames);
             let jank_delta = sample.janky_frames.saturating_sub(prev.janky_frames);
             self.frame_count_history.push(frame_delta);
@@ -60,12 +51,6 @@ impl MonitorState {
         self.history.push(sample);
         if self.history.len() > MAX_SAMPLES {
             self.history.remove(0);
-        }
-        if self.download_history.len() > MAX_SAMPLES {
-            self.download_history.remove(0);
-        }
-        if self.upload_history.len() > MAX_SAMPLES {
-            self.upload_history.remove(0);
         }
         if self.frame_count_history.len() > MAX_SAMPLES {
             self.frame_count_history.remove(0);
@@ -128,11 +113,6 @@ pub fn spawn_poller(
 
             if let Ok(cpu) = adb.get_cpu_usage(&serial, &package) {
                 sample.cpu_percent = cpu;
-            }
-
-            if let Ok((rx_bytes, tx_bytes)) = adb.get_net_stats(&serial) {
-                sample.net_rx_bytes = rx_bytes;
-                sample.net_tx_bytes = tx_bytes;
             }
 
             if let Ok(gfx) = adb.get_gfx_info(&serial, &package) {
@@ -216,23 +196,6 @@ mod tests {
     }
 
     #[test]
-    fn net_history_computes_deltas() {
-        let mut state = MonitorState::new();
-        state.push(MonitorSample {
-            net_rx_bytes: 1000,
-            net_tx_bytes: 500,
-            ..Default::default()
-        });
-        state.push(MonitorSample {
-            net_rx_bytes: 6000,
-            net_tx_bytes: 3000,
-            ..Default::default()
-        });
-        assert_eq!(state.download_history, vec![5000]);
-        assert_eq!(state.upload_history, vec![2500]);
-    }
-
-    #[test]
     fn frame_history_computes_deltas() {
         let mut state = MonitorState::new();
         state.push(MonitorSample {
@@ -277,14 +240,4 @@ mod tests {
         assert!(state.janky_percent_history.is_empty());
     }
 
-    #[test]
-    fn net_history_empty_with_single_sample() {
-        let mut state = MonitorState::new();
-        state.push(MonitorSample {
-            net_rx_bytes: 1000,
-            ..Default::default()
-        });
-        assert!(state.download_history.is_empty());
-        assert!(state.upload_history.is_empty());
-    }
 }

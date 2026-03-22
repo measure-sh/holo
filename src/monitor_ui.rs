@@ -22,16 +22,6 @@ fn format_mb(kb: u64) -> String {
     }
 }
 
-fn format_bytes_per_sec(bytes: u64) -> String {
-    if bytes >= 1_048_576 {
-        format!("{:.1} MB/s", bytes as f64 / 1_048_576.0)
-    } else if bytes >= 1024 {
-        format!("{:.0} KB/s", bytes as f64 / 1024.0)
-    } else {
-        format!("{} B/s", bytes)
-    }
-}
-
 fn trend_symbol(trend: Trend) -> (&'static str, ratatui::style::Color) {
     match trend {
         Trend::Rising => ("▲", theme::RED),
@@ -150,25 +140,6 @@ fn frames_item(data: &[u64], spark_width: usize) -> ListItem<'static> {
     ])
 }
 
-fn net_item(
-    label: &str,
-    data: &[u64],
-    color: ratatui::style::Color,
-    spark_width: usize,
-) -> ListItem<'static> {
-    let current = data.last().copied().unwrap_or(0);
-    let spark = sparkline_str(data, spark_width);
-
-    ListItem::new(vec![
-        Line::from(vec![
-            Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
-            Span::styled(spark, Style::new().fg(color)),
-            Span::styled(format!("  {:>8}", format_bytes_per_sec(current)), Style::new().fg(theme::FG)),
-        ]),
-        Line::raw(""),
-    ])
-}
-
 fn section_header(label: &str, first: bool) -> ListItem<'static> {
     let label_line = Line::from(Span::styled(
         format!(" {}", label),
@@ -211,9 +182,6 @@ pub fn render_monitor_panel(
         mem_item("Native", &native_data, state.trend_u64(|m| m.native_heap_kb), spark_width),
         section_header("── cpu", false),
         cpu_item(&cpu_data, spark_width),
-        section_header("── network (device)", false),
-        net_item("↓ down", &state.download_history, theme::CYAN, spark_width),
-        net_item("↑ up", &state.upload_history, theme::YELLOW, spark_width),
         section_header("── frames", false),
         jank_item(&state.janky_percent_history, spark_width),
         frames_item(&state.frame_count_history, spark_width),
@@ -271,18 +239,4 @@ mod tests {
         assert_eq!(format_mb(128000), "125 MB");
     }
 
-    #[test]
-    fn format_bytes_per_sec_kb() {
-        assert_eq!(format_bytes_per_sec(2048), "2 KB/s");
-    }
-
-    #[test]
-    fn format_bytes_per_sec_mb() {
-        assert_eq!(format_bytes_per_sec(2_097_152), "2.0 MB/s");
-    }
-
-    #[test]
-    fn format_bytes_per_sec_bytes() {
-        assert_eq!(format_bytes_per_sec(42), "42 B/s");
-    }
 }

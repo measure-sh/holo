@@ -299,20 +299,6 @@ impl Adb for RealAdb {
         Ok(parse_top_cpu(&stdout, package))
     }
 
-    fn get_net_stats(&self, serial: &str) -> Result<(u64, u64)> {
-        let output = Command::new("adb")
-            .args(["-s", serial, "shell", "cat", "/proc/net/dev"])
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("cat /proc/net/dev failed: {stderr}");
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_net_dev(&stdout))
-    }
-
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "meminfo", package])
@@ -489,31 +475,6 @@ fn parse_top_cpu(output: &str, package: &str) -> f32 {
         }
     }
     0.0
-}
-
-fn parse_net_dev(output: &str) -> (u64, u64) {
-    let mut total_rx: u64 = 0;
-    let mut total_tx: u64 = 0;
-
-    for line in output.lines().skip(2) {
-        let trimmed = line.trim();
-        let Some((iface, rest)) = trimmed.split_once(':') else {
-            continue;
-        };
-        if iface.trim() == "lo" {
-            continue;
-        }
-        let cols: Vec<&str> = rest.split_whitespace().collect();
-        if cols.len() >= 9 {
-            if let Ok(rx) = cols[0].parse::<u64>() {
-                total_rx += rx;
-            }
-            if let Ok(tx) = cols[8].parse::<u64>() {
-                total_tx += tx;
-            }
-        }
-    }
-    (total_rx, total_tx)
 }
 
 fn parse_meminfo(output: &str) -> MemInfo {
@@ -914,43 +875,6 @@ Uptime: 123456 Realtime: 654321
     fn top_cpu_no_partial_match() {
         let output = "  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS\n12345 u0_a123      20   0  12G  90M  60M S  5.2   3.1   1:23.45 com.example.app.debug\n";
         assert_eq!(parse_top_cpu(output, "com.example.app"), 0.0);
-    }
-
-    #[test]
-    fn parses_net_dev_stats() {
-        let output = "\
-Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-    lo:   12345      100    0    0    0     0          0         0    12345      100    0    0    0     0       0          0
-  wlan0: 1000000    5000    0    0    0     0          0         0   500000     3000    0    0    0     0       0          0
-  rmnet0: 200000    1000    0    0    0     0          0         0   100000      800    0    0    0     0       0          0
-";
-        let (rx, tx) = parse_net_dev(output);
-        assert_eq!(rx, 1_200_000);
-        assert_eq!(tx, 600_000);
-    }
-
-    #[test]
-    fn net_dev_skips_loopback() {
-        let output = "\
-Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-    lo:   99999      100    0    0    0     0          0         0    99999      100    0    0    0     0       0          0
-";
-        let (rx, tx) = parse_net_dev(output);
-        assert_eq!(rx, 0);
-        assert_eq!(tx, 0);
-    }
-
-    #[test]
-    fn net_dev_empty() {
-        let output = "\
-Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-";
-        let (rx, tx) = parse_net_dev(output);
-        assert_eq!(rx, 0);
-        assert_eq!(tx, 0);
     }
 
     #[test]
