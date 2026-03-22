@@ -34,6 +34,7 @@ pub struct App {
     logcat_state: LogcatState,
     db_state: DatabaseState,
     layout_bounds: bool,
+    confirming_quit: bool,
 }
 
 impl App {
@@ -45,6 +46,7 @@ impl App {
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
             layout_bounds: false,
+            confirming_quit: false,
         }
     }
 
@@ -90,6 +92,16 @@ impl App {
                 return Action::None;
             }
             InputMode::Normal => {}
+        }
+
+        if self.confirming_quit {
+            return match code {
+                KeyCode::Enter => Action::Quit,
+                _ => {
+                    self.confirming_quit = false;
+                    Action::None
+                }
+            };
         }
 
         if self.db_state.confirming_pull.is_some() {
@@ -210,7 +222,10 @@ impl App {
         }
 
         match code {
-            KeyCode::Char('q') => Action::Quit,
+            KeyCode::Char('q') => {
+                self.confirming_quit = true;
+                Action::None
+            }
             KeyCode::Char('o') => Action::OpenApp,
             KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('c') => Action::ClearData,
@@ -289,6 +304,10 @@ impl App {
     pub fn set_layout_bounds(&mut self, v: bool) {
         self.layout_bounds = v;
     }
+
+    pub fn confirming_quit(&self) -> bool {
+        self.confirming_quit
+    }
 }
 
 #[cfg(test)]
@@ -352,9 +371,20 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_q_quits() {
+    fn q_then_enter_quits() {
         let mut app = App::new();
-        assert!(matches!(app.handle_key(KeyCode::Char('q')), Action::Quit));
+        assert!(matches!(app.handle_key(KeyCode::Char('q')), Action::None));
+        assert!(app.confirming_quit());
+        assert!(matches!(app.handle_key(KeyCode::Enter), Action::Quit));
+    }
+
+    #[test]
+    fn q_then_any_key_cancels_quit() {
+        let mut app = App::new();
+        app.handle_key(KeyCode::Char('q'));
+        assert!(app.confirming_quit());
+        assert!(matches!(app.handle_key(KeyCode::Esc), Action::None));
+        assert!(!app.confirming_quit());
     }
 
     #[test]

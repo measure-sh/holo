@@ -83,10 +83,21 @@ pub fn render_app(
     let time_line = Line::from(time)
         .style(Style::new().fg(theme::FG))
         .alignment(Alignment::Center);
-    let hint_line = Line::from(vec![
-        Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
-        Span::styled("uit ", Style::new().fg(theme::MUTED)),
-    ]);
+    let hint_line = if app.confirming_quit() {
+        Line::from(vec![
+            Span::styled(" quit? ", Style::new().fg(theme::YELLOW)),
+            Span::styled("↩", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" yes ", Style::new().fg(theme::MUTED)),
+            Span::styled("───", Style::new().fg(theme::SURFACE)),
+            Span::styled(" any", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" cancel ", Style::new().fg(theme::MUTED)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("uit ", Style::new().fg(theme::MUTED)),
+        ])
+    };
 
     let mut block = Block::default()
         .borders(Borders::ALL)
