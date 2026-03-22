@@ -299,18 +299,25 @@ impl Adb for RealAdb {
         Ok(parse_cpu_usage(&stdout, package))
     }
 
-    fn get_net_stats(&self, serial: &str) -> Result<(u64, u64)> {
+    fn get_net_stats(&self, serial: &str, package: &str) -> Result<(u64, u64)> {
+        let uid_output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "package", package])
+            .output()?;
+        let uid_stdout = String::from_utf8_lossy(&uid_output.stdout);
+        let uid = parse_uid(&uid_stdout)
+            .ok_or_else(|| color_eyre::eyre::eyre!("could not find UID for {package}"))?;
+
         let output = Command::new("adb")
-            .args(["-s", serial, "shell", "cat", "/proc/net/dev"])
+            .args(["-s", serial, "shell", "cat", "/proc/net/xt_qtaguid/stats"])
             .output()?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("cat /proc/net/dev failed: {stderr}");
+            bail!("cat /proc/net/xt_qtaguid/stats failed: {stderr}");
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_net_dev(&stdout))
+        Ok(parse_qtaguid_stats(&stdout, uid))
     }
 
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
@@ -468,24 +475,35 @@ fn parse_cpu_usage(output: &str, package: &str) -> f32 {
     0.0
 }
 
-fn parse_net_dev(output: &str) -> (u64, u64) {
+fn parse_uid(output: &str) -> Option<u32> {
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(val) = trimmed.strip_prefix("userId=") {
+            if let Some(num_str) = val.split_whitespace().next() {
+                if let Ok(uid) = num_str.parse::<u32>() {
+                    return Some(uid);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn parse_qtaguid_stats(output: &str, uid: u32) -> (u64, u64) {
     let mut total_rx: u64 = 0;
     let mut total_tx: u64 = 0;
+    let uid_str = uid.to_string();
 
-    for line in output.lines().skip(2) {
-        let trimmed = line.trim();
-        let Some((iface, rest)) = trimmed.split_once(':') else {
-            continue;
-        };
-        if iface.trim() == "lo" {
+    for line in output.lines().skip(1) {
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        if cols.len() < 8 {
             continue;
         }
-        let cols: Vec<&str> = rest.split_whitespace().collect();
-        if cols.len() >= 9 {
-            if let Ok(rx) = cols[0].parse::<u64>() {
+        if cols[3] == uid_str {
+            if let Ok(rx) = cols[5].parse::<u64>() {
                 total_rx += rx;
             }
-            if let Ok(tx) = cols[8].parse::<u64>() {
+            if let Ok(tx) = cols[7].parse::<u64>() {
                 total_tx += tx;
             }
         }
@@ -869,26 +887,36 @@ CPU usage from 12345ms to 0ms ago:
     }
 
     #[test]
-    fn parses_net_dev_stats() {
-        let output = "\
-Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
-    lo:   12345      100    0    0    0     0          0         0    12345      100    0    0    0     0       0          0
-  wlan0: 1000000    5000    0    0    0     0          0         0   500000     3000    0    0    0     0       0          0
-  rmnet0: 200000    1000    0    0    0     0          0         0   100000      800    0    0    0     0       0          0
-";
-        let (rx, tx) = parse_net_dev(output);
-        assert_eq!(rx, 1_200_000);
-        assert_eq!(tx, 600_000);
+    fn parses_uid_from_dumpsys_package() {
+        let output = "    userId=10123\n    pkg=com.example.app\n";
+        assert_eq!(parse_uid(output), Some(10123));
     }
 
     #[test]
-    fn net_dev_empty() {
+    fn uid_not_found() {
+        assert_eq!(parse_uid("some unrelated output\n"), None);
+    }
+
+    #[test]
+    fn parses_qtaguid_stats_for_uid() {
         let output = "\
-Inter-|   Receive                                                |  Transmit
- face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+idx iface acct_tag_hex uid_tag_int cnt_set rx_bytes rx_packets tx_bytes tx_packets
+2 wlan0 0x0 10123 0 50000 100 20000 80
+3 wlan0 0x0 10123 1 30000 60 10000 40
+4 wlan0 0x0 10456 0 99999 200 88888 150
 ";
-        let (rx, tx) = parse_net_dev(output);
+        let (rx, tx) = parse_qtaguid_stats(output, 10123);
+        assert_eq!(rx, 80000);
+        assert_eq!(tx, 30000);
+    }
+
+    #[test]
+    fn qtaguid_stats_zero_for_unknown_uid() {
+        let output = "\
+idx iface acct_tag_hex uid_tag_int cnt_set rx_bytes rx_packets tx_bytes tx_packets
+2 wlan0 0x0 10456 0 99999 200 88888 150
+";
+        let (rx, tx) = parse_qtaguid_stats(output, 10123);
         assert_eq!(rx, 0);
         assert_eq!(tx, 0);
     }
