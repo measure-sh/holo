@@ -76,7 +76,7 @@ pub fn render_app(
 ) {
     let area = frame.area();
 
-    let title_line = Line::from(title).style(
+    let title_line = Line::from(" msh ").style(
         Style::new()
             .fg(theme::ACCENT)
             .add_modifier(Modifier::BOLD),
