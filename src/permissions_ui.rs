@@ -68,7 +68,7 @@ pub fn render_permissions_panel(
             let mut spans = vec![
                 Span::styled(prefix, style),
             ];
-            if selected && *granted {
+            if *granted {
                 spans.push(Span::styled("● ", Style::new().fg(accent)));
             }
             spans.push(Span::styled(name, style));
