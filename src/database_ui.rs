@@ -98,16 +98,18 @@ pub fn render_database_panel(
             height: inner.height.saturating_sub(1),
         };
 
+        let selected = Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD);
+
         let input_line = if editing {
             Line::from(vec![
-                Span::styled("> ", Style::new().fg(theme::ACCENT)),
-                Span::styled(db_state.input.clone(), Style::new().fg(theme::FG)),
+                Span::styled("> ", selected),
+                Span::styled(db_state.input.clone(), selected),
                 Span::styled("_", Style::new().fg(theme::FG)),
             ])
         } else if db_state.history.is_empty() {
             Line::from(Span::styled("press e to enter a query", muted))
         } else {
-            Line::from(Span::styled("> ", Style::new().fg(theme::MUTED)))
+            Line::from(Span::styled("> ", muted))
         };
         frame.render_widget(input_line, input_row);
 
@@ -120,7 +122,7 @@ pub fn render_database_panel(
             let items: Vec<ListItem> = db_state.history[start..end].iter().map(|line| {
                 match line {
                     ReplLine::Input(s) => {
-                        ListItem::new(Line::from(Span::styled(format!("> {s}"), Style::new().fg(theme::ACCENT))))
+                        ListItem::new(Line::from(Span::styled(format!("> {s}"), selected)))
                     }
                     ReplLine::Output(s) => {
                         ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(theme::FG))))
