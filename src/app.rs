@@ -133,7 +133,7 @@ impl App {
                     return Action::None;
                 }
                 KeyCode::Char('c') if self.db_state.selected_db.is_some() => {
-                    if let Some(text) = self.db_state.last_output() {
+                    if let Some(text) = self.db_state.history_text() {
                         return Action::CopyDbResult(text);
                     }
                     return Action::None;
@@ -842,7 +842,7 @@ mod tests {
     }
 
     #[test]
-    fn c_copies_last_output() {
+    fn c_copies_full_history() {
         let mut app = App::new();
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(KeyCode::Char('d'));
@@ -851,7 +851,7 @@ mod tests {
         app.db_state_mut().push_query("SELECT 1");
         app.db_state_mut().push_result("1");
         let action = app.handle_key(KeyCode::Char('c'));
-        assert!(matches!(action, Action::CopyDbResult(ref s) if s == "1"));
+        assert!(matches!(action, Action::CopyDbResult(ref s) if s == "> SELECT 1\n1"));
     }
 
     #[test]

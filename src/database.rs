@@ -90,19 +90,15 @@ impl DatabaseState {
         *self = Self::new();
     }
 
-    pub fn last_output(&self) -> Option<String> {
-        let mut lines = Vec::new();
-        for entry in self.history.iter().rev() {
-            match entry {
-                ReplLine::Output(s) | ReplLine::Error(s) => lines.push(s.as_str()),
-                ReplLine::Input(_) => break,
-            }
-        }
-        if lines.is_empty() {
+    pub fn history_text(&self) -> Option<String> {
+        if self.history.is_empty() {
             return None;
         }
-        lines.reverse();
-        Some(lines.join("\n"))
+        let text: Vec<String> = self.history.iter().map(|line| match line {
+            ReplLine::Input(s) => format!("> {s}"),
+            ReplLine::Output(s) | ReplLine::Error(s) => s.clone(),
+        }).collect();
+        Some(text.join("\n"))
     }
 }
 
@@ -271,33 +267,26 @@ mod tests {
     }
 
     #[test]
-    fn last_output_returns_most_recent() {
+    fn history_text_returns_full_history() {
         let mut state = DatabaseState::new();
         state.push_query("SELECT 1");
         state.push_result("1");
         state.push_query("SELECT 2");
         state.push_result("row1\nrow2");
-        assert_eq!(state.last_output().as_deref(), Some("row1\nrow2"));
+        assert_eq!(state.history_text().as_deref(), Some("> SELECT 1\n1\n> SELECT 2\nrow1\nrow2"));
     }
 
     #[test]
-    fn last_output_returns_none_when_empty() {
+    fn history_text_returns_none_when_empty() {
         let state = DatabaseState::new();
-        assert_eq!(state.last_output(), None);
+        assert_eq!(state.history_text(), None);
     }
 
     #[test]
-    fn last_output_returns_none_after_query_without_result() {
-        let mut state = DatabaseState::new();
-        state.push_query("SELECT 1");
-        assert_eq!(state.last_output(), None);
-    }
-
-    #[test]
-    fn last_output_includes_errors() {
+    fn history_text_includes_errors() {
         let mut state = DatabaseState::new();
         state.push_query("bad sql");
         state.push_error("syntax error");
-        assert_eq!(state.last_output().as_deref(), Some("syntax error"));
+        assert_eq!(state.history_text().as_deref(), Some("> bad sql\nsyntax error"));
     }
 }
