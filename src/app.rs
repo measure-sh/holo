@@ -76,7 +76,6 @@ impl App {
                     KeyCode::Enter => {
                         if let Some(db) = self.db_state.selected_db.clone() {
                             if let Some(sql) = self.db_state.submit_query() {
-                                self.input_mode = InputMode::Normal;
                                 return Action::RunQuery(db, sql);
                             }
                         }
@@ -723,7 +722,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('L')));
         let action = app.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Action::RunQuery(_, _)));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert_eq!(app.input_mode(), InputMode::EditingQuery);
         assert!(app.db_state().textarea_text().is_empty());
         assert_eq!(app.db_state().history.len(), 1);
     }
