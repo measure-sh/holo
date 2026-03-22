@@ -42,10 +42,11 @@ impl PermissionsState {
         }
     }
 
-    pub fn short_name(permission: &str) -> &str {
+    pub fn short_name(permission: &str) -> String {
         permission
             .strip_prefix("android.permission.")
             .unwrap_or(permission)
+            .to_lowercase()
     }
 }
 
@@ -110,8 +111,8 @@ mod tests {
 
     #[test]
     fn short_name_strips_prefix() {
-        assert_eq!(PermissionsState::short_name("android.permission.CAMERA"), "CAMERA");
-        assert_eq!(PermissionsState::short_name("com.custom.PERM"), "com.custom.PERM");
+        assert_eq!(PermissionsState::short_name("android.permission.CAMERA"), "camera");
+        assert_eq!(PermissionsState::short_name("com.custom.PERM"), "com.custom.perm");
     }
 
     #[test]
