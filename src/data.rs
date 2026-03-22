@@ -163,7 +163,7 @@ impl DataSources {
             if let Ok(result) = rx.try_recv() {
                 match result {
                     Ok((_, opened)) => {
-                        let label = if opened { "opened!" } else { "pulled!" };
+                        let label = if opened { "opening..." } else { "pulling..." };
                         app.files_state_mut().action_flash =
                             Some((label, std::time::Instant::now()));
                     }
