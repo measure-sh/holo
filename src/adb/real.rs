@@ -287,16 +287,16 @@ impl Adb for RealAdb {
 
     fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32> {
         let output = Command::new("adb")
-            .args(["-s", serial, "shell", "dumpsys", "cpuinfo"])
+            .args(["-s", serial, "shell", "top", "-b", "-n", "1", "-q"])
             .output()?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("dumpsys cpuinfo failed: {stderr}");
+            bail!("top failed: {stderr}");
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_cpu_usage(&stdout, package))
+        Ok(parse_top_cpu(&stdout, package))
     }
 
     fn get_net_stats(&self, serial: &str, package: &str) -> Result<(u64, u64)> {
@@ -462,14 +462,23 @@ fn parse_process_list(output: &str) -> HashMap<String, u32> {
     map
 }
 
-fn parse_cpu_usage(output: &str, package: &str) -> f32 {
+fn parse_top_cpu(output: &str, package: &str) -> f32 {
     for line in output.lines() {
-        if line.contains(package) {
-            if let Some(pct) = line.trim().split('%').next() {
-                if let Ok(val) = pct.trim().parse::<f32>() {
-                    return val;
-                }
+        let trimmed = line.trim();
+        if !trimmed.ends_with(package) {
+            continue;
+        }
+        let cols: Vec<&str> = trimmed.split_whitespace().collect();
+        if cols.len() < 9 {
+            continue;
+        }
+        if let Some(last) = cols.last() {
+            if *last != package {
+                continue;
             }
+        }
+        if let Ok(val) = cols[8].parse::<f32>() {
+            return val;
         }
     }
     0.0
@@ -870,20 +879,26 @@ Uptime: 123456 Realtime: 654321
     }
 
     #[test]
-    fn parses_cpu_usage_for_package() {
+    fn parses_top_cpu_for_package() {
         let output = "\
-Load: 2.1 / 1.8 / 1.5
-CPU usage from 12345ms to 0ms ago:
-  5.2% 12345/com.example.app: 3.1% user + 2.1% kernel / faults: 456 minor
-  1.1% 67890/system_server: 0.8% user + 0.3% kernel
+  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS
+  567 system       20   0  15G 120M  80M S  1.1   2.0   0:05.00 system_server
+12345 u0_a123      20   0  12G  90M  60M S  5.2   3.1   1:23.45 com.example.app
+  890 u0_a456      20   0  10G  50M  30M S  0.3   1.0   0:01.00 com.other.app
 ";
-        assert!((parse_cpu_usage(output, "com.example.app") - 5.2).abs() < 0.01);
+        assert!((parse_top_cpu(output, "com.example.app") - 5.2).abs() < 0.01);
     }
 
     #[test]
-    fn cpu_usage_zero_when_not_found() {
-        let output = "  1.1% 67890/system_server: 0.8% user\n";
-        assert_eq!(parse_cpu_usage(output, "com.example.app"), 0.0);
+    fn top_cpu_zero_when_not_found() {
+        let output = "  PID USER PR NI VIRT RES SHR S[%CPU] %MEM TIME+ ARGS\n  567 system 20 0 15G 120M 80M S 1.1 2.0 0:05.00 system_server\n";
+        assert_eq!(parse_top_cpu(output, "com.example.app"), 0.0);
+    }
+
+    #[test]
+    fn top_cpu_no_partial_match() {
+        let output = "  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS\n12345 u0_a123      20   0  12G  90M  60M S  5.2   3.1   1:23.45 com.example.app.debug\n";
+        assert_eq!(parse_top_cpu(output, "com.example.app"), 0.0);
     }
 
     #[test]
