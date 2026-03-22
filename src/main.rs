@@ -192,12 +192,6 @@ fn run_app(
                             adb.set_airplane_mode(s, enabled)
                         });
                     }
-                    Action::SetNetworkSpeed => {
-                        let bps = app.network_speed().bytes_per_second();
-                        spawn_app_action(&adb, &device.serial, package, move |adb, s, _| {
-                            adb.set_network_speed(s, bps)
-                        });
-                    }
                     Action::ResetLogcat => {
                         data.logcat_lines.clear();
                     }

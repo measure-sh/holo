@@ -29,5 +29,4 @@ pub trait Adb: Send + Sync {
     fn set_layout_bounds(&self, serial: &str, enabled: bool) -> Result<()>;
     fn get_airplane_mode(&self, serial: &str) -> Result<bool>;
     fn set_airplane_mode(&self, serial: &str, enabled: bool) -> Result<()>;
-    fn set_network_speed(&self, serial: &str, bytes_per_second: Option<u32>) -> Result<()>;
 }

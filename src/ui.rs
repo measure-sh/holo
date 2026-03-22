@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, NetworkSpeed};
+use crate::app::App;
 use crate::battery;
 use crate::database_ui;
 use crate::logcat_ui;
@@ -201,18 +201,6 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     items.push(ListItem::new(Line::from(vec![
         Span::styled("a", Style::new().fg(theme::KEY_HINT)),
         Span::styled(format!("irplane {indicator}"), Style::new().fg(indicator_color)),
-    ])));
-
-    let (speed_label, speed_color, speed_mbps) = match app.network_speed() {
-        NetworkSpeed::Normal => ("●●●", theme::MUTED, ""),
-        NetworkSpeed::Slow => ("●◗·", theme::YELLOW, " 1mbps"),
-        NetworkSpeed::VerySlow => ("●··", theme::RED, " 0.1mbps"),
-    };
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled("n", Style::new().fg(theme::KEY_HINT)),
-        Span::styled("etwork ", Style::new().fg(theme::MUTED)),
-        Span::styled(speed_label, Style::new().fg(speed_color)),
-        Span::styled(speed_mbps, Style::new().fg(theme::MUTED)),
     ])));
 
     let list = List::new(items);

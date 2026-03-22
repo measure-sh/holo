@@ -207,27 +207,6 @@ impl Adb for RealAdb {
         Ok(())
     }
 
-    fn set_network_speed(&self, serial: &str, bytes_per_second: Option<u32>) -> Result<()> {
-        let output = match bytes_per_second {
-            Some(bps) => Command::new("adb")
-                .args([
-                    "-s", serial, "shell", "settings", "put", "global",
-                    "ingress_rate_limit_bytes_per_second", &bps.to_string(),
-                ])
-                .output()?,
-            None => Command::new("adb")
-                .args([
-                    "-s", serial, "shell", "settings", "delete", "global",
-                    "ingress_rate_limit_bytes_per_second",
-                ])
-                .output()?,
-        };
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("set network speed failed: {stderr}");
-        }
-        Ok(())
-    }
 }
 
 fn parse_airplane_mode(output: &str) -> bool {
