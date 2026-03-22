@@ -29,9 +29,10 @@ pub fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
     let color = def.border_color(focused);
     let superscript = SUPERSCRIPT_DIGITS[(panel_number - 1) as usize];
 
+    let digit_color = if focused { color } else { theme::MUTED };
     let mut spans = vec![Span::styled(
         format!(" {}", superscript),
-        Style::new().fg(color).add_modifier(Modifier::BOLD),
+        Style::new().fg(digit_color).add_modifier(Modifier::BOLD),
     )];
 
     if def.is_focusable() {
