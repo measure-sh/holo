@@ -11,8 +11,20 @@ use crate::boot::BootPhase;
 use crate::selector::selector_label;
 use crate::theme;
 
-pub fn render_boot(frame: &mut Frame, phase: &BootPhase, tick: u8) {
+pub fn render_boot(frame: &mut Frame, phase: &BootPhase, tick: u8, confirming_quit: bool) {
     let area = frame.area();
+
+    let hint_line = if confirming_quit {
+        Line::from(vec![
+            Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(" qq", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("uit ", Style::new().fg(theme::MUTED)),
+        ])
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -21,10 +33,7 @@ pub fn render_boot(frame: &mut Frame, phase: &BootPhase, tick: u8) {
             Line::from(" msh ")
                 .style(Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD)),
         )
-        .title_bottom(Line::from(vec![
-            Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("uit ", Style::new().fg(theme::MUTED)),
-        ]))
+        .title_bottom(hint_line)
         .border_style(Style::new().fg(theme::SURFACE))
         .style(Style::new().bg(theme::BG).fg(theme::FG));
 

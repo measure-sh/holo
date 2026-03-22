@@ -30,11 +30,11 @@ impl BootPhase {
     pub fn handle_key(&mut self, code: KeyCode) -> BootAction {
         match self {
             Self::WaitingForDevice => match code {
-                KeyCode::Char('q') | KeyCode::Esc => BootAction::Quit,
+                KeyCode::Char('q') => BootAction::Quit,
                 _ => BootAction::Continue,
             },
             Self::SelectDevice { devices, cursor } => match code {
-                KeyCode::Char('q') | KeyCode::Esc => BootAction::Quit,
+                KeyCode::Char('q') => BootAction::Quit,
                 KeyCode::Up => {
                     *cursor = cursor.saturating_sub(1);
                     BootAction::Continue
@@ -62,7 +62,6 @@ impl BootPhase {
                 filter,
             } => match code {
                 KeyCode::Char('q') if filter.is_empty() => BootAction::Quit,
-                KeyCode::Esc if filter.is_empty() => BootAction::Quit,
                 KeyCode::Esc => {
                     filter.clear();
                     *cursor = 0;
@@ -208,11 +207,11 @@ mod tests {
     }
 
     #[test]
-    fn waiting_quits_on_esc() {
+    fn waiting_ignores_esc() {
         let mut phase = BootPhase::WaitingForDevice;
         assert!(matches!(
             phase.handle_key(KeyCode::Esc),
-            BootAction::Quit
+            BootAction::Continue
         ));
     }
 
@@ -310,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn select_app_esc_quits_when_filter_empty() {
+    fn select_app_esc_ignored_when_filter_empty() {
         let mut phase = BootPhase::SelectApp {
             device: make_devices(1).remove(0),
             packages: Some(vec!["com.example.app".to_string()]),
@@ -319,7 +318,7 @@ mod tests {
         };
         assert!(matches!(
             phase.handle_key(KeyCode::Esc),
-            BootAction::Quit
+            BootAction::Continue
         ));
     }
 

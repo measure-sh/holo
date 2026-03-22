@@ -20,7 +20,7 @@ use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 
 use adb::{Adb, Device, RealAdb};
 use app::{Action, App};
@@ -83,6 +83,7 @@ fn run_boot(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>) -> Result
     let device_rx = spawn_device_poller(adb.clone());
     let mut apps_rx: Option<mpsc::Receiver<Vec<String>>> = None;
     let mut tick: u8 = 0;
+    let mut confirming_quit = false;
 
     loop {
         while let Ok(devices) = device_rx.try_recv() {
@@ -106,15 +107,22 @@ fn run_boot(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>) -> Result
             return run_app(terminal, adb, &device, &package);
         }
 
-        terminal.draw(|frame| boot_ui::render_boot(frame, &phase, tick))?;
+        terminal.draw(|frame| boot_ui::render_boot(frame, &phase, tick, confirming_quit))?;
 
         if event::poll(Duration::from_millis(500))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
+                if confirming_quit {
+                    confirming_quit = false;
+                    if key.code == KeyCode::Char('q') {
+                        return Ok(());
+                    }
+                    continue;
+                }
                 match phase.handle_key(key.code) {
-                    BootAction::Quit => return Ok(()),
+                    BootAction::Quit => confirming_quit = true,
                     BootAction::Continue => {}
                 }
             }
