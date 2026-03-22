@@ -299,37 +299,18 @@ impl Adb for RealAdb {
         Ok(parse_top_cpu(&stdout, package))
     }
 
-    fn get_net_stats(&self, serial: &str, package: &str) -> Result<(u64, u64)> {
-        let uid_output = Command::new("adb")
-            .args(["-s", serial, "shell", "dumpsys", "package", package])
-            .output()?;
-        let uid_stdout = String::from_utf8_lossy(&uid_output.stdout);
-        let uid = parse_uid(&uid_stdout)
-            .ok_or_else(|| color_eyre::eyre::eyre!("could not find UID for {package}"))?;
-
+    fn get_net_stats(&self, serial: &str) -> Result<(u64, u64)> {
         let output = Command::new("adb")
-            .args(["-s", serial, "shell", "cat", "/proc/net/xt_qtaguid/stats"])
-            .output()?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let (rx, tx) = parse_qtaguid_stats(&stdout, uid);
-            if rx > 0 || tx > 0 {
-                return Ok((rx, tx));
-            }
-        }
-
-        let output = Command::new("adb")
-            .args(["-s", serial, "shell", "dumpsys", "netstats", "detail"])
+            .args(["-s", serial, "shell", "cat", "/proc/net/dev"])
             .output()?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("dumpsys netstats failed: {stderr}");
+            bail!("cat /proc/net/dev failed: {stderr}");
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_netstats_detail(&stdout, uid))
+        Ok(parse_net_dev(&stdout))
     }
 
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
@@ -496,76 +477,24 @@ fn parse_top_cpu(output: &str, package: &str) -> f32 {
     0.0
 }
 
-fn parse_netstats_detail(output: &str, uid: u32) -> (u64, u64) {
+fn parse_net_dev(output: &str) -> (u64, u64) {
     let mut total_rx: u64 = 0;
     let mut total_tx: u64 = 0;
-    let uid_prefix = format!("uid={uid}");
-    let mut in_uid_section = false;
 
-    for line in output.lines() {
+    for line in output.lines().skip(2) {
         let trimmed = line.trim();
-        if trimmed.contains(&uid_prefix) && trimmed.contains("set=") {
-            in_uid_section = true;
+        let Some((iface, rest)) = trimmed.split_once(':') else {
+            continue;
+        };
+        if iface.trim() == "lo" {
             continue;
         }
-        if in_uid_section {
-            if trimmed.starts_with("st=") || trimmed.starts_with("bucketStart=") {
-                for part in trimmed.split_whitespace() {
-                    if let Some(val) = part.strip_prefix("rb=") {
-                        if let Ok(v) = val.parse::<u64>() {
-                            total_rx += v;
-                        }
-                    } else if let Some(val) = part.strip_prefix("tb=") {
-                        if let Ok(v) = val.parse::<u64>() {
-                            total_tx += v;
-                        }
-                    } else if let Some(val) = part.strip_prefix("rxBytes=") {
-                        if let Ok(v) = val.parse::<u64>() {
-                            total_rx += v;
-                        }
-                    } else if let Some(val) = part.strip_prefix("txBytes=") {
-                        if let Ok(v) = val.parse::<u64>() {
-                            total_tx += v;
-                        }
-                    }
-                }
-            } else if !trimmed.starts_with("NetworkStatsHistory:") && !trimmed.starts_with("bucketDuration=") && !trimmed.is_empty() {
-                in_uid_section = false;
-            }
-        }
-    }
-    (total_rx, total_tx)
-}
-
-fn parse_uid(output: &str) -> Option<u32> {
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if let Some(val) = trimmed.strip_prefix("userId=") {
-            if let Some(num_str) = val.split_whitespace().next() {
-                if let Ok(uid) = num_str.parse::<u32>() {
-                    return Some(uid);
-                }
-            }
-        }
-    }
-    None
-}
-
-fn parse_qtaguid_stats(output: &str, uid: u32) -> (u64, u64) {
-    let mut total_rx: u64 = 0;
-    let mut total_tx: u64 = 0;
-    let uid_str = uid.to_string();
-
-    for line in output.lines().skip(1) {
-        let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 8 {
-            continue;
-        }
-        if cols[3] == uid_str {
-            if let Ok(rx) = cols[5].parse::<u64>() {
+        let cols: Vec<&str> = rest.split_whitespace().collect();
+        if cols.len() >= 9 {
+            if let Ok(rx) = cols[0].parse::<u64>() {
                 total_rx += rx;
             }
-            if let Ok(tx) = cols[7].parse::<u64>() {
+            if let Ok(tx) = cols[8].parse::<u64>() {
                 total_tx += tx;
             }
         }
@@ -955,80 +884,38 @@ Uptime: 123456 Realtime: 654321
     }
 
     #[test]
-    fn parses_uid_from_dumpsys_package() {
-        let output = "    userId=10123\n    pkg=com.example.app\n";
-        assert_eq!(parse_uid(output), Some(10123));
-    }
-
-    #[test]
-    fn uid_not_found() {
-        assert_eq!(parse_uid("some unrelated output\n"), None);
-    }
-
-    #[test]
-    fn parses_qtaguid_stats_for_uid() {
+    fn parses_net_dev_stats() {
         let output = "\
-idx iface acct_tag_hex uid_tag_int cnt_set rx_bytes rx_packets tx_bytes tx_packets
-2 wlan0 0x0 10123 0 50000 100 20000 80
-3 wlan0 0x0 10123 1 30000 60 10000 40
-4 wlan0 0x0 10456 0 99999 200 88888 150
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   12345      100    0    0    0     0          0         0    12345      100    0    0    0     0       0          0
+  wlan0: 1000000    5000    0    0    0     0          0         0   500000     3000    0    0    0     0       0          0
+  rmnet0: 200000    1000    0    0    0     0          0         0   100000      800    0    0    0     0       0          0
 ";
-        let (rx, tx) = parse_qtaguid_stats(output, 10123);
-        assert_eq!(rx, 80000);
-        assert_eq!(tx, 30000);
+        let (rx, tx) = parse_net_dev(output);
+        assert_eq!(rx, 1_200_000);
+        assert_eq!(tx, 600_000);
     }
 
     #[test]
-    fn qtaguid_stats_zero_for_unknown_uid() {
+    fn net_dev_skips_loopback() {
         let output = "\
-idx iface acct_tag_hex uid_tag_int cnt_set rx_bytes rx_packets tx_bytes tx_packets
-2 wlan0 0x0 10456 0 99999 200 88888 150
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo:   99999      100    0    0    0     0          0         0    99999      100    0    0    0     0       0          0
 ";
-        let (rx, tx) = parse_qtaguid_stats(output, 10123);
+        let (rx, tx) = parse_net_dev(output);
         assert_eq!(rx, 0);
         assert_eq!(tx, 0);
     }
 
     #[test]
-    fn parses_netstats_detail_short_format() {
+    fn net_dev_empty() {
         let output = "\
-UID stats:
-  ident=[{type=WIFI}] uid=10123 set=DEFAULT tag=0x0
-    NetworkStatsHistory: bucketDuration=3600
-      st=1700000000 rb=50000 rp=100 tb=20000 tp=80
-      st=1700003600 rb=30000 rp=60 tb=10000 tp=40
-  ident=[{type=WIFI}] uid=10456 set=DEFAULT tag=0x0
-    NetworkStatsHistory: bucketDuration=3600
-      st=1700000000 rb=99999 rp=200 tb=88888 tp=150
+Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
 ";
-        let (rx, tx) = parse_netstats_detail(output, 10123);
-        assert_eq!(rx, 80000);
-        assert_eq!(tx, 30000);
-    }
-
-    #[test]
-    fn parses_netstats_detail_long_format() {
-        let output = "\
-UID stats:
-  ident=[{type=WIFI}] uid=10123 set=DEFAULT tag=0x0
-    NetworkStatsHistory: bucketDuration=3600
-      bucketStart=1700000000 activeTime=1000 rxBytes=50000 rxPackets=100 txBytes=20000 txPackets=80
-      bucketStart=1700003600 activeTime=500 rxBytes=30000 rxPackets=60 txBytes=10000 txPackets=40
-";
-        let (rx, tx) = parse_netstats_detail(output, 10123);
-        assert_eq!(rx, 80000);
-        assert_eq!(tx, 30000);
-    }
-
-    #[test]
-    fn netstats_detail_zero_for_unknown_uid() {
-        let output = "\
-UID stats:
-  ident=[{type=WIFI}] uid=10456 set=DEFAULT tag=0x0
-    NetworkStatsHistory: bucketDuration=3600
-      st=1700000000 rb=99999 rp=200 tb=88888 tp=150
-";
-        let (rx, tx) = parse_netstats_detail(output, 10123);
+        let (rx, tx) = parse_net_dev(output);
         assert_eq!(rx, 0);
         assert_eq!(tx, 0);
     }

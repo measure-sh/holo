@@ -109,7 +109,7 @@ pub fn spawn_poller(
                 sample.cpu_percent = cpu;
             }
 
-            if let Ok((rx_bytes, tx_bytes)) = adb.get_net_stats(&serial, &package) {
+            if let Ok((rx_bytes, tx_bytes)) = adb.get_net_stats(&serial) {
                 sample.net_rx_bytes = rx_bytes;
                 sample.net_tx_bytes = tx_bytes;
             }

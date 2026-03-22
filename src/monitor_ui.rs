@@ -184,8 +184,8 @@ pub fn render_monitor_panel(
         section_header("── cpu", false),
         cpu_item(&cpu_data, spark_width),
         section_header("── network", false),
-        net_item("↓ download", &state.download_history, theme::CYAN, spark_width),
-        net_item("↑ upload", &state.upload_history, theme::YELLOW, spark_width),
+        net_item("↓ down", &state.download_history, theme::CYAN, spark_width),
+        net_item("↑ up", &state.upload_history, theme::YELLOW, spark_width),
     ];
 
     frame.render_widget(List::new(items), inner);
