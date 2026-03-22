@@ -45,6 +45,11 @@ pub fn render_database_panel(
         ]);
 
         let border_fg = Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused));
+        let copied_active = db_state.copied_at
+            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2));
+        if !copied_active {
+            db_state.copied_at = None;
+        }
         let bottom_spans = if db_state.confirming_pull.is_some() {
             vec![
                 Span::styled(" pull? ", Style::new().fg(theme::YELLOW)),
@@ -54,17 +59,18 @@ pub fn render_database_panel(
                 Span::styled(" any", accent),
                 Span::styled(" cancel ", muted),
             ]
-        } else if db_state.copied_flash {
-            vec![
-                Span::styled(" copied! ", Style::new().fg(theme::GREEN)),
-            ]
         } else {
+            let copy_span = if copied_active {
+                Span::styled(" copied! ", Style::new().fg(theme::GREEN))
+            } else {
+                Span::styled(" copy ", muted)
+            };
             vec![
                 Span::styled(" e", accent),
                 Span::styled("dit ", muted),
                 Span::styled("───", border_fg),
                 Span::styled(" c", accent),
-                Span::styled("opy ", muted),
+                copy_span,
                 Span::styled("───", border_fg),
                 Span::styled(" p", accent),
                 Span::styled("ull ", muted),
