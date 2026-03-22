@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::database::DatabaseState;
 use crate::files::{FileConfirm, FilesState, ToggleResult};
 use crate::logcat_state::LogcatState;
+use crate::memory::MemoryState;
 use crate::panel;
 use crate::permissions::PermissionsState;
 
@@ -53,13 +54,14 @@ pub enum InputMode {
 }
 
 pub struct App {
-    visible: [bool; 5],
+    visible: [bool; 6],
     focused: Option<u8>,
     input_mode: InputMode,
     logcat_state: LogcatState,
     db_state: DatabaseState,
     permissions_state: PermissionsState,
     files_state: FilesState,
+    memory_state: MemoryState,
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
@@ -76,13 +78,14 @@ pub struct App {
 impl App {
     pub fn new(package: &str) -> Self {
         Self {
-            visible: [true; 5],
+            visible: [true; 6],
             focused: None,
             input_mode: InputMode::Normal,
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
             permissions_state: PermissionsState::new(),
             files_state: FilesState::new(package),
+            memory_state: MemoryState::new(),
             package: package.to_string(),
             layout_bounds: false,
             airplane_mode: false,
@@ -457,7 +460,7 @@ impl App {
                 self.airplane_mode = !self.airplane_mode;
                 Action::ToggleAirplaneMode
             }
-            KeyCode::Char(c @ '1'..='5') => {
+            KeyCode::Char(c @ '1'..='6') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
             }
@@ -472,7 +475,7 @@ impl App {
     }
 
     fn toggle_visibility(&mut self, n: u8) {
-        if !(1..=5).contains(&n) {
+        if !(1..=6).contains(&n) {
             return;
         }
         let idx = (n - 1) as usize;
@@ -491,8 +494,16 @@ impl App {
         self.input_mode = InputMode::Normal;
     }
 
-    pub fn panel_visibility(&self) -> &[bool; 5] {
+    pub fn panel_visibility(&self) -> &[bool; 6] {
         &self.visible
+    }
+
+    pub fn memory_state(&self) -> &MemoryState {
+        &self.memory_state
+    }
+
+    pub fn memory_state_mut(&mut self) -> &mut MemoryState {
+        &mut self.memory_state
     }
 
     #[cfg(test)]
@@ -594,7 +605,7 @@ mod tests {
     #[test]
     fn new_app_all_panels_visible() {
         let app = App::new("com.test");
-        assert_eq!(app.panel_visibility(), &[true; 5]);
+        assert_eq!(app.panel_visibility(), &[true; 6]);
     }
 
     #[test]
@@ -609,7 +620,7 @@ mod tests {
         app.toggle_visibility(3);
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true]
+            &[true, true, false, true, true, true]
         );
     }
 
@@ -618,23 +629,23 @@ mod tests {
         let mut app = App::new("com.test");
         app.toggle_visibility(3);
         app.toggle_visibility(3);
-        assert_eq!(app.panel_visibility(), &[true; 5]);
+        assert_eq!(app.panel_visibility(), &[true; 6]);
     }
 
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new("com.test");
-        for n in 2..=5 {
+        for n in 2..=6 {
             app.toggle_visibility(n);
         }
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false]
+            &[true, false, false, false, false, false]
         );
         app.toggle_visibility(1);
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false]
+            &[true, false, false, false, false, false]
         );
     }
 
@@ -644,7 +655,7 @@ mod tests {
         app.toggle_visibility(0);
         app.toggle_visibility(8);
         app.toggle_visibility(9);
-        assert_eq!(app.panel_visibility(), &[true; 5]);
+        assert_eq!(app.panel_visibility(), &[true; 6]);
     }
 
     #[test]
@@ -673,7 +684,7 @@ mod tests {
         ));
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true]
+            &[true, true, false, true, true, true]
         );
     }
 
@@ -684,7 +695,7 @@ mod tests {
             app.handle_key(key(KeyCode::Char('x'))),
             Action::None
         ));
-        assert_eq!(app.panel_visibility(), &[true; 5]);
+        assert_eq!(app.panel_visibility(), &[true; 6]);
     }
 
     #[test]
