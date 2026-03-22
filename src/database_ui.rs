@@ -50,42 +50,41 @@ pub fn render_database_panel(
         if !copied_active {
             db_state.copied_at = None;
         }
-        let bottom_spans = if db_state.confirming_pull.is_some() {
+        let pull_spans: Vec<Span> = if db_state.confirming_pull.is_some() {
             vec![
-                Span::styled(" pp", accent),
-                Span::styled("ull ", Style::new().fg(theme::FG)),
-                Span::styled("───", border_fg),
-                Span::styled(" any", accent),
-                Span::styled(" cancel ", muted),
+                Span::styled(" p", accent),
+                Span::styled(" to confirm ", Style::new().fg(theme::FG)),
             ]
         } else {
-            let copy_spans: Vec<Span> = if copied_active {
-                vec![Span::styled(" copied! ", Style::new().fg(theme::GREEN))]
-            } else {
-                vec![
-                    Span::styled(" c", accent),
-                    Span::styled("opy ", muted),
-                ]
-            };
-            let mut spans = vec![
-                Span::styled(" e", accent),
-                Span::styled("dit ", muted),
-                Span::styled("───", border_fg),
-            ];
-            spans.extend(copy_spans);
-            spans.extend([
-                Span::styled("───", border_fg),
+            vec![
                 Span::styled(" p", accent),
                 Span::styled("ull ", muted),
-                Span::styled("───", border_fg),
-                Span::styled(" r", accent),
-                Span::styled("eset ", muted),
-                Span::styled("───", border_fg),
-                Span::styled(" esc", accent),
-                Span::styled(" back ", muted),
-            ]);
-            spans
+            ]
         };
+        let copy_spans: Vec<Span> = if copied_active {
+            vec![Span::styled(" copied! ", Style::new().fg(theme::GREEN))]
+        } else {
+            vec![
+                Span::styled(" c", accent),
+                Span::styled("opy ", muted),
+            ]
+        };
+        let mut bottom_spans = vec![
+            Span::styled(" e", accent),
+            Span::styled("dit ", muted),
+            Span::styled("───", border_fg),
+        ];
+        bottom_spans.extend(copy_spans);
+        bottom_spans.push(Span::styled("───", border_fg));
+        bottom_spans.extend(pull_spans);
+        bottom_spans.extend([
+            Span::styled("───", border_fg),
+            Span::styled(" r", accent),
+            Span::styled("eset ", muted),
+            Span::styled("───", border_fg),
+            Span::styled(" esc", accent),
+            Span::styled(" back ", muted),
+        ]);
 
         let color = panel::by_number(panel::DATABASE).border_color(focused);
         let block = Block::default()
@@ -166,11 +165,8 @@ pub fn render_database_panel(
         let border_fg = Style::new().fg(color);
         let bottom_line = if db_state.confirming_pull.is_some() {
             Line::from(vec![
-                Span::styled(" pp", accent),
-                Span::styled("ull ", Style::new().fg(theme::FG)),
-                Span::styled("───", border_fg),
-                Span::styled(" any", accent),
-                Span::styled(" cancel ", muted),
+                Span::styled(" p", accent),
+                Span::styled(" to confirm ", Style::new().fg(theme::FG)),
             ])
         } else if focused && !db_state.databases.is_empty() {
             Line::from(vec![
