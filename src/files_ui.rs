@@ -58,12 +58,22 @@ pub fn render_files_panel(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let root_label = format!("data/data/{}", state.package);
+    let root_line = ListItem::new(Line::from(Span::styled(root_label, Style::new().fg(theme::FG))));
+    frame.render_widget(List::new(vec![root_line]), inner);
+
+    let tree_area = Rect {
+        y: inner.y + 1,
+        height: inner.height.saturating_sub(1),
+        ..inner
+    };
+
     if let Some(ref err) = state.error {
         let item = ListItem::new(Line::from(Span::styled(
             err.as_str(),
             Style::new().fg(theme::RED),
         )));
-        frame.render_widget(List::new(vec![item]), inner);
+        frame.render_widget(List::new(vec![item]), tree_area);
         return;
     }
 
@@ -74,7 +84,7 @@ pub fn render_files_panel(
                 "loading...",
                 Style::new().fg(theme::MUTED),
             )));
-            frame.render_widget(List::new(vec![item]), inner);
+            frame.render_widget(List::new(vec![item]), tree_area);
             return;
         }
     };
@@ -84,12 +94,12 @@ pub fn render_files_panel(
             "empty",
             Style::new().fg(theme::MUTED),
         )));
-        frame.render_widget(List::new(vec![item]), inner);
+        frame.render_widget(List::new(vec![item]), tree_area);
         return;
     }
 
     let flat = state.flatten_visible();
-    let visible_height = inner.height as usize;
+    let visible_height = tree_area.height as usize;
     if visible_height == 0 || flat.is_empty() {
         return;
     }
@@ -113,7 +123,7 @@ pub fn render_files_panel(
         })
         .collect();
 
-    frame.render_widget(List::new(items), inner);
+    frame.render_widget(List::new(items), tree_area);
 }
 
 fn build_tree_line(

@@ -142,7 +142,7 @@ fn run_app(
     device: &Device,
     package: &str,
 ) -> Result<()> {
-    let mut app = App::new();
+    let mut app = App::new(package);
     let mut data = DataSources::new(adb.clone(), &device.serial, package);
     let title = match &data.app_version {
         Some((name, code)) if !name.is_empty() => {

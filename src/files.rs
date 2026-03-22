@@ -29,6 +29,7 @@ pub enum ToggleResult {
 }
 
 pub struct FilesState {
+    pub package: String,
     pub root_children: Option<Vec<FileNode>>,
     pub selected_index: usize,
     pub error: Option<String>,
@@ -36,8 +37,9 @@ pub struct FilesState {
 }
 
 impl FilesState {
-    pub fn new() -> Self {
+    pub fn new(package: &str) -> Self {
         Self {
+            package: package.to_string(),
             root_children: None,
             selected_index: 0,
             error: None,
@@ -252,7 +254,7 @@ mod tests {
     use super::*;
 
     fn make_state_with_children() -> FilesState {
-        let mut state = FilesState::new();
+        let mut state = FilesState::new("com.test");
         state.set_root_children(vec![
             ("cache".into(), true),
             ("databases".into(), true),
@@ -297,7 +299,7 @@ mod tests {
 
     #[test]
     fn flatten_visible_empty_root() {
-        let state = FilesState::new();
+        let state = FilesState::new("com.test");
         assert!(state.flatten_visible().is_empty());
     }
 
