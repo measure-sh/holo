@@ -8,6 +8,8 @@ use crate::permissions::PermissionsState;
 
 pub enum Action {
     Quit,
+    SelectDevice,
+    SelectApp,
     None,
     OpenApp,
     KillApp,
@@ -27,6 +29,18 @@ pub enum Action {
     ExpandDir(String),
     PullFile(String),
     OpenFile(String),
+}
+
+pub enum SettingsAction {
+    Copy,
+    SelectDevice,
+    SelectApp,
+}
+
+pub struct SettingsItem {
+    pub label: &'static str,
+    pub value: String,
+    pub action: SettingsAction,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -129,9 +143,13 @@ impl App {
                     Action::None
                 }
                 KeyCode::Enter => {
-                    let value = self.settings_items()[self.settings_index].1.clone();
+                    let item = self.settings_items().remove(self.settings_index);
                     self.show_settings = false;
-                    Action::CopyText(value)
+                    match item.action {
+                        SettingsAction::Copy => Action::CopyText(item.value),
+                        SettingsAction::SelectDevice => Action::SelectDevice,
+                        SettingsAction::SelectApp => Action::SelectApp,
+                    }
                 }
                 KeyCode::Up => {
                     self.settings_index = self.settings_index.saturating_sub(1);
@@ -509,10 +527,12 @@ impl App {
         self.settings_index
     }
 
-    pub fn settings_items(&self) -> Vec<(&str, String)> {
+    pub fn settings_items(&self) -> Vec<SettingsItem> {
         let path = std::env::temp_dir().join("msh").join(&self.package);
         vec![
-            ("downloads path", format!("{}", path.display())),
+            SettingsItem { label: "downloads path", value: format!("{}", path.display()), action: SettingsAction::Copy },
+            SettingsItem { label: "select device", value: String::new(), action: SettingsAction::SelectDevice },
+            SettingsItem { label: "select app", value: String::new(), action: SettingsAction::SelectApp },
         ]
     }
 }
@@ -1184,6 +1204,27 @@ mod tests {
         let action = app.handle_key(key(KeyCode::Char('q')));
         assert!(matches!(action, Action::None));
         assert!(app.show_settings());
+    }
+
+    #[test]
+    fn settings_select_device() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Down));
+        let action = app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(action, Action::SelectDevice));
+        assert!(!app.show_settings());
+    }
+
+    #[test]
+    fn settings_select_app() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Down));
+        let action = app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(action, Action::SelectApp));
+        assert!(!app.show_settings());
     }
 
 }

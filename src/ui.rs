@@ -311,17 +311,18 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
     let list_items: Vec<ListItem> = items
         .iter()
         .enumerate()
-        .map(|(i, (label, value))| {
+        .map(|(i, item)| {
             let selected = i == app.settings_index();
             let style = if selected {
                 Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD)
             } else {
                 Style::new().fg(theme::FG)
             };
-            ListItem::new(Line::from(vec![
-                Span::styled(format!("{}: ", label), Style::new().fg(theme::FG)),
-                Span::styled(value.clone(), style),
-            ]))
+            let mut spans = vec![Span::styled(item.label.to_string(), style)];
+            if !item.value.is_empty() {
+                spans.push(Span::styled(format!(": {}", item.value), Style::new().fg(theme::FG)));
+            }
+            ListItem::new(Line::from(spans))
         })
         .collect();
 

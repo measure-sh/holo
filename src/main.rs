@@ -72,18 +72,32 @@ fn copy_to_clipboard(text: &str) {
     }
 }
 
+enum ExitReason {
+    Quit,
+    SelectDevice,
+    SelectApp(Device),
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
     let adb: Arc<dyn Adb> = Arc::new(RealAdb);
     let terminal = ratatui::init();
-    let result = run_boot(terminal, adb);
+    let result = run_boot(terminal, adb, None);
     ratatui::restore();
     result
 }
 
-fn run_boot(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>) -> Result<()> {
-    let mut phase = BootPhase::WaitingForDevice;
+fn run_boot(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>, resume_device: Option<Device>) -> Result<()> {
+    let mut phase = match resume_device {
+        Some(device) => BootPhase::SelectApp {
+            device,
+            packages: None,
+            cursor: 0,
+            filter: String::new(),
+        },
+        None => BootPhase::WaitingForDevice,
+    };
     let device_rx = spawn_device_poller(adb.clone());
     let mut apps_rx: Option<mpsc::Receiver<Vec<String>>> = None;
     let mut tick: u8 = 0;
@@ -108,7 +122,15 @@ fn run_boot(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>) -> Result
 
         if phase.is_done() {
             let (device, package) = phase.into_result().unwrap();
-            return run_app(terminal, adb, &device, &package);
+            match run_app(&mut terminal, adb.clone(), &device, &package)? {
+                ExitReason::Quit => return Ok(()),
+                ExitReason::SelectDevice => {
+                    return run_boot(terminal, adb, None);
+                }
+                ExitReason::SelectApp(device) => {
+                    return run_boot(terminal, adb, Some(device));
+                }
+            }
         }
 
         terminal.draw(|frame| boot_ui::render_boot(frame, &phase, tick, confirming_quit))?;
@@ -137,11 +159,11 @@ fn run_boot(mut terminal: ratatui::DefaultTerminal, adb: Arc<dyn Adb>) -> Result
 }
 
 fn run_app(
-    mut terminal: ratatui::DefaultTerminal,
+    terminal: &mut ratatui::DefaultTerminal,
     adb: Arc<dyn Adb>,
     device: &Device,
     package: &str,
-) -> Result<()> {
+) -> Result<ExitReason> {
     let mut app = App::new(package);
     let mut data = DataSources::new(adb.clone(), &device.serial, package);
     let title = match &data.app_version {
@@ -168,7 +190,9 @@ fn run_app(
                     continue;
                 }
                 match app.handle_key(key) {
-                    Action::Quit => return Ok(()),
+                    Action::Quit => return Ok(ExitReason::Quit),
+                    Action::SelectDevice => return Ok(ExitReason::SelectDevice),
+                    Action::SelectApp => return Ok(ExitReason::SelectApp(device.clone())),
                     Action::OpenApp => {
                         spawn_app_action(&adb, &device.serial, package, |adb, s, p| {
                             adb.launch_app(s, p)
