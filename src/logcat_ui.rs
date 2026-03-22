@@ -172,7 +172,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
 
 fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
     let Some(parsed) = logcat::parse(raw) else {
-        return Line::from(raw);
+        return Line::from(raw.replace('\t', "  "));
     };
 
     let level_fg = theme::level_color(parsed.level);
@@ -194,7 +194,8 @@ fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
 
     let tag = Span::styled(parsed.tag, Style::new().fg(level_fg).add_modifier(Modifier::BOLD));
 
-    let message = Span::styled(format!(": {}", parsed.message), Style::new().fg(theme::FG));
+    let msg_text = parsed.message.replace('\t', "  ");
+    let message = Span::styled(format!(": {msg_text}"), Style::new().fg(theme::FG));
 
     Line::from(vec![label, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
 }
