@@ -231,6 +231,9 @@ fn run_app(
                         let text = data.logcat_lines.join("\n");
                         copy_to_clipboard(&text);
                     }
+                    Action::CopyText(text) => {
+                        copy_to_clipboard(&text);
+                    }
                     Action::RunQuery(db, sql) => {
                         data.start_query(adb.clone(), device.serial.clone(), package.to_string(), db, sql);
                     }

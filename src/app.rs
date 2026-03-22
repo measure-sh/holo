@@ -23,6 +23,7 @@ pub enum Action {
     ToggleAirplaneMode,
     TogglePermission(String, bool),
     CopyLogcat,
+    CopyText(String),
     ExpandDir(String),
     PullFile(String),
     OpenFile(String),
@@ -44,9 +45,12 @@ pub struct App {
     db_state: DatabaseState,
     permissions_state: PermissionsState,
     files_state: FilesState,
+    package: String,
     layout_bounds: bool,
     airplane_mode: bool,
     confirming_quit: bool,
+    show_settings: bool,
+    settings_index: usize,
     pub command_flash: Option<(usize, std::time::Instant)>,
 }
 
@@ -60,9 +64,12 @@ impl App {
             db_state: DatabaseState::new(),
             permissions_state: PermissionsState::new(),
             files_state: FilesState::new(package),
+            package: package.to_string(),
             layout_bounds: false,
             airplane_mode: false,
             confirming_quit: false,
+            show_settings: false,
+            settings_index: 0,
             command_flash: None,
         }
     }
@@ -111,6 +118,32 @@ impl App {
             self.confirming_quit = false;
             return match code {
                 KeyCode::Char('q') => Action::Quit,
+                _ => Action::None,
+            };
+        }
+
+        if self.show_settings {
+            return match code {
+                KeyCode::Esc => {
+                    self.show_settings = false;
+                    Action::None
+                }
+                KeyCode::Enter => {
+                    let value = self.settings_items()[self.settings_index].1.clone();
+                    self.show_settings = false;
+                    Action::CopyText(value)
+                }
+                KeyCode::Up => {
+                    self.settings_index = self.settings_index.saturating_sub(1);
+                    Action::None
+                }
+                KeyCode::Down => {
+                    let max = self.settings_items().len().saturating_sub(1);
+                    if self.settings_index < max {
+                        self.settings_index += 1;
+                    }
+                    Action::None
+                }
                 _ => Action::None,
             };
         }
@@ -332,6 +365,11 @@ impl App {
         }
 
         match code {
+            KeyCode::Char('s') => {
+                self.show_settings = true;
+                self.settings_index = 0;
+                Action::None
+            }
             KeyCode::Char('q') => {
                 self.confirming_quit = true;
                 Action::None
@@ -461,6 +499,21 @@ impl App {
 
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
+    }
+
+    pub fn show_settings(&self) -> bool {
+        self.show_settings
+    }
+
+    pub fn settings_index(&self) -> usize {
+        self.settings_index
+    }
+
+    pub fn settings_items(&self) -> Vec<(&str, String)> {
+        let path = std::env::temp_dir().join("msh").join(&self.package);
+        vec![
+            ("downloads path", format!("{}", path.display())),
+        ]
     }
 }
 
@@ -1096,6 +1149,41 @@ mod tests {
         assert!(app.airplane_mode());
         assert!(matches!(app.handle_key(key(KeyCode::Char('a'))), Action::ToggleAirplaneMode));
         assert!(!app.airplane_mode());
+    }
+
+    #[test]
+    fn s_opens_settings() {
+        let mut app = App::new("com.test");
+        assert!(!app.show_settings());
+        app.handle_key(key(KeyCode::Char('s')));
+        assert!(app.show_settings());
+    }
+
+    #[test]
+    fn esc_closes_settings() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('s')));
+        assert!(app.show_settings());
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.show_settings());
+    }
+
+    #[test]
+    fn enter_in_settings_copies_and_closes() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('s')));
+        let action = app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(action, Action::CopyText(_)));
+        assert!(!app.show_settings());
+    }
+
+    #[test]
+    fn settings_traps_keys() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('s')));
+        let action = app.handle_key(key(KeyCode::Char('q')));
+        assert!(matches!(action, Action::None));
+        assert!(app.show_settings());
     }
 
 }

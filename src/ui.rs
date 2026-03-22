@@ -93,6 +93,9 @@ pub fn render_app(
         ])
     } else {
         Line::from(vec![
+            Span::styled(" s", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("ettings ", Style::new().fg(theme::MUTED)),
+            Span::styled("───", Style::new().fg(theme::SURFACE)),
             Span::styled(" qq", Style::new().fg(theme::KEY_HINT)),
             Span::styled("uit ", Style::new().fg(theme::MUTED)),
         ])
@@ -123,6 +126,10 @@ pub fn render_app(
     let inner = block.inner(area);
     frame.render_widget(block, area);
     render_panels(frame, inner, app, logcat_lines);
+
+    if app.show_settings() {
+        render_settings_dialog(frame, area, app);
+    }
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
@@ -266,4 +273,54 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
             frame.render_widget(panel_block(pn, false), cols[i]);
         }
     }
+}
+
+fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
+    let items = app.settings_items();
+    let width = 60u16.min(area.width.saturating_sub(4));
+    let height = (items.len() as u16 + 4).min(area.height.saturating_sub(4));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let dialog_area = Rect::new(x, y, width, height);
+
+    let accent = Style::new().fg(theme::ACCENT);
+    let muted = Style::new().fg(theme::MUTED);
+
+    frame.render_widget(ratatui::widgets::Clear, dialog_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(Line::from(Span::styled(" settings ", accent)))
+        .title_bottom(Line::from(vec![
+            Span::styled(" ↩", accent),
+            Span::styled(" copy ", muted),
+            Span::styled("───", Style::new().fg(theme::SURFACE)),
+            Span::styled(" esc", accent),
+            Span::styled(" close ", muted),
+        ]))
+        .border_style(Style::new().fg(theme::SURFACE))
+        .style(Style::new().bg(theme::BG));
+
+    let inner = block.inner(dialog_area);
+    frame.render_widget(block, dialog_area);
+
+    let list_items: Vec<ListItem> = items
+        .iter()
+        .enumerate()
+        .map(|(i, (label, value))| {
+            let selected = i == app.settings_index();
+            let style = if selected {
+                Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(theme::FG)
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!("{}: ", label), muted),
+                Span::styled(value.clone(), style),
+            ]))
+        })
+        .collect();
+
+    frame.render_widget(List::new(list_items), inner);
 }
