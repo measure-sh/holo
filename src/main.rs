@@ -7,6 +7,8 @@ mod boot_ui;
 mod data;
 mod database;
 mod database_ui;
+mod files;
+mod files_ui;
 mod logcat;
 mod logcat_state;
 mod logcat_ui;

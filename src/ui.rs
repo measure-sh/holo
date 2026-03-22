@@ -238,7 +238,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let panels: Vec<u8> = [panel::NETWORK, panel::DATABASE]
+    let panels: Vec<u8> = [panel::FILES, panel::DATABASE]
         .iter()
         .copied()
         .filter(|&n| vis[(n - 1) as usize])
