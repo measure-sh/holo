@@ -152,6 +152,18 @@ impl Adb for RealAdb {
         }
         Ok(())
     }
+
+    fn wake_screen(&self, serial: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb wake screen failed: {stderr}");
+        }
+        Ok(())
+    }
 }
 
 fn parse_package_list(output: &str) -> Vec<String> {

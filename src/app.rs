@@ -15,6 +15,7 @@ pub enum Action {
     CopyDbResult(String),
     RunQuery(String, String),
     PullDb(String),
+    WakeScreen,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -210,6 +211,7 @@ impl App {
             KeyCode::Char('o') => Action::OpenApp,
             KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('c') => Action::ClearData,
+            KeyCode::Char('w') => Action::WakeScreen,
             KeyCode::Char(c @ '1'..='5') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None

@@ -13,10 +13,11 @@ use crate::logcat_ui;
 use crate::panel;
 use crate::theme;
 
-const COMMAND_LABELS: [&str; 3] = [
+const COMMAND_LABELS: [&str; 4] = [
     "open app",
     "kill app",
     "clear data",
+    "wake screen",
 ];
 
 pub const SUPERSCRIPT_DIGITS: [char; 5] = [
