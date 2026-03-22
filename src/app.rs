@@ -26,6 +26,7 @@ pub enum Action {
     TogglePermission(String, bool),
     CopyLogcat,
     CopyText(String),
+    RefreshFiles,
     ExpandDir(String),
     PullFile(String),
     OpenFile(String),
@@ -247,7 +248,7 @@ impl App {
                     }
                     return Action::None;
                 }
-                KeyCode::Char('r') if self.db_state.selected_db.is_some() => {
+                KeyCode::Char('r') => {
                     self.db_state.reset();
                     return Action::ResetDb;
                 }
@@ -333,6 +334,12 @@ impl App {
                         }
                     }
                     return Action::None;
+                }
+                KeyCode::Char('r') => {
+                    self.files_state.error = None;
+                    self.files_state.root_children = None;
+                    self.files_state.selected_index = 0;
+                    return Action::RefreshFiles;
                 }
                 KeyCode::Esc => {
                     self.focused = None;
@@ -1149,12 +1156,12 @@ mod tests {
     }
 
     #[test]
-    fn r_ignored_in_db_list_view() {
+    fn r_resets_db_from_list_view() {
         let mut app = App::new("com.test");
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::None));
-        assert!(!app.db_state().databases.is_empty());
+        assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::ResetDb));
+        assert!(app.db_state().databases.is_empty());
     }
 
     #[test]

@@ -66,6 +66,9 @@ pub fn render_files_panel(
         spans.extend(open_spans);
         spans.extend([
             Span::styled("───", border_fg),
+            Span::styled(" r", accent),
+            Span::styled("efresh ", muted),
+            Span::styled("───", border_fg),
             Span::styled(" esc", accent),
             Span::styled(" back ", muted),
         ]);

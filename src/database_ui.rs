@@ -172,6 +172,14 @@ pub fn render_database_panel(
             Line::from(vec![
                 Span::styled(" p", accent),
                 Span::styled("ull ", muted),
+                Span::styled("───", border_fg),
+                Span::styled(" r", accent),
+                Span::styled("efresh ", muted),
+            ])
+        } else if focused {
+            Line::from(vec![
+                Span::styled(" r", accent),
+                Span::styled("efresh ", muted),
             ])
         } else {
             Line::default()
