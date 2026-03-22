@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::database::DatabaseState;
 use crate::logcat_state::LogcatState;
 use crate::panel;
+use crate::permissions::PermissionsState;
 
 pub enum Action {
     Quit,
@@ -19,6 +20,7 @@ pub enum Action {
     WakeScreen,
     ToggleLayoutBounds,
     ToggleAirplaneMode,
+    TogglePermission(String, bool),
     CopyLogcat,
 }
 
@@ -36,6 +38,7 @@ pub struct App {
     input_mode: InputMode,
     logcat_state: LogcatState,
     db_state: DatabaseState,
+    permissions_state: PermissionsState,
     layout_bounds: bool,
     airplane_mode: bool,
     confirming_quit: bool,
@@ -50,6 +53,7 @@ impl App {
             input_mode: InputMode::Normal,
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
+            permissions_state: PermissionsState::new(),
             layout_bounds: false,
             airplane_mode: false,
             confirming_quit: false,
@@ -170,6 +174,30 @@ impl App {
                 }
                 KeyCode::Esc if self.db_state.selected_db.is_some() => {
                     self.db_state.deselect_db();
+                    return Action::None;
+                }
+                KeyCode::Esc => {
+                    self.focused = None;
+                    return Action::None;
+                }
+                _ => {}
+            }
+        }
+
+        if self.focused == Some(panel::PERMISSIONS) {
+            match code {
+                KeyCode::Up => {
+                    self.permissions_state.move_up();
+                    return Action::None;
+                }
+                KeyCode::Down => {
+                    self.permissions_state.move_down();
+                    return Action::None;
+                }
+                KeyCode::Enter => {
+                    if let Some((perm, granted)) = self.permissions_state.toggle_selected() {
+                        return Action::TogglePermission(perm, granted);
+                    }
                     return Action::None;
                 }
                 KeyCode::Esc => {
@@ -304,6 +332,14 @@ impl App {
 
     pub fn db_state_mut(&mut self) -> &mut DatabaseState {
         &mut self.db_state
+    }
+
+    pub fn permissions_state(&self) -> &PermissionsState {
+        &self.permissions_state
+    }
+
+    pub fn permissions_state_mut(&mut self) -> &mut PermissionsState {
+        &mut self.permissions_state
     }
 
     pub fn focused_panel(&self) -> Option<u8> {

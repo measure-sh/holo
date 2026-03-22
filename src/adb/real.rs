@@ -219,6 +219,70 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn list_permissions(&self, serial: &str, package: &str) -> Result<Vec<(String, bool)>> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "package", package])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("dumpsys package failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_runtime_permissions(&stdout))
+    }
+
+    fn grant_permission(&self, serial: &str, package: &str, permission: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "pm", "grant", package, permission])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("pm grant failed: {stderr}");
+        }
+        Ok(())
+    }
+
+    fn revoke_permission(&self, serial: &str, package: &str, permission: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "pm", "revoke", package, permission])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("pm revoke failed: {stderr}");
+        }
+        Ok(())
+    }
+
+}
+
+fn parse_runtime_permissions(output: &str) -> Vec<(String, bool)> {
+    let mut results = Vec::new();
+    let mut in_runtime_section = false;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("runtime permissions:") {
+            in_runtime_section = true;
+            continue;
+        }
+        if in_runtime_section {
+            if trimmed.is_empty() || (!trimmed.starts_with("android.permission.") && !trimmed.contains(": granted=")) {
+                in_runtime_section = false;
+                continue;
+            }
+            if let Some((perm, rest)) = trimmed.split_once(": granted=") {
+                let granted = rest.starts_with("true");
+                results.push((perm.to_string(), granted));
+            }
+        }
+    }
+    results.sort_by(|a, b| a.0.cmp(&b.0));
+    results.dedup_by(|a, b| a.0 == b.0);
+    results
 }
 
 fn parse_airplane_mode(output: &str) -> bool {
@@ -453,5 +517,34 @@ mod tests {
         assert_eq!(devices[0].serial, "emulator-5554");
         assert!(devices[0].model.is_none());
         assert!(devices[0].device.is_none());
+    }
+
+    #[test]
+    fn parses_runtime_permissions() {
+        let output = "    runtime permissions:\n\
+                       android.permission.CAMERA: granted=true\n\
+                       android.permission.READ_CONTACTS: granted=false, flags=[ USER_SET ]\n\
+                       \n\
+                       some other section:\n";
+        let perms = parse_runtime_permissions(output);
+        assert_eq!(perms.len(), 2);
+        assert_eq!(perms[0], ("android.permission.CAMERA".into(), true));
+        assert_eq!(perms[1], ("android.permission.READ_CONTACTS".into(), false));
+    }
+
+    #[test]
+    fn returns_empty_for_no_permissions() {
+        assert!(parse_runtime_permissions("").is_empty());
+        assert!(parse_runtime_permissions("some unrelated output\n").is_empty());
+    }
+
+    #[test]
+    fn deduplicates_permissions() {
+        let output = "    runtime permissions:\n\
+                       android.permission.CAMERA: granted=true\n\
+                       android.permission.CAMERA: granted=false\n\
+                       \n";
+        let perms = parse_runtime_permissions(output);
+        assert_eq!(perms.len(), 1);
     }
 }

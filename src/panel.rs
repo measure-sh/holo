@@ -23,14 +23,14 @@ impl PanelDef {
 pub const COMMANDS: u8 = 1;
 pub const LOGCAT: u8 = 2;
 pub const NETWORK: u8 = 3;
-pub const SYSTEM: u8 = 4;
+pub const PERMISSIONS: u8 = 4;
 pub const DATABASE: u8 = 5;
 
 pub const PANELS: [PanelDef; 5] = [
     PanelDef { number: 1, name: "commands",  dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: None },
     PanelDef { number: 2, name: "logcat",    dim_color: theme::DIM_GREEN,   bright_color: theme::GREEN,   focus_key: Some('l') },
     PanelDef { number: 3, name: "network",   dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: None },
-    PanelDef { number: 4, name: "system",    dim_color: theme::DIM_CYAN,    bright_color: theme::CYAN,    focus_key: None },
+    PanelDef { number: 4, name: "permissions", dim_color: theme::DIM_CYAN, bright_color: theme::CYAN, focus_key: Some('p') },
     PanelDef { number: 5, name: "database",  dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: Some('d') },
 ];
 

@@ -11,6 +11,7 @@ use crate::battery;
 use crate::database_ui;
 use crate::logcat_ui;
 use crate::panel;
+use crate::permissions_ui;
 use crate::theme;
 
 const COMMAND_LABELS: [&str; 5] = [
@@ -220,7 +221,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let panels: Vec<u8> = [panel::NETWORK, panel::SYSTEM, panel::DATABASE]
+    let panels: Vec<u8> = [panel::NETWORK, panel::PERMISSIONS, panel::DATABASE]
         .iter()
         .copied()
         .filter(|&n| vis[(n - 1) as usize])
@@ -241,6 +242,8 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
         if pn == panel::DATABASE {
             let im = app.input_mode();
             database_ui::render_database_panel(frame, cols[i], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
+        } else if pn == panel::PERMISSIONS {
+            permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state());
         } else {
             frame.render_widget(panel_block(pn, false), cols[i]);
         }

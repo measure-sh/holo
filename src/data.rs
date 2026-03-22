@@ -7,6 +7,7 @@ use crate::app::App;
 use crate::battery;
 use crate::database;
 use crate::logcat;
+use crate::permissions;
 use crate::processes;
 
 const MAX_LOGCAT_LINES: usize = 1000;
@@ -25,6 +26,8 @@ pub struct DataSources {
     db_detect_rx: Option<mpsc::Receiver<Result<Vec<String>, String>>>,
     db_query_rx: Option<mpsc::Receiver<Result<String, String>>>,
     db_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
+
+    permissions_rx: Option<mpsc::Receiver<Result<Vec<(String, bool)>, String>>>,
 
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
@@ -49,6 +52,11 @@ impl DataSources {
             )),
             db_query_rx: None,
             db_pull_rx: None,
+            permissions_rx: Some(permissions::spawn_permissions_loader(
+                adb.clone(),
+                serial.to_string(),
+                package.to_string(),
+            )),
             initial_layout_bounds,
             initial_airplane_mode,
         }
@@ -86,6 +94,15 @@ impl DataSources {
             }
         }
 
+        if let Some(rx) = &self.permissions_rx {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(perms) => app.permissions_state_mut().permissions = perms,
+                    Err(e) => app.permissions_state_mut().error = Some(e),
+                }
+                self.permissions_rx = None;
+            }
+        }
         if let Some(rx) = &self.db_detect_rx {
             if let Ok(result) = rx.try_recv() {
                 match result {

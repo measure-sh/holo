@@ -11,6 +11,8 @@ mod logcat;
 mod logcat_state;
 mod logcat_ui;
 mod panel;
+mod permissions;
+mod permissions_ui;
 mod processes;
 mod selector;
 mod theme;
@@ -195,6 +197,18 @@ fn run_app(
                         let enabled = app.airplane_mode();
                         spawn_app_action(&adb, &device.serial, package, move |adb, s, _| {
                             adb.set_airplane_mode(s, enabled)
+                        });
+                    }
+                    Action::TogglePermission(perm, granted) => {
+                        let adb = adb.clone();
+                        let serial = device.serial.clone();
+                        let package = package.to_string();
+                        std::thread::spawn(move || {
+                            let _ = if granted {
+                                adb.grant_permission(&serial, &package, &perm)
+                            } else {
+                                adb.revoke_permission(&serial, &package, &perm)
+                            };
                         });
                     }
                     Action::ResetLogcat => {

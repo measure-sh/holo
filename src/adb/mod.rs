@@ -30,4 +30,7 @@ pub trait Adb: Send + Sync {
     fn set_layout_bounds(&self, serial: &str, enabled: bool) -> Result<()>;
     fn get_airplane_mode(&self, serial: &str) -> Result<bool>;
     fn set_airplane_mode(&self, serial: &str, enabled: bool) -> Result<()>;
+    fn list_permissions(&self, serial: &str, package: &str) -> Result<Vec<(String, bool)>>;
+    fn grant_permission(&self, serial: &str, package: &str, permission: &str) -> Result<()>;
+    fn revoke_permission(&self, serial: &str, package: &str, permission: &str) -> Result<()>;
 }
