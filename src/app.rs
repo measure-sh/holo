@@ -95,12 +95,10 @@ impl App {
         }
 
         if self.confirming_quit {
+            self.confirming_quit = false;
             return match code {
-                KeyCode::Enter => Action::Quit,
-                _ => {
-                    self.confirming_quit = false;
-                    Action::None
-                }
+                KeyCode::Char('q') => Action::Quit,
+                _ => Action::None,
             };
         }
 
@@ -371,15 +369,15 @@ mod tests {
     }
 
     #[test]
-    fn q_then_enter_quits() {
+    fn qq_quits() {
         let mut app = App::new();
         assert!(matches!(app.handle_key(KeyCode::Char('q')), Action::None));
         assert!(app.confirming_quit());
-        assert!(matches!(app.handle_key(KeyCode::Enter), Action::Quit));
+        assert!(matches!(app.handle_key(KeyCode::Char('q')), Action::Quit));
     }
 
     #[test]
-    fn q_then_any_key_cancels_quit() {
+    fn q_then_other_key_cancels_quit() {
         let mut app = App::new();
         app.handle_key(KeyCode::Char('q'));
         assert!(app.confirming_quit());

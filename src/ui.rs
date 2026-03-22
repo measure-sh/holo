@@ -85,16 +85,12 @@ pub fn render_app(
         .alignment(Alignment::Center);
     let hint_line = if app.confirming_quit() {
         Line::from(vec![
-            Span::styled(" quit? ", Style::new().fg(theme::YELLOW)),
-            Span::styled("↩", Style::new().fg(theme::KEY_HINT)),
-            Span::styled(" yes ", Style::new().fg(theme::MUTED)),
-            Span::styled("───", Style::new().fg(theme::SURFACE)),
-            Span::styled(" any", Style::new().fg(theme::KEY_HINT)),
-            Span::styled(" cancel ", Style::new().fg(theme::MUTED)),
+            Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" to confirm ", Style::new().fg(theme::YELLOW)),
         ])
     } else {
         Line::from(vec![
-            Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" qq", Style::new().fg(theme::KEY_HINT)),
             Span::styled("uit ", Style::new().fg(theme::MUTED)),
         ])
     };
