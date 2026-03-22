@@ -95,7 +95,7 @@ pub fn spawn_poller(
 ) -> mpsc::Receiver<MonitorSample> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let interval = Duration::from_secs(1);
+        let interval = Duration::from_secs(3);
         loop {
             let mut sample = MonitorSample::default();
 
