@@ -122,6 +122,34 @@ fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     ])
 }
 
+fn jank_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
+    let current = data.last().copied().unwrap_or(0.0);
+    let spark = sparkline_str_f32(data, spark_width);
+
+    ListItem::new(vec![
+        Line::from(vec![
+            Span::styled(format!(" {:<12}", "Janky"), Style::new().fg(theme::FG)),
+            Span::styled(spark, Style::new().fg(theme::RED)),
+            Span::styled(format!("  {:>7.1}%", current), Style::new().fg(theme::FG)),
+        ]),
+        Line::raw(""),
+    ])
+}
+
+fn frames_item(data: &[u64], spark_width: usize) -> ListItem<'static> {
+    let current = data.last().copied().unwrap_or(0);
+    let spark = sparkline_str(data, spark_width);
+
+    ListItem::new(vec![
+        Line::from(vec![
+            Span::styled(format!(" {:<12}", "Rendered"), Style::new().fg(theme::FG)),
+            Span::styled(spark, Style::new().fg(theme::MAGENTA)),
+            Span::styled(format!("  {:>8}", current), Style::new().fg(theme::FG)),
+        ]),
+        Line::raw(""),
+    ])
+}
+
 fn net_item(
     label: &str,
     data: &[u64],
@@ -186,6 +214,9 @@ pub fn render_monitor_panel(
         section_header("── network (device)", false),
         net_item("↓ down", &state.download_history, theme::CYAN, spark_width),
         net_item("↑ up", &state.upload_history, theme::YELLOW, spark_width),
+        section_header("── frames", false),
+        jank_item(&state.janky_percent_history, spark_width),
+        frames_item(&state.frame_count_history, spark_width),
     ];
 
     frame.render_widget(List::new(items), inner);

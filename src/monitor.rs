@@ -135,6 +135,11 @@ pub fn spawn_poller(
                 sample.net_tx_bytes = tx_bytes;
             }
 
+            if let Ok(gfx) = adb.get_gfx_info(&serial, &package) {
+                sample.total_frames = gfx.total_frames;
+                sample.janky_frames = gfx.janky_frames;
+            }
+
             if tx.send(sample).is_err() {
                 return;
             }
