@@ -25,6 +25,7 @@ pub enum Action {
     CopyLogcat,
     ExpandDir(String),
     PullFile(String),
+    OpenFile(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -217,6 +218,14 @@ impl App {
                     if !self.files_state.selected_is_dir() {
                         if let Some(path) = self.files_state.selected_path() {
                             return Action::PullFile(path);
+                        }
+                    }
+                    return Action::None;
+                }
+                KeyCode::Char('o') => {
+                    if !self.files_state.selected_is_dir() {
+                        if let Some(path) = self.files_state.selected_path() {
+                            return Action::OpenFile(path);
                         }
                     }
                     return Action::None;

@@ -218,15 +218,29 @@ pub fn spawn_pull_file(
     serial: String,
     package: String,
     remote_path: String,
-) -> mpsc::Receiver<Result<String, String>> {
+    open_after: bool,
+) -> mpsc::Receiver<Result<(String, bool), String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
+        let file_name = std::path::Path::new(&remote_path)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let dest = std::path::PathBuf::from("tmp/msh")
             .join(&package)
-            .join(&remote_path);
+            .join("files")
+            .join(format!("{timestamp}_{file_name}"));
         let result = adb
             .pull_file(&serial, &package, &remote_path, &dest)
-            .map(|_| format!("{}", dest.display()))
+            .map(|_| {
+                let path_str = format!("{}", dest.display());
+                if open_after {
+                    let _ = open::that(&dest);
+                }
+                (path_str, open_after)
+            })
             .map_err(|e| e.to_string());
         let _ = tx.send(result);
     });

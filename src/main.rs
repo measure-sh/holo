@@ -241,7 +241,10 @@ fn run_app(
                         data.start_list_dir(adb.clone(), device.serial.clone(), package.to_string(), path);
                     }
                     Action::PullFile(path) => {
-                        data.start_pull_file(adb.clone(), device.serial.clone(), package.to_string(), path);
+                        data.start_pull_file(adb.clone(), device.serial.clone(), package.to_string(), path, false);
+                    }
+                    Action::OpenFile(path) => {
+                        data.start_pull_file(adb.clone(), device.serial.clone(), package.to_string(), path, true);
                     }
                     Action::None => {}
                 }

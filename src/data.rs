@@ -31,7 +31,7 @@ pub struct DataSources {
     permissions_rx: Option<mpsc::Receiver<Result<Vec<(String, bool)>, String>>>,
 
     files_list_rx: Option<mpsc::Receiver<Result<(String, Vec<(String, bool)>), String>>>,
-    files_pull_rx: Option<mpsc::Receiver<Result<String, String>>>,
+    files_pull_rx: Option<mpsc::Receiver<Result<(String, bool), String>>>,
 
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
@@ -162,7 +162,7 @@ impl DataSources {
         if let Some(rx) = &self.files_pull_rx {
             if let Ok(result) = rx.try_recv() {
                 match result {
-                    Ok(dest) => {
+                    Ok((dest, _)) => {
                         app.files_state_mut().pull_flash =
                             Some((dest, std::time::Instant::now()));
                     }
@@ -189,7 +189,7 @@ impl DataSources {
         self.files_list_rx = Some(files::spawn_list_dir(adb, serial, package, path));
     }
 
-    pub fn start_pull_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
-        self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path));
+    pub fn start_pull_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String, open_after: bool) {
+        self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path, open_after));
     }
 }
