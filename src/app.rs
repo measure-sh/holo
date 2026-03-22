@@ -15,6 +15,7 @@ pub enum Action {
     CopyDbResult(String),
     RunQuery(String, String),
     PullDb(String),
+    UninstallApp,
     WakeScreen,
     ToggleLayoutBounds,
     ToggleAirplaneMode,
@@ -242,8 +243,12 @@ impl App {
                 self.command_flash = Some((2, std::time::Instant::now()));
                 Action::ClearData
             }
-            KeyCode::Char('w') => {
+            KeyCode::Char('u') => {
                 self.command_flash = Some((3, std::time::Instant::now()));
+                Action::UninstallApp
+            }
+            KeyCode::Char('w') => {
+                self.command_flash = Some((4, std::time::Instant::now()));
                 Action::WakeScreen
             }
             KeyCode::Char('b') => {

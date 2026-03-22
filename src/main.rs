@@ -175,6 +175,11 @@ fn run_app(
                             adb.clear_app_data(s, p)
                         });
                     }
+                    Action::UninstallApp => {
+                        spawn_app_action(&adb, &device.serial, package, |adb, s, p| {
+                            adb.uninstall_app(s, p)
+                        });
+                    }
                     Action::WakeScreen => {
                         spawn_app_action(&adb, &device.serial, package, |adb, s, _| {
                             adb.wake_screen(s)

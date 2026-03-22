@@ -99,6 +99,18 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn uninstall_app(&self, serial: &str, package: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "uninstall", package])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb uninstall failed: {stderr}");
+        }
+        Ok(())
+    }
+
     fn list_databases(&self, serial: &str, package: &str) -> Result<Vec<String>> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "run-as", package, "ls", "databases/"])
