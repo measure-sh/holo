@@ -117,7 +117,7 @@ impl App {
 
         if self.db_state.confirming_pull.is_some() {
             return match code {
-                KeyCode::Enter => {
+                KeyCode::Char('p') => {
                     let db = self.db_state.confirming_pull.take().unwrap();
                     Action::PullDb(db)
                 }
@@ -192,11 +192,18 @@ impl App {
 
         if self.files_state.confirming.is_some() {
             return match code {
-                KeyCode::Enter => {
+                KeyCode::Char('p') if matches!(self.files_state.confirming, Some(FileConfirm::Pull(_))) => {
                     let confirm = self.files_state.confirming.take().unwrap();
                     match confirm {
                         FileConfirm::Pull(path) => Action::PullFile(path),
+                        _ => unreachable!(),
+                    }
+                }
+                KeyCode::Char('o') if matches!(self.files_state.confirming, Some(FileConfirm::Open(_))) => {
+                    let confirm = self.files_state.confirming.take().unwrap();
+                    match confirm {
                         FileConfirm::Open(path) => Action::OpenFile(path),
+                        _ => unreachable!(),
                     }
                 }
                 _ => {
@@ -957,12 +964,12 @@ mod tests {
     }
 
     #[test]
-    fn enter_confirms_pull() {
+    fn pp_confirms_pull() {
         let mut app = App::new("com.test");
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Char('p')));
-        let action = app.handle_key(key(KeyCode::Enter));
+        let action = app.handle_key(key(KeyCode::Char('p')));
         assert!(matches!(action, Action::PullDb(db) if db == "a.db"));
         assert!(app.db_state().confirming_pull.is_none());
     }

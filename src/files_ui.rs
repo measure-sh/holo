@@ -35,18 +35,16 @@ pub fn render_files_panel(
 
     let bottom_spans = if let Some(FileConfirm::Pull(_)) = &state.confirming {
         Some(vec![
-            Span::styled(" pull? ", Style::new().fg(theme::YELLOW)),
-            Span::styled("↩", accent),
-            Span::styled(" yes ", muted),
+            Span::styled(" pp", accent),
+            Span::styled("ull ", Style::new().fg(theme::YELLOW)),
             Span::styled("───", border_fg),
             Span::styled(" any", accent),
             Span::styled(" cancel ", muted),
         ])
     } else if let Some(FileConfirm::Open(_)) = &state.confirming {
         Some(vec![
-            Span::styled(" open? ", Style::new().fg(theme::YELLOW)),
-            Span::styled("↩", accent),
-            Span::styled(" yes ", muted),
+            Span::styled(" oo", accent),
+            Span::styled("pen ", Style::new().fg(theme::YELLOW)),
             Span::styled("───", border_fg),
             Span::styled(" any", accent),
             Span::styled(" cancel ", muted),
