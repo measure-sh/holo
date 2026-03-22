@@ -106,8 +106,15 @@ pub fn render_app(
         block = block.title(battery::battery_bar(level));
     }
 
+    let info_line = Line::from(Span::styled(
+        title,
+        Style::new().fg(theme::MUTED),
+    ))
+    .alignment(Alignment::Right);
+
     block = block
         .title_bottom(hint_line)
+        .title_bottom(info_line)
         .border_style(Style::new().fg(theme::SURFACE))
         .style(Style::new().bg(theme::BG).fg(theme::FG));
 
