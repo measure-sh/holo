@@ -247,7 +247,13 @@ pub fn spawn_pull_file(
             .map(|_| {
                 let path_str = format!("{}", dest.display());
                 if open_after {
-                    let _ = open::that(&dest);
+                    if let Ok(editor) = std::env::var("EDITOR") {
+                        let _ = std::process::Command::new(&editor)
+                            .arg(&dest)
+                            .spawn();
+                    } else {
+                        let _ = open::that(&dest);
+                    }
                 }
                 (path_str, open_after)
             })
