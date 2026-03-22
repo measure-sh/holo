@@ -174,7 +174,6 @@ fn run_app(
     };
     app.set_layout_bounds(data.initial_layout_bounds);
     app.set_airplane_mode(data.initial_airplane_mode);
-    app.set_animations_enabled(data.initial_animations_enabled);
 
     loop {
         data.poll(&mut app, &device.serial, package);
@@ -229,12 +228,6 @@ fn run_app(
                         let enabled = app.airplane_mode();
                         spawn_app_action(&adb, &device.serial, package, move |adb, s, _| {
                             adb.set_airplane_mode(s, enabled)
-                        });
-                    }
-                    Action::ToggleAnimations => {
-                        let enabled = app.animations_enabled();
-                        spawn_app_action(&adb, &device.serial, package, move |adb, s, _| {
-                            adb.set_animations_enabled(s, enabled)
                         });
                     }
                     Action::TogglePermission(perm, granted) => {
