@@ -86,49 +86,58 @@ fn sparkline_str_f32(data: &[f32], width: usize) -> String {
         .collect()
 }
 
-fn mem_line(
+fn mem_item(
     label: &str,
     data: &[u64],
     trend: Trend,
     spark_width: usize,
-) -> Line<'static> {
+) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0);
     let spark = sparkline_str(data, spark_width);
     let (arrow, arrow_color) = trend_symbol(trend);
 
-    Line::from(vec![
-        Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
-        Span::styled(spark, Style::new().fg(theme::ACCENT)),
-        Span::styled(format!("  {:>8}", format_mb(current)), Style::new().fg(theme::FG)),
-        Span::raw(" "),
-        Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
+    ListItem::new(vec![
+        Line::from(vec![
+            Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
+            Span::styled(spark, Style::new().fg(theme::ACCENT)),
+            Span::styled(format!("  {:>8}", format_mb(current)), Style::new().fg(theme::FG)),
+            Span::raw(" "),
+            Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
+        ]),
+        Line::raw(""),
     ])
 }
 
-fn cpu_line(data: &[f32], spark_width: usize) -> Line<'static> {
+fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0.0);
     let spark = sparkline_str_f32(data, spark_width);
 
-    Line::from(vec![
-        Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(theme::FG)),
-        Span::styled(spark, Style::new().fg(theme::GREEN)),
-        Span::styled(format!("  {:>7.1}%", current), Style::new().fg(theme::FG)),
+    ListItem::new(vec![
+        Line::from(vec![
+            Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(theme::FG)),
+            Span::styled(spark, Style::new().fg(theme::GREEN)),
+            Span::styled(format!("  {:>7.1}%", current), Style::new().fg(theme::FG)),
+        ]),
+        Line::raw(""),
     ])
 }
 
-fn net_line(
+fn net_item(
     label: &str,
     data: &[u64],
     color: ratatui::style::Color,
     spark_width: usize,
-) -> Line<'static> {
+) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0);
     let spark = sparkline_str(data, spark_width);
 
-    Line::from(vec![
-        Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
-        Span::styled(spark, Style::new().fg(color)),
-        Span::styled(format!("  {:>8}", format_bytes_per_sec(current)), Style::new().fg(theme::FG)),
+    ListItem::new(vec![
+        Line::from(vec![
+            Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
+            Span::styled(spark, Style::new().fg(color)),
+            Span::styled(format!("  {:>8}", format_bytes_per_sec(current)), Style::new().fg(theme::FG)),
+        ]),
+        Line::raw(""),
     ])
 }
 
@@ -169,14 +178,14 @@ pub fn render_monitor_panel(
 
     let items: Vec<ListItem> = vec![
         section_header("── memory", true),
-        ListItem::new(mem_line("Total PSS", &total_data, state.trend_u64(|m| m.total_pss_kb), spark_width)),
-        ListItem::new(mem_line("Java Heap", &java_data, state.trend_u64(|m| m.java_heap_kb), spark_width)),
-        ListItem::new(mem_line("Native", &native_data, state.trend_u64(|m| m.native_heap_kb), spark_width)),
+        mem_item("Total PSS", &total_data, state.trend_u64(|m| m.total_pss_kb), spark_width),
+        mem_item("Java Heap", &java_data, state.trend_u64(|m| m.java_heap_kb), spark_width),
+        mem_item("Native", &native_data, state.trend_u64(|m| m.native_heap_kb), spark_width),
         section_header("── cpu", false),
-        ListItem::new(cpu_line(&cpu_data, spark_width)),
+        cpu_item(&cpu_data, spark_width),
         section_header("── network", false),
-        ListItem::new(net_line("↓ download", &state.download_history, theme::CYAN, spark_width)),
-        ListItem::new(net_line("↑ upload", &state.upload_history, theme::YELLOW, spark_width)),
+        net_item("↓ download", &state.download_history, theme::CYAN, spark_width),
+        net_item("↑ upload", &state.upload_history, theme::YELLOW, spark_width),
     ];
 
     frame.render_widget(List::new(items), inner);
