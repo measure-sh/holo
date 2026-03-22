@@ -15,11 +15,9 @@ use crate::panel;
 use crate::permissions_ui;
 use crate::theme;
 
-const COMMAND_LABELS: [&str; 5] = [
+const COMMAND_LABELS: [&str; 3] = [
     "open app",
     "kill app",
-    "clear data",
-    "uninstall app",
     "wake screen",
 ];
 
@@ -209,26 +207,12 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let confirming_idx = if app.confirming_clear() {
-        Some(2)
-    } else if app.confirming_uninstall() {
-        Some(3)
-    } else {
-        None
-    };
-
     let mut items: Vec<ListItem> = COMMAND_LABELS
         .iter()
         .enumerate()
         .map(|(i, &label)| {
             if flash_idx == Some(i) {
                 ListItem::new(Line::from(Span::styled("done!", Style::new().fg(theme::GREEN))))
-            } else if confirming_idx == Some(i) {
-                let first = &label[..1];
-                ListItem::new(Line::from(vec![
-                    Span::styled(first, Style::new().fg(theme::KEY_HINT)),
-                    Span::styled(" to confirm ", Style::new().fg(theme::FG)),
-                ]))
             } else {
                 let first = &label[..1];
                 let rest = &label[1..];
@@ -257,6 +241,42 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     airplane_spans.push(Span::styled("a", Style::new().fg(theme::KEY_HINT)));
     airplane_spans.push(Span::styled("irplane", Style::new().fg(theme::MUTED)));
     items.push(ListItem::new(Line::from(airplane_spans)));
+
+    let clear_flash = app.clear_flash
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+    if !clear_flash { app.clear_flash = None; }
+    let clear_item = if clear_flash {
+        ListItem::new(Line::from(Span::styled("done!", Style::new().fg(theme::GREEN))))
+    } else if app.confirming_clear() {
+        ListItem::new(Line::from(vec![
+            Span::styled("c", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+        ]))
+    } else {
+        ListItem::new(Line::from(vec![
+            Span::styled("cc", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("lear data", Style::new().fg(theme::MUTED)),
+        ]))
+    };
+    items.push(clear_item);
+
+    let uninstall_flash = app.uninstall_flash
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+    if !uninstall_flash { app.uninstall_flash = None; }
+    let uninstall_item = if uninstall_flash {
+        ListItem::new(Line::from(Span::styled("done!", Style::new().fg(theme::GREEN))))
+    } else if app.confirming_uninstall() {
+        ListItem::new(Line::from(vec![
+            Span::styled("u", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+        ]))
+    } else {
+        ListItem::new(Line::from(vec![
+            Span::styled("uu", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("ninstall app", Style::new().fg(theme::MUTED)),
+        ]))
+    };
+    items.push(uninstall_item);
 
     let list = List::new(items);
     frame.render_widget(list, inner);

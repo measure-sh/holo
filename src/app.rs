@@ -68,6 +68,8 @@ pub struct App {
     show_settings: bool,
     settings_index: usize,
     pub command_flash: Option<(usize, std::time::Instant)>,
+    pub clear_flash: Option<std::time::Instant>,
+    pub uninstall_flash: Option<std::time::Instant>,
 }
 
 impl App {
@@ -89,6 +91,8 @@ impl App {
             show_settings: false,
             settings_index: 0,
             command_flash: None,
+            clear_flash: None,
+            uninstall_flash: None,
         }
     }
 
@@ -144,7 +148,7 @@ impl App {
             self.confirming_clear = false;
             return match code {
                 KeyCode::Char('c') => {
-                    self.command_flash = Some((2, std::time::Instant::now()));
+                    self.clear_flash = Some(std::time::Instant::now());
                     Action::ClearData
                 }
                 _ => Action::None,
@@ -155,7 +159,7 @@ impl App {
             self.confirming_uninstall = false;
             return match code {
                 KeyCode::Char('u') => {
-                    self.command_flash = Some((3, std::time::Instant::now()));
+                    self.uninstall_flash = Some(std::time::Instant::now());
                     Action::UninstallApp
                 }
                 _ => Action::None,
@@ -435,7 +439,7 @@ impl App {
                 Action::None
             }
             KeyCode::Char('w') => {
-                self.command_flash = Some((4, std::time::Instant::now()));
+                self.command_flash = Some((2, std::time::Instant::now()));
                 Action::WakeScreen
             }
             KeyCode::Char('b') => {
