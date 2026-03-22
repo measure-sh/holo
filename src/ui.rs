@@ -199,7 +199,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let mut bounds_spans: Vec<Span> = Vec::new();
     if app.layout_bounds() {
-        bounds_spans.push(Span::styled("● ", Style::new().fg(accent)));
+        bounds_spans.push(Span::styled("• ", Style::new().fg(accent)));
     }
     bounds_spans.push(Span::styled("b", Style::new().fg(theme::KEY_HINT)));
     bounds_spans.push(Span::styled("ounds", Style::new().fg(theme::MUTED)));
@@ -207,7 +207,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let mut airplane_spans: Vec<Span> = Vec::new();
     if app.airplane_mode() {
-        airplane_spans.push(Span::styled("● ", Style::new().fg(accent)));
+        airplane_spans.push(Span::styled("• ", Style::new().fg(accent)));
     }
     airplane_spans.push(Span::styled("a", Style::new().fg(theme::KEY_HINT)));
     airplane_spans.push(Span::styled("irplane", Style::new().fg(theme::MUTED)));

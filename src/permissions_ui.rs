@@ -69,7 +69,7 @@ pub fn render_permissions_panel(
                 Span::styled(prefix, style),
             ];
             if *granted {
-                spans.push(Span::styled("● ", Style::new().fg(accent)));
+                spans.push(Span::styled("• ", Style::new().fg(accent)));
             }
             spans.push(Span::styled(name, style));
 
