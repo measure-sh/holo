@@ -277,7 +277,7 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
     let items = app.settings_items();
-    let width = 60u16.min(area.width.saturating_sub(4));
+    let width = area.width.saturating_sub(10).max(40);
     let height = (items.len() as u16 + 4).min(area.height.saturating_sub(4));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
