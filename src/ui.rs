@@ -11,7 +11,7 @@ use crate::battery;
 use crate::database_ui;
 use crate::files_ui;
 use crate::logcat_ui;
-use crate::memory_ui;
+use crate::monitor_ui;
 use crate::panel;
 use crate::permissions_ui;
 use crate::theme;
@@ -285,7 +285,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let panels: Vec<u8> = [panel::FILES, panel::DATABASE, panel::MEMORY]
+    let panels: Vec<u8> = [panel::FILES, panel::DATABASE, panel::MONITOR]
         .iter()
         .copied()
         .filter(|&n| vis[(n - 1) as usize])
@@ -308,8 +308,8 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
             database_ui::render_database_panel(frame, cols[i], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
         } else if pn == panel::FILES {
             files_ui::render_files_panel(frame, cols[i], is_focused(app, panel::FILES), app.files_state());
-        } else if pn == panel::MEMORY {
-            memory_ui::render_memory_panel(frame, cols[i], is_focused(app, panel::MEMORY), app.memory_state());
+        } else if pn == panel::MONITOR {
+            monitor_ui::render_monitor_panel(frame, cols[i], is_focused(app, panel::MONITOR), app.monitor_state());
         } else {
             frame.render_widget(panel_block(pn, false), cols[i]);
         }

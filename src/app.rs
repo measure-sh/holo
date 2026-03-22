@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::database::DatabaseState;
 use crate::files::{FileConfirm, FilesState, ToggleResult};
 use crate::logcat_state::LogcatState;
-use crate::memory::MemoryState;
+use crate::monitor::MonitorState;
 use crate::panel;
 use crate::permissions::PermissionsState;
 
@@ -61,7 +61,7 @@ pub struct App {
     db_state: DatabaseState,
     permissions_state: PermissionsState,
     files_state: FilesState,
-    memory_state: MemoryState,
+    monitor_state: MonitorState,
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
@@ -85,7 +85,7 @@ impl App {
             db_state: DatabaseState::new(),
             permissions_state: PermissionsState::new(),
             files_state: FilesState::new(package),
-            memory_state: MemoryState::new(),
+            monitor_state: MonitorState::new(),
             package: package.to_string(),
             layout_bounds: false,
             airplane_mode: false,
@@ -498,12 +498,12 @@ impl App {
         &self.visible
     }
 
-    pub fn memory_state(&self) -> &MemoryState {
-        &self.memory_state
+    pub fn monitor_state(&self) -> &MonitorState {
+        &self.monitor_state
     }
 
-    pub fn memory_state_mut(&mut self) -> &mut MemoryState {
-        &mut self.memory_state
+    pub fn monitor_state_mut(&mut self) -> &mut MonitorState {
+        &mut self.monitor_state
     }
 
     #[cfg(test)]

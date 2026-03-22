@@ -2,13 +2,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 
-use crate::adb::{Adb, MemInfo};
+use crate::adb::Adb;
+use crate::monitor::MonitorSample;
 use crate::app::App;
 use crate::battery;
 use crate::database;
 use crate::files;
 use crate::logcat;
-use crate::memory;
+use crate::monitor;
 use crate::permissions;
 use crate::processes;
 
@@ -34,7 +35,7 @@ pub struct DataSources {
     files_list_rx: Option<mpsc::Receiver<Result<(String, Vec<(String, bool)>), String>>>,
     files_pull_rx: Option<mpsc::Receiver<Result<(String, bool), String>>>,
 
-    memory_rx: mpsc::Receiver<MemInfo>,
+    monitor_rx: mpsc::Receiver<MonitorSample>,
 
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
@@ -73,7 +74,7 @@ impl DataSources {
                 ".".to_string(),
             )),
             files_pull_rx: None,
-            memory_rx: memory::spawn_poller(
+            monitor_rx: monitor::spawn_poller(
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
@@ -91,8 +92,8 @@ impl DataSources {
         while let Ok(procs) = self.procs_rx.try_recv() {
             self.process_map = Some(procs);
         }
-        while let Ok(info) = self.memory_rx.try_recv() {
-            app.memory_state_mut().push(info);
+        while let Ok(info) = self.monitor_rx.try_recv() {
+            app.monitor_state_mut().push(info);
         }
 
         let current_pid = self.process_map.as_ref().and_then(|m| m.get(package).copied());
