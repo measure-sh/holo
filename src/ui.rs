@@ -286,6 +286,9 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
     let accent = Style::new().fg(theme::ACCENT);
     let hint = Style::new().fg(theme::FG);
 
+    let dim = ratatui::widgets::Block::default().style(Style::new().bg(theme::BG).fg(theme::MUTED));
+    frame.render_widget(dim, area);
+
     frame.render_widget(ratatui::widgets::Clear, dialog_area);
 
     let block = Block::default()
