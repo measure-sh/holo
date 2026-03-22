@@ -86,20 +86,24 @@ pub fn render_app(
     let time_line = Line::from(time)
         .style(Style::new().fg(theme::FG))
         .alignment(Alignment::Center);
-    let hint_line = if app.confirming_quit() {
-        Line::from(vec![
+    let quit_spans = if app.confirming_quit() {
+        vec![
             Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
             Span::styled(" to confirm ", Style::new().fg(theme::FG)),
-        ])
+        ]
     } else {
-        Line::from(vec![
-            Span::styled(" s", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("ettings ", Style::new().fg(theme::MUTED)),
-            Span::styled("───", Style::new().fg(theme::SURFACE)),
+        vec![
             Span::styled(" qq", Style::new().fg(theme::KEY_HINT)),
             Span::styled("uit ", Style::new().fg(theme::MUTED)),
-        ])
+        ]
     };
+    let mut hint_spans = vec![
+        Span::styled(" s", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("ettings ", Style::new().fg(theme::MUTED)),
+        Span::styled("───", Style::new().fg(theme::SURFACE)),
+    ];
+    hint_spans.extend(quit_spans);
+    let hint_line = Line::from(hint_spans);
 
     let mut block = Block::default()
         .borders(Borders::ALL)
