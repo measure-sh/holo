@@ -11,6 +11,7 @@ mod files;
 mod files_ui;
 mod logcat;
 mod logcat_state;
+mod memory;
 mod logcat_ui;
 mod panel;
 mod permissions;
