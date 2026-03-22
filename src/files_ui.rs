@@ -27,32 +27,57 @@ pub fn render_files_panel(
         .as_ref()
         .is_some_and(|(_, t)| t.elapsed() < std::time::Duration::from_secs(1));
 
-    let confirm_label = match &state.confirming {
-        Some(FileConfirm::Pull(_)) => Some("pull?"),
-        Some(FileConfirm::Open(_)) => Some("open?"),
-        None => None,
-    };
-
-    let inline_suffix: Option<(String, ratatui::style::Color)> = if let Some(label) = confirm_label {
-        Some((format!(" {label} ↩ yes / any cancel"), theme::YELLOW))
-    } else if flash_active {
-        let msg = state.action_flash.as_ref().unwrap().0;
-        Some((format!(" {msg}"), theme::GREEN))
+    let flash_label = if flash_active {
+        Some(state.action_flash.as_ref().unwrap().0)
     } else {
         None
     };
 
-    let bottom_spans = if focused {
+    let bottom_spans = if let Some(FileConfirm::Pull(_)) = &state.confirming {
         Some(vec![
-            Span::styled(" p", accent),
-            Span::styled("ull ", muted),
+            Span::styled(" pull? ", Style::new().fg(theme::YELLOW)),
+            Span::styled("↩", accent),
+            Span::styled(" yes ", muted),
             Span::styled("───", border_fg),
-            Span::styled(" o", accent),
-            Span::styled("pen ", muted),
+            Span::styled(" any", accent),
+            Span::styled(" cancel ", muted),
+        ])
+    } else if let Some(FileConfirm::Open(_)) = &state.confirming {
+        Some(vec![
+            Span::styled(" open? ", Style::new().fg(theme::YELLOW)),
+            Span::styled("↩", accent),
+            Span::styled(" yes ", muted),
+            Span::styled("───", border_fg),
+            Span::styled(" any", accent),
+            Span::styled(" cancel ", muted),
+        ])
+    } else if focused {
+        let pull_spans: Vec<Span> = if flash_label == Some("pulling...") {
+            vec![Span::styled(" pulling... ", Style::new().fg(theme::GREEN))]
+        } else {
+            vec![
+                Span::styled(" p", accent),
+                Span::styled("ull ", muted),
+            ]
+        };
+        let open_spans: Vec<Span> = if flash_label == Some("opening...") {
+            vec![Span::styled(" opening... ", Style::new().fg(theme::GREEN))]
+        } else {
+            vec![
+                Span::styled(" o", accent),
+                Span::styled("pen ", muted),
+            ]
+        };
+        let mut spans = Vec::new();
+        spans.extend(pull_spans);
+        spans.push(Span::styled("───", border_fg));
+        spans.extend(open_spans);
+        spans.extend([
             Span::styled("───", border_fg),
             Span::styled(" esc", accent),
             Span::styled(" back ", muted),
-        ])
+        ]);
+        Some(spans)
     } else {
         None
     };
@@ -129,8 +154,7 @@ pub fn render_files_panel(
         .enumerate()
         .map(|(i, entry)| {
             let is_selected = (start + i) == selected;
-            let suffix = if is_selected { inline_suffix.as_ref() } else { None };
-            build_tree_line(entry, is_selected, focused, accent, suffix)
+            build_tree_line(entry, is_selected, focused, accent)
         })
         .collect();
 
@@ -142,7 +166,6 @@ fn build_tree_line(
     selected: bool,
     focused: bool,
     accent: ratatui::style::Color,
-    inline_suffix: Option<&(String, ratatui::style::Color)>,
 ) -> ListItem<'static> {
     let mut spans: Vec<Span> = Vec::new();
 
@@ -184,10 +207,6 @@ fn build_tree_line(
     };
 
     spans.push(Span::styled(entry.name.clone(), name_style));
-
-    if let Some((text, color)) = inline_suffix {
-        spans.push(Span::styled(text.clone(), Style::new().fg(*color)));
-    }
 
     ListItem::new(Line::from(spans))
 }
