@@ -238,7 +238,7 @@ pub fn spawn_pull_file(
             .to_string_lossy()
             .to_string();
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let dest = std::path::PathBuf::from("tmp/msh")
+        let dest = std::env::temp_dir().join("msh")
             .join(&package)
             .join("files")
             .join(format!("{timestamp}_{file_name}"));
