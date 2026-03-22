@@ -59,7 +59,7 @@ pub fn render_permissions_panel(
             let accent = panel::by_number(panel::PERMISSIONS).bright_color;
 
             let style = if selected {
-                Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)
+                Style::new().fg(accent).add_modifier(Modifier::BOLD)
             } else {
                 Style::new().fg(theme::FG)
             };
