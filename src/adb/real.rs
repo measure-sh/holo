@@ -271,6 +271,38 @@ impl Adb for RealAdb {
         Ok(parse_app_version(&stdout))
     }
 
+    fn list_files(&self, serial: &str, package: &str, path: &str) -> Result<Vec<(String, bool)>> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "run-as", package, "ls", "-p", path])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("ls failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_file_list(&stdout))
+    }
+
+    fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "exec-out", "run-as", package, "cat", remote_path])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("pull failed: {stderr}");
+        }
+
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::File::create(dest)?;
+        file.write_all(&output.stdout)?;
+        Ok(())
+    }
+
 }
 
 fn parse_app_version(output: &str) -> (String, String) {
@@ -291,6 +323,27 @@ fn parse_app_version(output: &str) -> (String, String) {
     }
 
     (version_name, version_code)
+}
+
+fn parse_file_list(output: &str) -> Vec<(String, bool)> {
+    let mut entries: Vec<(String, bool)> = output
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .map(|l| {
+            if let Some(name) = l.strip_suffix('/') {
+                (name.to_string(), true)
+            } else {
+                (l.to_string(), false)
+            }
+        })
+        .collect();
+    entries.sort_by(|a, b| match (a.1, b.1) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.0.cmp(&b.0),
+    });
+    entries
 }
 
 fn parse_runtime_permissions(output: &str) -> Vec<(String, bool)> {
@@ -603,5 +656,33 @@ mod tests {
         let (name, code) = parse_app_version(output);
         assert_eq!(name, "1.0");
         assert_eq!(code, "10");
+    }
+
+    #[test]
+    fn parses_file_list_with_dirs_and_files() {
+        let output = "cache/\nfiles/\nshared_prefs/\napp.conf\ndata.bin\n";
+        let entries = parse_file_list(output);
+        assert_eq!(entries, vec![
+            ("cache".into(), true),
+            ("files".into(), true),
+            ("shared_prefs".into(), true),
+            ("app.conf".into(), false),
+            ("data.bin".into(), false),
+        ]);
+    }
+
+    #[test]
+    fn returns_empty_for_no_files() {
+        assert!(parse_file_list("").is_empty());
+        assert!(parse_file_list("\n\n").is_empty());
+    }
+
+    #[test]
+    fn sorts_dirs_before_files() {
+        let output = "z_file\na_dir/\nb_file\n";
+        let entries = parse_file_list(output);
+        assert_eq!(entries[0], ("a_dir".into(), true));
+        assert_eq!(entries[1], ("b_file".into(), false));
+        assert_eq!(entries[2], ("z_file".into(), false));
     }
 }
