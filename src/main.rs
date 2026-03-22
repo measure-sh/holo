@@ -150,7 +150,7 @@ fn run_app(
         let now = chrono::Local::now();
         let time_str = format!(" {} ", now.format("%H:%M:%S"));
         terminal.draw(|frame| {
-            ui::render_app(frame, &title, &time_str, data.battery_level, &mut app, &data.logcat_lines, data.monitored_pid)
+            ui::render_app(frame, &title, &time_str, data.battery_level, &mut app, &data.logcat_lines)
         })?;
 
         if event::poll(Duration::from_secs(1))? {
@@ -199,6 +199,10 @@ fn run_app(
                         data.restart_db_detection(adb.clone(), device.serial.clone(), package.to_string());
                     }
                     Action::CopyDbResult(text) => {
+                        copy_to_clipboard(&text);
+                    }
+                    Action::CopyLogcat => {
+                        let text = data.logcat_lines.join("\n");
                         copy_to_clipboard(&text);
                     }
                     Action::RunQuery(db, sql) => {

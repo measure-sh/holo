@@ -21,7 +21,6 @@ pub fn render_logcat_panel(
     area: Rect,
     focused: bool,
     logcat_lines: &[String],
-    monitored_pid: Option<u32>,
     app: &mut App,
 ) {
     let filter_tag = app.logcat_state().filter.tag.clone();
@@ -29,16 +28,20 @@ pub fn render_logcat_panel(
     let filter_level = app.logcat_state().filter.level;
     let input_mode = app.input_mode();
 
+    let copied_active = app.logcat_state().copied_at
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+    if !copied_active {
+        app.logcat_state_mut().copied_at = None;
+    }
+
     let color = panel::by_number(panel::LOGCAT).border_color(focused);
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(panel_title(panel::LOGCAT, focused))
-        .title_bottom(logcat_filter_bar(&app.logcat_state().filter, input_mode, focused))
+        .title_bottom(logcat_filter_bar(&app.logcat_state().filter, input_mode, focused, copied_active))
         .border_style(Style::new().fg(color));
     let inner = block.inner(area);
-
-    let pid_str = monitored_pid.map(|p| p.to_string());
 
     let filtered: Vec<&String> = logcat_lines
         .iter()
@@ -83,7 +86,7 @@ pub fn render_logcat_panel(
 
     let items: Vec<ListItem> = filtered[start..end]
         .iter()
-        .map(|l| ListItem::new(style_logcat_line(l, pid_str.as_deref())))
+        .map(|l| ListItem::new(style_logcat_line(l)))
         .collect();
 
     let list = List::new(items);
@@ -99,7 +102,7 @@ pub fn render_logcat_panel(
     }
 }
 
-fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool) -> Line<'static> {
+fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool, copied_active: bool) -> Line<'static> {
     let accent = Style::new().fg(theme::KEY_HINT);
     let muted = Style::new().fg(theme::MUTED);
     let border = Style::new().fg(panel::by_number(panel::LOGCAT).border_color(focused));
@@ -167,10 +170,19 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
     spans.push(Span::styled(" r", accent));
     spans.push(Span::styled("eset ", muted));
 
+    spans.push(Span::styled("───", border));
+
+    if copied_active {
+        spans.push(Span::styled(" copied! ", Style::new().fg(theme::GREEN)));
+    } else {
+        spans.push(Span::styled(" c", accent));
+        spans.push(Span::styled("opy ", muted));
+    }
+
     Line::from(spans)
 }
 
-fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
+fn style_logcat_line<'a>(raw: &'a str) -> Line<'a> {
     let Some(parsed) = logcat::parse(raw) else {
         return Line::from(raw.replace('\t', "  "));
     };
@@ -185,17 +197,10 @@ fn style_logcat_line<'a>(raw: &'a str, pid: Option<&str>) -> Line<'a> {
 
     let timestamp = Span::styled(parsed.timestamp, Style::new().fg(theme::MUTED));
 
-    let is_main = pid.is_some_and(|p| parsed.tid == p);
-    let thread = if is_main {
-        Span::styled("main", Style::new().fg(theme::MUTED))
-    } else {
-        Span::styled(parsed.tid, Style::new().fg(theme::MUTED))
-    };
-
     let tag = Span::styled(parsed.tag, Style::new().fg(level_fg).add_modifier(Modifier::BOLD));
 
     let msg_text = parsed.message.replace('\t', "  ");
     let message = Span::styled(format!(": {msg_text}"), Style::new().fg(theme::FG));
 
-    Line::from(vec![label, sep.clone(), timestamp, sep.clone(), thread, sep, tag, message])
+    Line::from(vec![label, sep.clone(), timestamp, sep, tag, message])
 }

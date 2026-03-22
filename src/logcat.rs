@@ -4,8 +4,6 @@ use std::sync::mpsc::{self, Receiver};
 
 pub struct LogcatLine<'a> {
     pub timestamp: &'a str,
-    pub pid: &'a str,
-    pub tid: &'a str,
     pub level: char,
     pub tag: &'a str,
     pub message: &'a str,
@@ -27,8 +25,8 @@ pub fn parse(line: &str) -> Option<LogcatLine<'_>> {
 
     let (_date, r) = split_next_token(rest)?;
     let (timestamp, r) = split_next_token(r)?;
-    let (pid, r) = split_next_token(r)?;
-    let (tid, r) = split_next_token(r)?;
+    let (_pid, r) = split_next_token(r)?;
+    let (_tid, r) = split_next_token(r)?;
     let (level_str, r) = split_next_token(r)?;
     rest = r;
 
@@ -46,8 +44,6 @@ pub fn parse(line: &str) -> Option<LogcatLine<'_>> {
 
     Some(LogcatLine {
         timestamp,
-        pid,
-        tid,
         level,
         tag,
         message,
@@ -63,21 +59,9 @@ mod tests {
         let line = "03-20 17:20:19.256 17010 17026 D Measure : EventProcessor started";
         let parsed = parse(line).unwrap();
         assert_eq!(parsed.timestamp, "17:20:19.256");
-        assert_eq!(parsed.pid, "17010");
-        assert_eq!(parsed.tid, "17026");
         assert_eq!(parsed.level, 'D');
         assert_eq!(parsed.tag, "Measure");
         assert_eq!(parsed.message, "EventProcessor started");
-    }
-
-    #[test]
-    fn parse_main_thread() {
-        let line = "03-20 17:20:19.256 17010 17010 I ActivityManager : Displayed com.example/.MainActivity";
-        let parsed = parse(line).unwrap();
-        assert_eq!(parsed.pid, "17010");
-        assert_eq!(parsed.tid, "17010");
-        assert_eq!(parsed.level, 'I');
-        assert_eq!(parsed.tag, "ActivityManager");
     }
 
     #[test]
@@ -85,8 +69,6 @@ mod tests {
         let line = "03-20 21:35:22.958  3725  3742 D Measure : Span processed: SampleApp.onCreate, 102ms";
         let parsed = parse(line).unwrap();
         assert_eq!(parsed.timestamp, "21:35:22.958");
-        assert_eq!(parsed.pid, "3725");
-        assert_eq!(parsed.tid, "3742");
         assert_eq!(parsed.level, 'D');
         assert_eq!(parsed.tag, "Measure");
         assert_eq!(parsed.message, "Span processed: SampleApp.onCreate, 102ms");
