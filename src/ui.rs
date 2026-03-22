@@ -165,20 +165,31 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[
     }
 }
 
-fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
+fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
+    let flash_idx = match app.command_flash {
+        Some((idx, t)) if t.elapsed() < std::time::Duration::from_secs(1) => Some(idx),
+        Some(_) => { app.command_flash = None; None }
+        None => None,
+    };
+
     let block = panel_block(panel::COMMANDS, false);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let mut items: Vec<ListItem> = COMMAND_LABELS
         .iter()
-        .map(|&label| {
-            let first = &label[..1];
-            let rest = &label[1..];
-            ListItem::new(Line::from(vec![
-                Span::styled(first, Style::new().fg(theme::KEY_HINT)),
-                Span::styled(rest, Style::new().fg(theme::MUTED)),
-            ]))
+        .enumerate()
+        .map(|(i, &label)| {
+            if flash_idx == Some(i) {
+                ListItem::new(Line::from(Span::styled("sent!", Style::new().fg(theme::GREEN))))
+            } else {
+                let first = &label[..1];
+                let rest = &label[1..];
+                ListItem::new(Line::from(vec![
+                    Span::styled(first, Style::new().fg(theme::KEY_HINT)),
+                    Span::styled(rest, Style::new().fg(theme::MUTED)),
+                ]))
+            }
         })
         .collect();
 
@@ -187,20 +198,28 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     } else {
         ("·", theme::MUTED)
     };
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled("b", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(format!("ounds {indicator}"), Style::new().fg(indicator_color)),
-    ])));
+    items.push(if flash_idx == Some(4) {
+        ListItem::new(Line::from(Span::styled("sent!", Style::new().fg(theme::GREEN))))
+    } else {
+        ListItem::new(Line::from(vec![
+            Span::styled("b", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(format!("ounds {indicator}"), Style::new().fg(indicator_color)),
+        ]))
+    });
 
     let (indicator, indicator_color) = if app.airplane_mode() {
         ("●", theme::GREEN)
     } else {
         ("·", theme::MUTED)
     };
-    items.push(ListItem::new(Line::from(vec![
-        Span::styled("a", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(format!("irplane {indicator}"), Style::new().fg(indicator_color)),
-    ])));
+    items.push(if flash_idx == Some(5) {
+        ListItem::new(Line::from(Span::styled("sent!", Style::new().fg(theme::GREEN))))
+    } else {
+        ListItem::new(Line::from(vec![
+            Span::styled("a", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(format!("irplane {indicator}"), Style::new().fg(indicator_color)),
+        ]))
+    });
 
     let list = List::new(items);
     frame.render_widget(list, inner);

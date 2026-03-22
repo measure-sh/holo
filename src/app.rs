@@ -38,6 +38,7 @@ pub struct App {
     layout_bounds: bool,
     airplane_mode: bool,
     confirming_quit: bool,
+    pub command_flash: Option<(usize, std::time::Instant)>,
 }
 
 impl App {
@@ -51,6 +52,7 @@ impl App {
             layout_bounds: false,
             airplane_mode: false,
             confirming_quit: false,
+            command_flash: None,
         }
     }
 
@@ -228,16 +230,30 @@ impl App {
                 self.confirming_quit = true;
                 Action::None
             }
-            KeyCode::Char('o') => Action::OpenApp,
-            KeyCode::Char('k') => Action::KillApp,
-            KeyCode::Char('c') => Action::ClearData,
-            KeyCode::Char('w') => Action::WakeScreen,
+            KeyCode::Char('o') => {
+                self.command_flash = Some((0, std::time::Instant::now()));
+                Action::OpenApp
+            }
+            KeyCode::Char('k') => {
+                self.command_flash = Some((1, std::time::Instant::now()));
+                Action::KillApp
+            }
+            KeyCode::Char('c') => {
+                self.command_flash = Some((2, std::time::Instant::now()));
+                Action::ClearData
+            }
+            KeyCode::Char('w') => {
+                self.command_flash = Some((3, std::time::Instant::now()));
+                Action::WakeScreen
+            }
             KeyCode::Char('b') => {
                 self.layout_bounds = !self.layout_bounds;
+                self.command_flash = Some((4, std::time::Instant::now()));
                 Action::ToggleLayoutBounds
             }
             KeyCode::Char('a') => {
                 self.airplane_mode = !self.airplane_mode;
+                self.command_flash = Some((5, std::time::Instant::now()));
                 Action::ToggleAirplaneMode
             }
             KeyCode::Char(c @ '1'..='5') => {
