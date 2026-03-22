@@ -33,4 +33,5 @@ pub trait Adb: Send + Sync {
     fn list_permissions(&self, serial: &str, package: &str) -> Result<Vec<(String, bool)>>;
     fn grant_permission(&self, serial: &str, package: &str, permission: &str) -> Result<()>;
     fn revoke_permission(&self, serial: &str, package: &str, permission: &str) -> Result<()>;
+    fn get_app_version(&self, serial: &str, package: &str) -> Result<(String, String)>;
 }

@@ -140,9 +140,14 @@ fn run_app(
     device: &Device,
     package: &str,
 ) -> Result<()> {
-    let title = format!(" {} — {} ", selector::selector_label(device), package);
     let mut app = App::new();
     let mut data = DataSources::new(adb.clone(), &device.serial, package);
+    let title = match &data.app_version {
+        Some((name, code)) if !name.is_empty() => {
+            format!(" {} — {} ({} / {}) ", selector::selector_label(device), package, name, code)
+        }
+        _ => format!(" {} — {} ", selector::selector_label(device), package),
+    };
     app.set_layout_bounds(data.initial_layout_bounds);
     app.set_airplane_mode(data.initial_airplane_mode);
 

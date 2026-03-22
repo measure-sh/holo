@@ -257,6 +257,40 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn get_app_version(&self, serial: &str, package: &str) -> Result<(String, String)> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "package", package])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("dumpsys package failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_app_version(&stdout))
+    }
+
+}
+
+fn parse_app_version(output: &str) -> (String, String) {
+    let mut version_name = String::new();
+    let mut version_code = String::new();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(val) = trimmed.strip_prefix("versionName=") {
+            if version_name.is_empty() {
+                version_name = val.to_string();
+            }
+        } else if let Some(val) = trimmed.strip_prefix("versionCode=") {
+            if version_code.is_empty() {
+                version_code = val.split_whitespace().next().unwrap_or("").to_string();
+            }
+        }
+    }
+
+    (version_name, version_code)
 }
 
 fn parse_runtime_permissions(output: &str) -> Vec<(String, bool)> {
@@ -546,5 +580,28 @@ mod tests {
                        \n";
         let perms = parse_runtime_permissions(output);
         assert_eq!(perms.len(), 1);
+    }
+
+    #[test]
+    fn parses_app_version() {
+        let output = "  versionCode=42 minSdk=21 targetSdk=34\n  versionName=1.2.3\n";
+        let (name, code) = parse_app_version(output);
+        assert_eq!(name, "1.2.3");
+        assert_eq!(code, "42");
+    }
+
+    #[test]
+    fn returns_empty_for_missing_version() {
+        let (name, code) = parse_app_version("some unrelated output\n");
+        assert!(name.is_empty());
+        assert!(code.is_empty());
+    }
+
+    #[test]
+    fn takes_first_version_match() {
+        let output = "  versionCode=10 minSdk=21\n  versionName=1.0\n  versionCode=20 minSdk=21\n  versionName=2.0\n";
+        let (name, code) = parse_app_version(output);
+        assert_eq!(name, "1.0");
+        assert_eq!(code, "10");
     }
 }
