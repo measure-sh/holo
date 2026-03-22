@@ -9,6 +9,7 @@ use ratatui::{
 use crate::app::App;
 use crate::battery;
 use crate::database_ui;
+use crate::files_ui;
 use crate::logcat_ui;
 use crate::panel;
 use crate::permissions_ui;
@@ -259,6 +260,8 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
         if pn == panel::DATABASE {
             let im = app.input_mode();
             database_ui::render_database_panel(frame, cols[i], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
+        } else if pn == panel::FILES {
+            files_ui::render_files_panel(frame, cols[i], is_focused(app, panel::FILES), app.files_state());
         } else {
             frame.render_widget(panel_block(pn, false), cols[i]);
         }

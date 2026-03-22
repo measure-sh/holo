@@ -237,6 +237,12 @@ fn run_app(
                     Action::PullDb(db) => {
                         data.start_pull(adb.clone(), device.serial.clone(), package.to_string(), db);
                     }
+                    Action::ExpandDir(path) => {
+                        data.start_list_dir(adb.clone(), device.serial.clone(), package.to_string(), path);
+                    }
+                    Action::PullFile(path) => {
+                        data.start_pull_file(adb.clone(), device.serial.clone(), package.to_string(), path);
+                    }
                     Action::None => {}
                 }
             }

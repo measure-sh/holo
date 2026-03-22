@@ -6,6 +6,7 @@ use crate::adb::Adb;
 use crate::app::App;
 use crate::battery;
 use crate::database;
+use crate::files;
 use crate::logcat;
 use crate::permissions;
 use crate::processes;
@@ -28,6 +29,9 @@ pub struct DataSources {
     db_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
 
     permissions_rx: Option<mpsc::Receiver<Result<Vec<(String, bool)>, String>>>,
+
+    files_list_rx: Option<mpsc::Receiver<Result<(String, Vec<(String, bool)>), String>>>,
+    files_pull_rx: Option<mpsc::Receiver<Result<String, String>>>,
 
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
@@ -59,6 +63,13 @@ impl DataSources {
                 serial.to_string(),
                 package.to_string(),
             )),
+            files_list_rx: Some(files::spawn_list_dir(
+                adb.clone(),
+                serial.to_string(),
+                package.to_string(),
+                ".".to_string(),
+            )),
+            files_pull_rx: None,
             initial_layout_bounds,
             initial_airplane_mode,
             app_version,
@@ -133,6 +144,33 @@ impl DataSources {
                 self.db_pull_rx = None;
             }
         }
+        if let Some(rx) = &self.files_list_rx {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok((path, entries)) => {
+                        if path == "." {
+                            app.files_state_mut().set_root_children(entries);
+                        } else {
+                            app.files_state_mut().set_children(&path, entries);
+                        }
+                    }
+                    Err(e) => app.files_state_mut().error = Some(e),
+                }
+                self.files_list_rx = None;
+            }
+        }
+        if let Some(rx) = &self.files_pull_rx {
+            if let Ok(result) = rx.try_recv() {
+                match result {
+                    Ok(dest) => {
+                        app.files_state_mut().pull_flash =
+                            Some((dest, std::time::Instant::now()));
+                    }
+                    Err(e) => app.files_state_mut().error = Some(e),
+                }
+                self.files_pull_rx = None;
+            }
+        }
     }
 
     pub fn start_query(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, db: String, sql: String) {
@@ -145,5 +183,13 @@ impl DataSources {
 
     pub fn restart_db_detection(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
         self.db_detect_rx = Some(database::spawn_db_detector(adb, serial, package));
+    }
+
+    pub fn start_list_dir(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
+        self.files_list_rx = Some(files::spawn_list_dir(adb, serial, package, path));
+    }
+
+    pub fn start_pull_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
+        self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path));
     }
 }

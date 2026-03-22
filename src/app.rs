@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::database::DatabaseState;
+use crate::files::{FilesState, ToggleResult};
 use crate::logcat_state::LogcatState;
 use crate::panel;
 use crate::permissions::PermissionsState;
@@ -22,6 +23,8 @@ pub enum Action {
     ToggleAirplaneMode,
     TogglePermission(String, bool),
     CopyLogcat,
+    ExpandDir(String),
+    PullFile(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,6 +42,7 @@ pub struct App {
     logcat_state: LogcatState,
     db_state: DatabaseState,
     permissions_state: PermissionsState,
+    files_state: FilesState,
     layout_bounds: bool,
     airplane_mode: bool,
     confirming_quit: bool,
@@ -54,6 +58,7 @@ impl App {
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
             permissions_state: PermissionsState::new(),
+            files_state: FilesState::new(),
             layout_bounds: false,
             airplane_mode: false,
             confirming_quit: false,
@@ -174,6 +179,46 @@ impl App {
                 }
                 KeyCode::Esc if self.db_state.selected_db.is_some() => {
                     self.db_state.deselect_db();
+                    return Action::None;
+                }
+                KeyCode::Esc => {
+                    self.focused = None;
+                    return Action::None;
+                }
+                _ => {}
+            }
+        }
+
+        if self.focused == Some(panel::FILES) {
+            match code {
+                KeyCode::Up => {
+                    self.files_state.move_up();
+                    return Action::None;
+                }
+                KeyCode::Down => {
+                    let count = self.files_state.flatten_visible().len();
+                    self.files_state.move_down(count);
+                    return Action::None;
+                }
+                KeyCode::Enter | KeyCode::Right => {
+                    if let Some(result) = self.files_state.toggle_selected() {
+                        return match result {
+                            ToggleResult::Expand(path) => Action::ExpandDir(path),
+                            ToggleResult::ExpandCached | ToggleResult::Collapse => Action::None,
+                        };
+                    }
+                    return Action::None;
+                }
+                KeyCode::Left => {
+                    self.files_state.collapse_selected();
+                    return Action::None;
+                }
+                KeyCode::Char('p') => {
+                    if !self.files_state.selected_is_dir() {
+                        if let Some(path) = self.files_state.selected_path() {
+                            return Action::PullFile(path);
+                        }
+                    }
                     return Action::None;
                 }
                 KeyCode::Esc => {
@@ -340,6 +385,14 @@ impl App {
 
     pub fn permissions_state_mut(&mut self) -> &mut PermissionsState {
         &mut self.permissions_state
+    }
+
+    pub fn files_state(&self) -> &FilesState {
+        &self.files_state
+    }
+
+    pub fn files_state_mut(&mut self) -> &mut FilesState {
+        &mut self.files_state
     }
 
     pub fn focused_panel(&self) -> Option<u8> {
