@@ -181,7 +181,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
         .enumerate()
         .map(|(i, &label)| {
             if flash_idx == Some(i) {
-                ListItem::new(Line::from(Span::styled("sent!", Style::new().fg(theme::GREEN))))
+                ListItem::new(Line::from(Span::styled("done!", Style::new().fg(theme::GREEN))))
             } else {
                 let first = &label[..1];
                 let rest = &label[1..];
@@ -198,28 +198,20 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         ("·", theme::MUTED)
     };
-    items.push(if flash_idx == Some(4) {
-        ListItem::new(Line::from(Span::styled("sent!", Style::new().fg(theme::GREEN))))
-    } else {
-        ListItem::new(Line::from(vec![
-            Span::styled("b", Style::new().fg(theme::KEY_HINT)),
-            Span::styled(format!("ounds {indicator}"), Style::new().fg(indicator_color)),
-        ]))
-    });
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled("b", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(format!("ounds {indicator}"), Style::new().fg(indicator_color)),
+    ])));
 
     let (indicator, indicator_color) = if app.airplane_mode() {
         ("●", theme::GREEN)
     } else {
         ("·", theme::MUTED)
     };
-    items.push(if flash_idx == Some(5) {
-        ListItem::new(Line::from(Span::styled("sent!", Style::new().fg(theme::GREEN))))
-    } else {
-        ListItem::new(Line::from(vec![
-            Span::styled("a", Style::new().fg(theme::KEY_HINT)),
-            Span::styled(format!("irplane {indicator}"), Style::new().fg(indicator_color)),
-        ]))
-    });
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled("a", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(format!("irplane {indicator}"), Style::new().fg(indicator_color)),
+    ])));
 
     let list = List::new(items);
     frame.render_widget(list, inner);

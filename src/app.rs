@@ -248,12 +248,10 @@ impl App {
             }
             KeyCode::Char('b') => {
                 self.layout_bounds = !self.layout_bounds;
-                self.command_flash = Some((4, std::time::Instant::now()));
                 Action::ToggleLayoutBounds
             }
             KeyCode::Char('a') => {
                 self.airplane_mode = !self.airplane_mode;
-                self.command_flash = Some((5, std::time::Instant::now()));
                 Action::ToggleAirplaneMode
             }
             KeyCode::Char(c @ '1'..='5') => {
