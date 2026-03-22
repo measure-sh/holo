@@ -15,13 +15,13 @@ pub const MUTED: Color = Color::Rgb(0x56, 0x5f, 0x89);
 pub const KEY_HINT: Color = Color::Rgb(0xf7, 0x76, 0x8e);
 
 // Dimmed panel colors — toned-down variants for borders/titles
-pub const DIM_BLUE: Color = Color::Rgb(0x30, 0x40, 0x5c);
-pub const DIM_GREEN: Color = Color::Rgb(0x38, 0x4c, 0x28);
-pub const DIM_YELLOW: Color = Color::Rgb(0x54, 0x46, 0x2a);
-pub const DIM_CYAN: Color = Color::Rgb(0x1a, 0x44, 0x50);
-pub const DIM_MAGENTA: Color = Color::Rgb(0x44, 0x3a, 0x5c);
-pub const DIM_RED: Color = Color::Rgb(0x5c, 0x30, 0x38);
-pub const DIM_TEAL: Color = Color::Rgb(0x26, 0x4a, 0x44);
+pub const DIM_BLUE: Color = Color::Rgb(0x20, 0x2a, 0x3c);
+pub const DIM_GREEN: Color = Color::Rgb(0x24, 0x32, 0x1a);
+pub const DIM_YELLOW: Color = Color::Rgb(0x38, 0x2e, 0x1c);
+pub const DIM_CYAN: Color = Color::Rgb(0x12, 0x2e, 0x36);
+pub const DIM_MAGENTA: Color = Color::Rgb(0x2e, 0x26, 0x3c);
+pub const DIM_RED: Color = Color::Rgb(0x3c, 0x20, 0x26);
+pub const DIM_TEAL: Color = Color::Rgb(0x1a, 0x32, 0x2e);
 
 pub fn level_color(level: char) -> Color {
     match level {
