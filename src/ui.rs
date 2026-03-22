@@ -86,7 +86,7 @@ pub fn render_app(
     let hint_line = if app.confirming_quit() {
         Line::from(vec![
             Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
-            Span::styled(" to confirm ", Style::new().fg(theme::YELLOW)),
+            Span::styled(" to confirm ", Style::new().fg(theme::FG)),
         ])
     } else {
         Line::from(vec![
