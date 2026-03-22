@@ -19,6 +19,7 @@ pub struct DatabaseState {
     pub scroll: usize,
     pub error: Option<String>,
     pub confirming_pull: Option<String>,
+    pub copied_flash: bool,
 }
 
 impl DatabaseState {
@@ -32,6 +33,7 @@ impl DatabaseState {
             scroll: 0,
             error: None,
             confirming_pull: None,
+            copied_flash: false,
         }
     }
 

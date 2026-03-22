@@ -102,6 +102,7 @@ impl App {
         }
 
         if self.focused == Some(panel::DATABASE) {
+            self.db_state.copied_flash = false;
             match code {
                 KeyCode::Up | KeyCode::Down if self.db_state.selected_db.is_none() => {
                     if code == KeyCode::Up {
@@ -134,6 +135,7 @@ impl App {
                 }
                 KeyCode::Char('c') if self.db_state.selected_db.is_some() => {
                     if let Some(text) = self.db_state.history_text() {
+                        self.db_state.copied_flash = true;
                         return Action::CopyDbResult(text);
                     }
                     return Action::None;

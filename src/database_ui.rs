@@ -54,6 +54,10 @@ pub fn render_database_panel(
                 Span::styled(" any", accent),
                 Span::styled(" cancel ", muted),
             ]
+        } else if db_state.copied_flash {
+            vec![
+                Span::styled(" copied! ", Style::new().fg(theme::GREEN)),
+            ]
         } else {
             vec![
                 Span::styled(" e", accent),
