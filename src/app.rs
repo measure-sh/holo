@@ -18,6 +18,7 @@ pub enum Action {
     WakeScreen,
     ToggleLayoutBounds,
     ToggleAirplaneMode,
+    CopyLogcat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -209,6 +210,10 @@ impl App {
                 KeyCode::Left => {
                     self.logcat_state.cycle_level(false);
                     return Action::None;
+                }
+                KeyCode::Char('c') => {
+                    self.logcat_state.copied_at = Some(std::time::Instant::now());
+                    return Action::CopyLogcat;
                 }
                 KeyCode::Char('r') => {
                     self.logcat_state.reset();
@@ -652,6 +657,15 @@ mod tests {
         assert_eq!(app.logcat_state().filter.search, "");
         assert_eq!(app.logcat_state().filter.level, None);
         assert_eq!(app.logcat_state().scroll, 0);
+    }
+
+    #[test]
+    fn c_in_logcat_returns_copy_action() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('l')));
+        let action = app.handle_key(key(KeyCode::Char('c')));
+        assert!(matches!(action, Action::CopyLogcat));
+        assert!(app.logcat_state().copied_at.is_some());
     }
 
     #[test]

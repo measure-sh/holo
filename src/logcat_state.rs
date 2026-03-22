@@ -27,6 +27,7 @@ impl LogcatFilter {
 pub struct LogcatState {
     pub filter: LogcatFilter,
     pub scroll: usize,
+    pub copied_at: Option<std::time::Instant>,
 }
 
 impl LogcatState {
@@ -34,6 +35,7 @@ impl LogcatState {
         Self {
             filter: LogcatFilter::new(),
             scroll: 0,
+            copied_at: None,
         }
     }
 
