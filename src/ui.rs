@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{App, SettingsAction};
 use crate::battery;
 use crate::database_ui;
 use crate::files_ui;
@@ -291,17 +291,36 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
 
     frame.render_widget(ratatui::widgets::Clear, dialog_area);
 
+    let selected_item = items.get(app.settings_index());
+    let mut bottom_spans = Vec::new();
+    if let Some(item) = selected_item {
+        match item.action {
+            SettingsAction::Copy => {
+                bottom_spans.extend([
+                    Span::styled(" ↩", accent),
+                    Span::styled(" copy ", hint),
+                    Span::styled("───", Style::new().fg(theme::MUTED)),
+                ]);
+            }
+            _ => {
+                bottom_spans.extend([
+                    Span::styled(" ↩", accent),
+                    Span::styled(" select ", hint),
+                    Span::styled("───", Style::new().fg(theme::MUTED)),
+                ]);
+            }
+        }
+    }
+    bottom_spans.extend([
+        Span::styled(" esc", accent),
+        Span::styled(" close ", hint),
+    ]);
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(Line::from(Span::styled(" settings ", accent)))
-        .title_bottom(Line::from(vec![
-            Span::styled(" ↩", accent),
-            Span::styled(" copy ", hint),
-            Span::styled("───", Style::new().fg(theme::MUTED)),
-            Span::styled(" esc", accent),
-            Span::styled(" close ", hint),
-        ]))
+        .title_bottom(Line::from(bottom_spans))
         .border_style(Style::new().fg(theme::MUTED))
         .style(Style::new().bg(theme::SURFACE));
 
