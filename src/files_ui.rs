@@ -33,23 +33,17 @@ pub fn render_files_panel(
         None => None,
     };
 
-    let bottom_spans = if let Some(label) = confirm_label {
+    let inline_suffix: Option<(String, ratatui::style::Color)> = if let Some(label) = confirm_label {
+        Some((format!(" {label} ↩ yes / any cancel"), theme::YELLOW))
+    } else if flash_active {
+        let msg = state.action_flash.as_ref().unwrap().0;
+        Some((format!(" {msg}"), theme::GREEN))
+    } else {
+        None
+    };
+
+    let bottom_spans = if focused {
         Some(vec![
-            Span::styled(format!(" {label} "), Style::new().fg(theme::YELLOW)),
-            Span::styled("↩", accent),
-            Span::styled(" yes ", muted),
-            Span::styled("───", border_fg),
-            Span::styled(" any", accent),
-            Span::styled(" cancel ", muted),
-        ])
-    } else if focused {
-        let mut spans = Vec::new();
-        if flash_active {
-            let msg = state.action_flash.as_ref().unwrap().0;
-            spans.push(Span::styled(format!(" {msg} "), Style::new().fg(theme::GREEN)));
-            spans.push(Span::styled("───", border_fg));
-        }
-        spans.extend([
             Span::styled(" p", accent),
             Span::styled("ull ", muted),
             Span::styled("───", border_fg),
@@ -58,8 +52,7 @@ pub fn render_files_panel(
             Span::styled("───", border_fg),
             Span::styled(" esc", accent),
             Span::styled(" back ", muted),
-        ]);
-        Some(spans)
+        ])
     } else {
         None
     };
@@ -136,7 +129,8 @@ pub fn render_files_panel(
         .enumerate()
         .map(|(i, entry)| {
             let is_selected = (start + i) == selected;
-            build_tree_line(entry, is_selected, focused, accent)
+            let suffix = if is_selected { inline_suffix.as_ref() } else { None };
+            build_tree_line(entry, is_selected, focused, accent, suffix)
         })
         .collect();
 
@@ -148,6 +142,7 @@ fn build_tree_line(
     selected: bool,
     focused: bool,
     accent: ratatui::style::Color,
+    inline_suffix: Option<&(String, ratatui::style::Color)>,
 ) -> ListItem<'static> {
     let mut spans: Vec<Span> = Vec::new();
 
@@ -189,6 +184,10 @@ fn build_tree_line(
     };
 
     spans.push(Span::styled(entry.name.clone(), name_style));
+
+    if let Some((text, color)) = inline_suffix {
+        spans.push(Span::styled(text.clone(), Style::new().fg(*color)));
+    }
 
     ListItem::new(Line::from(spans))
 }
