@@ -284,15 +284,9 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
     let dialog_area = Rect::new(x, y, width, height);
 
     let accent = Style::new().fg(theme::ACCENT);
-    let muted = Style::new().fg(theme::MUTED);
+    let hint = Style::new().fg(theme::FG);
 
-    let pad_area = Rect::new(
-        dialog_area.x.saturating_sub(1),
-        dialog_area.y.saturating_sub(1),
-        (dialog_area.width + 2).min(area.width),
-        (dialog_area.height + 2).min(area.height),
-    );
-    frame.render_widget(ratatui::widgets::Clear, pad_area);
+    frame.render_widget(ratatui::widgets::Clear, dialog_area);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -300,13 +294,13 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
         .title(Line::from(Span::styled(" settings ", accent)))
         .title_bottom(Line::from(vec![
             Span::styled(" ↩", accent),
-            Span::styled(" copy ", muted),
-            Span::styled("───", Style::new().fg(theme::OVERLAY)),
+            Span::styled(" copy ", hint),
+            Span::styled("───", Style::new().fg(theme::MUTED)),
             Span::styled(" esc", accent),
-            Span::styled(" close ", muted),
+            Span::styled(" close ", hint),
         ]))
         .border_style(Style::new().fg(theme::MUTED))
-        .style(Style::new().bg(theme::OVERLAY));
+        .style(Style::new().bg(theme::SURFACE));
 
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
@@ -322,7 +316,7 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
                 Style::new().fg(theme::FG)
             };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{}: ", label), muted),
+                Span::styled(format!("{}: ", label), Style::new().fg(theme::FG)),
                 Span::styled(value.clone(), style),
             ]))
         })
