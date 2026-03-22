@@ -133,6 +133,7 @@ fn run_app(
     let title = format!(" {} — {} ", selector::selector_label(device), package);
     let mut app = App::new();
     let mut data = DataSources::new(adb.clone(), &device.serial, package);
+    app.set_layout_bounds(data.initial_layout_bounds);
 
     loop {
         data.poll(&mut app, &device.serial, package);
@@ -168,6 +169,12 @@ fn run_app(
                     Action::WakeScreen => {
                         spawn_app_action(&adb, &device.serial, package, |adb, s, _| {
                             adb.wake_screen(s)
+                        });
+                    }
+                    Action::ToggleLayoutBounds => {
+                        let enabled = app.layout_bounds();
+                        spawn_app_action(&adb, &device.serial, package, move |adb, s, _| {
+                            adb.set_layout_bounds(s, enabled)
                         });
                     }
                     Action::ResetLogcat => {

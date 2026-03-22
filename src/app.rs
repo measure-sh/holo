@@ -16,6 +16,7 @@ pub enum Action {
     RunQuery(String, String),
     PullDb(String),
     WakeScreen,
+    ToggleLayoutBounds,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -32,6 +33,7 @@ pub struct App {
     input_mode: InputMode,
     logcat_state: LogcatState,
     db_state: DatabaseState,
+    layout_bounds: bool,
 }
 
 impl App {
@@ -42,6 +44,7 @@ impl App {
             input_mode: InputMode::Normal,
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
+            layout_bounds: false,
         }
     }
 
@@ -212,6 +215,10 @@ impl App {
             KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('c') => Action::ClearData,
             KeyCode::Char('w') => Action::WakeScreen,
+            KeyCode::Char('b') => {
+                self.layout_bounds = !self.layout_bounds;
+                Action::ToggleLayoutBounds
+            }
             KeyCode::Char(c @ '1'..='5') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -273,6 +280,14 @@ impl App {
 
     pub fn input_mode(&self) -> InputMode {
         self.input_mode
+    }
+
+    pub fn layout_bounds(&self) -> bool {
+        self.layout_bounds
+    }
+
+    pub fn set_layout_bounds(&mut self, v: bool) {
+        self.layout_bounds = v;
     }
 }
 

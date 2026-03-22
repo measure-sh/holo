@@ -140,23 +140,23 @@ fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
                 .split(area);
-            render_commands_panel(frame, cols[0]);
+            render_commands_panel(frame, cols[0], app);
             logcat_ui::render_logcat_panel(frame, cols[1], is_focused(app, panel::LOGCAT), logcat_lines, monitored_pid, app);
         }
         (true, false) => {
-            render_commands_panel(frame, area)
+            render_commands_panel(frame, area, app)
         }
         (false, true) => logcat_ui::render_logcat_panel(frame, area, is_focused(app, panel::LOGCAT), logcat_lines, monitored_pid, app),
         (false, false) => {}
     }
 }
 
-fn render_commands_panel(frame: &mut Frame, area: Rect) {
+fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     let block = panel_block(panel::COMMANDS, false);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let items: Vec<ListItem> = COMMAND_LABELS
+    let mut items: Vec<ListItem> = COMMAND_LABELS
         .iter()
         .map(|&label| {
             let first = &label[..1];
@@ -167,6 +167,16 @@ fn render_commands_panel(frame: &mut Frame, area: Rect) {
             ]))
         })
         .collect();
+
+    let (indicator, indicator_color) = if app.layout_bounds() {
+        ("●", theme::GREEN)
+    } else {
+        ("·", theme::MUTED)
+    };
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled("b", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(format!("ounds {indicator}"), Style::new().fg(indicator_color)),
+    ])));
 
     let list = List::new(items);
     frame.render_widget(list, inner);

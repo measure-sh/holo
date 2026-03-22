@@ -164,6 +164,29 @@ impl Adb for RealAdb {
         }
         Ok(())
     }
+
+    fn get_layout_bounds(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "getprop", "debug.layout"])
+            .output()?;
+        let value = String::from_utf8_lossy(&output.stdout);
+        Ok(value.trim() == "true")
+    }
+
+    fn set_layout_bounds(&self, serial: &str, enabled: bool) -> Result<()> {
+        let value = if enabled { "true" } else { "false" };
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "setprop", "debug.layout", value])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("setprop debug.layout failed: {stderr}");
+        }
+        let _ = Command::new("adb")
+            .args(["-s", serial, "shell", "service", "call", "activity", "1599295570"])
+            .output();
+        Ok(())
+    }
 }
 
 fn parse_package_list(output: &str) -> Vec<String> {
