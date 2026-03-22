@@ -78,8 +78,8 @@ impl MonitorState {
         }
         let curr = self.history.last().unwrap();
         let prev = &self.history[self.history.len() - 2];
-        let rx = curr.net_rx_bytes.saturating_sub(prev.net_rx_bytes) / 5;
-        let tx = curr.net_tx_bytes.saturating_sub(prev.net_tx_bytes) / 5;
+        let rx = curr.net_rx_bytes.saturating_sub(prev.net_rx_bytes);
+        let tx = curr.net_tx_bytes.saturating_sub(prev.net_tx_bytes);
         (rx, tx)
     }
 }
@@ -91,7 +91,7 @@ pub fn spawn_poller(
 ) -> mpsc::Receiver<MonitorSample> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let interval = Duration::from_secs(5);
+        let interval = Duration::from_secs(1);
         loop {
             let mut sample = MonitorSample::default();
 
@@ -199,8 +199,8 @@ mod tests {
             ..Default::default()
         });
         let (rx, tx) = state.net_throughput();
-        assert_eq!(rx, 1000);
-        assert_eq!(tx, 500);
+        assert_eq!(rx, 5000);
+        assert_eq!(tx, 2500);
     }
 
     #[test]
