@@ -4,7 +4,7 @@ use std::process::Command;
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
-use super::{Adb, Device};
+use super::{Adb, Device, MemInfo};
 
 pub struct RealAdb;
 
@@ -285,6 +285,20 @@ impl Adb for RealAdb {
         Ok(parse_file_list(&stdout))
     }
 
+    fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "meminfo", package])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("dumpsys meminfo failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_meminfo(&stdout))
+    }
+
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "exec-out", "run-as", package, "cat", remote_path])
@@ -411,6 +425,43 @@ fn parse_process_list(output: &str) -> HashMap<String, u32> {
         map.insert(name.to_string(), pid);
     }
     map
+}
+
+fn parse_meminfo(output: &str) -> MemInfo {
+    let mut info = MemInfo::default();
+    let mut in_summary = false;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("App Summary") {
+            in_summary = true;
+            continue;
+        }
+        if in_summary {
+            if trimmed.starts_with("TOTAL PSS:") || trimmed.starts_with("TOTAL RSS:") {
+                if info.total_pss_kb == 0 {
+                    if let Some(val) = extract_summary_kb(trimmed) {
+                        info.total_pss_kb = val;
+                    }
+                }
+            } else if trimmed.starts_with("Java Heap:") {
+                if let Some(val) = extract_summary_kb(trimmed) {
+                    info.java_heap_kb = val;
+                }
+            } else if trimmed.starts_with("Native Heap:") {
+                if let Some(val) = extract_summary_kb(trimmed) {
+                    info.native_heap_kb = val;
+                }
+            }
+        }
+    }
+    info
+}
+
+fn extract_summary_kb(line: &str) -> Option<u64> {
+    line.split_whitespace()
+        .filter_map(|w| w.parse::<u64>().ok())
+        .next()
 }
 
 pub fn parse_database_list(output: &str) -> Vec<String> {
@@ -684,5 +735,53 @@ mod tests {
         assert_eq!(entries[0], ("a_dir".into(), true));
         assert_eq!(entries[1], ("b_file".into(), false));
         assert_eq!(entries[2], ("z_file".into(), false));
+    }
+
+    #[test]
+    fn parses_meminfo_app_summary() {
+        let output = "\
+Applications Memory Usage (in Kilobytes):
+Uptime: 123456 Realtime: 654321
+
+** MEMINFO in pid 12345 [com.example.app] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    56000    55000      100        0    58000    80000    60000    20000
+  Dalvik Heap    42000    41000      200        0    44000    50000    43000     7000
+
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:    42000                          44000
+         Native Heap:    56000                          58000
+                Code:     8000                          12000
+               Stack:     2000                           2500
+            Graphics:    18000                          18000
+       Private Other:     3000
+              System:     5000
+             Unknown:     1000
+
+           TOTAL PSS:   128000            TOTAL RSS:   150000
+";
+        let info = parse_meminfo(output);
+        assert_eq!(info.total_pss_kb, 128000);
+        assert_eq!(info.java_heap_kb, 42000);
+        assert_eq!(info.native_heap_kb, 56000);
+    }
+
+    #[test]
+    fn parses_meminfo_empty_output() {
+        let info = parse_meminfo("");
+        assert_eq!(info.total_pss_kb, 0);
+        assert_eq!(info.java_heap_kb, 0);
+        assert_eq!(info.native_heap_kb, 0);
+    }
+
+    #[test]
+    fn parses_meminfo_no_summary_section() {
+        let output = "some unrelated output\nNative Heap: 1000\n";
+        let info = parse_meminfo(output);
+        assert_eq!(info.total_pss_kb, 0);
     }
 }

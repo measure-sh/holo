@@ -6,6 +6,13 @@ use std::collections::HashMap;
 
 use color_eyre::Result;
 
+#[derive(Debug, Clone, Default)]
+pub struct MemInfo {
+    pub total_pss_kb: u64,
+    pub java_heap_kb: u64,
+    pub native_heap_kb: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct Device {
     pub serial: String,
@@ -36,4 +43,5 @@ pub trait Adb: Send + Sync {
     fn get_app_version(&self, serial: &str, package: &str) -> Result<(String, String)>;
     fn list_files(&self, serial: &str, package: &str, path: &str) -> Result<Vec<(String, bool)>>;
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()>;
+    fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo>;
 }
