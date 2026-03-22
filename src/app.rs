@@ -423,7 +423,7 @@ impl App {
                 self.airplane_mode = !self.airplane_mode;
                 Action::ToggleAirplaneMode
             }
-            KeyCode::Char('y') => {
+            KeyCode::Char('n') => {
                 self.animations_enabled = !self.animations_enabled;
                 Action::ToggleAnimations
             }
@@ -1187,12 +1187,12 @@ mod tests {
     }
 
     #[test]
-    fn y_toggles_animations() {
+    fn n_toggles_animations() {
         let mut app = App::new("com.test");
         assert!(app.animations_enabled());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('y'))), Action::ToggleAnimations));
+        assert!(matches!(app.handle_key(key(KeyCode::Char('n'))), Action::ToggleAnimations));
         assert!(!app.animations_enabled());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('y'))), Action::ToggleAnimations));
+        assert!(matches!(app.handle_key(key(KeyCode::Char('n'))), Action::ToggleAnimations));
         assert!(app.animations_enabled());
     }
 
