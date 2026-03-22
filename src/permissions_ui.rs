@@ -9,7 +9,7 @@ use ratatui::{
 use crate::panel;
 use crate::permissions::PermissionsState;
 use crate::theme;
-use crate::ui::panel_block;
+use crate::ui::panel_title;
 
 pub fn render_permissions_panel(
     frame: &mut Frame,
@@ -17,7 +17,24 @@ pub fn render_permissions_panel(
     focused: bool,
     state: &PermissionsState,
 ) {
-    let block = panel_block(panel::PERMISSIONS, focused);
+    use ratatui::widgets::{Block, Borders, BorderType};
+
+    let color = panel::by_number(panel::PERMISSIONS).border_color(focused);
+    let accent = Style::new().fg(panel::by_number(panel::PERMISSIONS).bright_color);
+    let muted = Style::new().fg(theme::MUTED);
+    let border_fg = Style::new().fg(color);
+
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(panel_title(panel::PERMISSIONS, focused))
+        .border_style(border_fg);
+    if focused {
+        block = block.title_bottom(Line::from(vec![
+            Span::styled(" ↩", accent),
+            Span::styled(" toggle ", muted),
+        ]));
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
