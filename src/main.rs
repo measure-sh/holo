@@ -142,6 +142,7 @@ fn run_app(
     let mut app = App::new();
     let mut data = DataSources::new(adb.clone(), &device.serial, package);
     app.set_layout_bounds(data.initial_layout_bounds);
+    app.set_airplane_mode(data.initial_airplane_mode);
 
     loop {
         data.poll(&mut app, &device.serial, package);
@@ -183,6 +184,18 @@ fn run_app(
                         let enabled = app.layout_bounds();
                         spawn_app_action(&adb, &device.serial, package, move |adb, s, _| {
                             adb.set_layout_bounds(s, enabled)
+                        });
+                    }
+                    Action::ToggleAirplaneMode => {
+                        let enabled = app.airplane_mode();
+                        spawn_app_action(&adb, &device.serial, package, move |adb, s, _| {
+                            adb.set_airplane_mode(s, enabled)
+                        });
+                    }
+                    Action::SetNetworkSpeed => {
+                        let bps = app.network_speed().bytes_per_second();
+                        spawn_app_action(&adb, &device.serial, package, move |adb, s, _| {
+                            adb.set_network_speed(s, bps)
                         });
                     }
                     Action::ResetLogcat => {

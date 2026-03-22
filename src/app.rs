@@ -17,6 +17,33 @@ pub enum Action {
     PullDb(String),
     WakeScreen,
     ToggleLayoutBounds,
+    ToggleAirplaneMode,
+    SetNetworkSpeed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NetworkSpeed {
+    Normal,
+    Slow,
+    VerySlow,
+}
+
+impl NetworkSpeed {
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Normal => Self::Slow,
+            Self::Slow => Self::VerySlow,
+            Self::VerySlow => Self::Normal,
+        }
+    }
+
+    pub fn bytes_per_second(self) -> Option<u32> {
+        match self {
+            Self::Normal => None,
+            Self::Slow => Some(125_000),
+            Self::VerySlow => Some(16_000),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,6 +61,8 @@ pub struct App {
     logcat_state: LogcatState,
     db_state: DatabaseState,
     layout_bounds: bool,
+    airplane_mode: bool,
+    network_speed: NetworkSpeed,
     confirming_quit: bool,
 }
 
@@ -46,6 +75,8 @@ impl App {
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
             layout_bounds: false,
+            airplane_mode: false,
+            network_speed: NetworkSpeed::Normal,
             confirming_quit: false,
         }
     }
@@ -228,6 +259,14 @@ impl App {
                 self.layout_bounds = !self.layout_bounds;
                 Action::ToggleLayoutBounds
             }
+            KeyCode::Char('a') => {
+                self.airplane_mode = !self.airplane_mode;
+                Action::ToggleAirplaneMode
+            }
+            KeyCode::Char('n') => {
+                self.network_speed = self.network_speed.cycle();
+                Action::SetNetworkSpeed
+            }
             KeyCode::Char(c @ '1'..='5') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -297,6 +336,18 @@ impl App {
 
     pub fn set_layout_bounds(&mut self, v: bool) {
         self.layout_bounds = v;
+    }
+
+    pub fn airplane_mode(&self) -> bool {
+        self.airplane_mode
+    }
+
+    pub fn set_airplane_mode(&mut self, v: bool) {
+        self.airplane_mode = v;
+    }
+
+    pub fn network_speed(&self) -> NetworkSpeed {
+        self.network_speed
     }
 
     pub fn confirming_quit(&self) -> bool {
@@ -917,5 +968,41 @@ mod tests {
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::ClearData));
+    }
+
+    #[test]
+    fn network_speed_cycles_through_all_states() {
+        assert_eq!(NetworkSpeed::Normal.cycle(), NetworkSpeed::Slow);
+        assert_eq!(NetworkSpeed::Slow.cycle(), NetworkSpeed::VerySlow);
+        assert_eq!(NetworkSpeed::VerySlow.cycle(), NetworkSpeed::Normal);
+    }
+
+    #[test]
+    fn network_speed_bytes_per_second() {
+        assert_eq!(NetworkSpeed::Normal.bytes_per_second(), None);
+        assert_eq!(NetworkSpeed::Slow.bytes_per_second(), Some(125_000));
+        assert_eq!(NetworkSpeed::VerySlow.bytes_per_second(), Some(16_000));
+    }
+
+    #[test]
+    fn a_toggles_airplane_mode() {
+        let mut app = App::new();
+        assert!(!app.airplane_mode());
+        assert!(matches!(app.handle_key(key(KeyCode::Char('a'))), Action::ToggleAirplaneMode));
+        assert!(app.airplane_mode());
+        assert!(matches!(app.handle_key(key(KeyCode::Char('a'))), Action::ToggleAirplaneMode));
+        assert!(!app.airplane_mode());
+    }
+
+    #[test]
+    fn n_cycles_network_speed() {
+        let mut app = App::new();
+        assert_eq!(app.network_speed(), NetworkSpeed::Normal);
+        assert!(matches!(app.handle_key(key(KeyCode::Char('n'))), Action::SetNetworkSpeed));
+        assert_eq!(app.network_speed(), NetworkSpeed::Slow);
+        assert!(matches!(app.handle_key(key(KeyCode::Char('n'))), Action::SetNetworkSpeed));
+        assert_eq!(app.network_speed(), NetworkSpeed::VerySlow);
+        assert!(matches!(app.handle_key(key(KeyCode::Char('n'))), Action::SetNetworkSpeed));
+        assert_eq!(app.network_speed(), NetworkSpeed::Normal);
     }
 }

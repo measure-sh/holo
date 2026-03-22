@@ -27,11 +27,13 @@ pub struct DataSources {
     db_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
 
     pub initial_layout_bounds: bool,
+    pub initial_airplane_mode: bool,
 }
 
 impl DataSources {
     pub fn new(adb: Arc<dyn Adb>, serial: &str, package: &str) -> Self {
         let initial_layout_bounds = adb.get_layout_bounds(serial).unwrap_or(false);
+        let initial_airplane_mode = adb.get_airplane_mode(serial).unwrap_or(false);
         Self {
             battery_rx: battery::spawn_poller(adb.clone(), serial.to_string()),
             battery_level: None,
@@ -48,6 +50,7 @@ impl DataSources {
             db_query_rx: None,
             db_pull_rx: None,
             initial_layout_bounds,
+            initial_airplane_mode,
         }
     }
 

@@ -187,6 +187,51 @@ impl Adb for RealAdb {
             .output();
         Ok(())
     }
+    fn get_airplane_mode(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "get", "global", "airplane_mode_on"])
+            .output()?;
+        let value = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_airplane_mode(&value))
+    }
+
+    fn set_airplane_mode(&self, serial: &str, enabled: bool) -> Result<()> {
+        let mode = if enabled { "enable" } else { "disable" };
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "cmd", "connectivity", "airplane-mode", mode])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("airplane-mode {mode} failed: {stderr}");
+        }
+        Ok(())
+    }
+
+    fn set_network_speed(&self, serial: &str, bytes_per_second: Option<u32>) -> Result<()> {
+        let output = match bytes_per_second {
+            Some(bps) => Command::new("adb")
+                .args([
+                    "-s", serial, "shell", "settings", "put", "global",
+                    "ingress_rate_limit_bytes_per_second", &bps.to_string(),
+                ])
+                .output()?,
+            None => Command::new("adb")
+                .args([
+                    "-s", serial, "shell", "settings", "delete", "global",
+                    "ingress_rate_limit_bytes_per_second",
+                ])
+                .output()?,
+        };
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("set network speed failed: {stderr}");
+        }
+        Ok(())
+    }
+}
+
+fn parse_airplane_mode(output: &str) -> bool {
+    output.trim() == "1"
 }
 
 fn parse_package_list(output: &str) -> Vec<String> {
@@ -394,6 +439,19 @@ mod tests {
         let output = "main.db\nmain.db-journal\nmain.db-wal\nmain.db-shm\n";
         let dbs = parse_database_list(output);
         assert_eq!(dbs, vec!["main.db"]);
+    }
+
+    #[test]
+    fn parses_airplane_mode_on() {
+        assert!(parse_airplane_mode("1\n"));
+        assert!(parse_airplane_mode("1"));
+    }
+
+    #[test]
+    fn parses_airplane_mode_off() {
+        assert!(!parse_airplane_mode("0\n"));
+        assert!(!parse_airplane_mode("0"));
+        assert!(!parse_airplane_mode("null\n"));
     }
 
     #[test]
