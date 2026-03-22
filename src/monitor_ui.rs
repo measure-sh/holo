@@ -183,7 +183,7 @@ pub fn render_monitor_panel(
         mem_item("Native", &native_data, state.trend_u64(|m| m.native_heap_kb), spark_width),
         section_header("── cpu", false),
         cpu_item(&cpu_data, spark_width),
-        section_header("── network", false),
+        section_header("── network (device)", false),
         net_item("↓ down", &state.download_history, theme::CYAN, spark_width),
         net_item("↑ up", &state.upload_history, theme::YELLOW, spark_width),
     ];
