@@ -219,6 +219,28 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn get_animations_enabled(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "get", "global", "window_animation_scale"])
+            .output()?;
+        let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok(value != "0" && value != "0.0")
+    }
+
+    fn set_animations_enabled(&self, serial: &str, enabled: bool) -> Result<()> {
+        let scale = if enabled { "1.0" } else { "0.0" };
+        for key in &["window_animation_scale", "transition_animation_scale", "animator_duration_scale"] {
+            let output = Command::new("adb")
+                .args(["-s", serial, "shell", "settings", "put", "global", key, scale])
+                .output()?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("settings put {key} failed: {stderr}");
+            }
+        }
+        Ok(())
+    }
+
     fn list_permissions(&self, serial: &str, package: &str) -> Result<Vec<(String, bool)>> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "package", package])

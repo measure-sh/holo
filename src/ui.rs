@@ -244,6 +244,15 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     airplane_spans.push(Span::styled("irplane", Style::new().fg(theme::MUTED)));
     items.push(ListItem::new(Line::from(airplane_spans)));
 
+    let mut anim_spans: Vec<Span> = Vec::new();
+    if app.animations_enabled() {
+        anim_spans.push(Span::styled("• ", Style::new().fg(accent)));
+    }
+    anim_spans.push(Span::styled("a", Style::new().fg(theme::MUTED)));
+    anim_spans.push(Span::styled("n", Style::new().fg(theme::KEY_HINT)));
+    anim_spans.push(Span::styled("imations", Style::new().fg(theme::MUTED)));
+    items.push(ListItem::new(Line::from(anim_spans)));
+
     let list = List::new(items);
     frame.render_widget(list, inner);
 }

@@ -23,6 +23,7 @@ pub enum Action {
     WakeScreen,
     ToggleLayoutBounds,
     ToggleAirplaneMode,
+    ToggleAnimations,
     TogglePermission(String, bool),
     CopyLogcat,
     CopyText(String),
@@ -62,6 +63,7 @@ pub struct App {
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
+    animations_enabled: bool,
     confirming_quit: bool,
     show_settings: bool,
     settings_index: usize,
@@ -81,6 +83,7 @@ impl App {
             package: package.to_string(),
             layout_bounds: false,
             airplane_mode: false,
+            animations_enabled: true,
             confirming_quit: false,
             show_settings: false,
             settings_index: 0,
@@ -420,6 +423,10 @@ impl App {
                 self.airplane_mode = !self.airplane_mode;
                 Action::ToggleAirplaneMode
             }
+            KeyCode::Char('n') => {
+                self.animations_enabled = !self.animations_enabled;
+                Action::ToggleAnimations
+            }
             KeyCode::Char(c @ '1'..='5') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -513,6 +520,14 @@ impl App {
 
     pub fn set_airplane_mode(&mut self, v: bool) {
         self.airplane_mode = v;
+    }
+
+    pub fn animations_enabled(&self) -> bool {
+        self.animations_enabled
+    }
+
+    pub fn set_animations_enabled(&mut self, v: bool) {
+        self.animations_enabled = v;
     }
 
     pub fn confirming_quit(&self) -> bool {
@@ -1169,6 +1184,16 @@ mod tests {
         assert!(app.airplane_mode());
         assert!(matches!(app.handle_key(key(KeyCode::Char('a'))), Action::ToggleAirplaneMode));
         assert!(!app.airplane_mode());
+    }
+
+    #[test]
+    fn n_toggles_animations() {
+        let mut app = App::new("com.test");
+        assert!(app.animations_enabled());
+        assert!(matches!(app.handle_key(key(KeyCode::Char('n'))), Action::ToggleAnimations));
+        assert!(!app.animations_enabled());
+        assert!(matches!(app.handle_key(key(KeyCode::Char('n'))), Action::ToggleAnimations));
+        assert!(app.animations_enabled());
     }
 
     #[test]
