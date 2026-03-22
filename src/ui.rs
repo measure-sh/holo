@@ -318,7 +318,11 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
             } else {
                 Style::new().fg(theme::FG)
             };
-            let mut spans = vec![Span::styled(item.label.to_string(), style)];
+            let prefix = if selected { "▸ " } else { "  " };
+            let mut spans = vec![
+                Span::styled(prefix, style),
+                Span::styled(item.label.to_string(), style),
+            ];
             if !item.value.is_empty() {
                 spans.push(Span::styled(format!(": {}", item.value), Style::new().fg(theme::FG)));
             }
