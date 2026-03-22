@@ -53,7 +53,7 @@ pub fn render_database_panel(
         let bottom_spans = if db_state.confirming_pull.is_some() {
             vec![
                 Span::styled(" pp", accent),
-                Span::styled("ull ", Style::new().fg(theme::YELLOW)),
+                Span::styled("ull ", Style::new().fg(theme::FG)),
                 Span::styled("───", border_fg),
                 Span::styled(" any", accent),
                 Span::styled(" cancel ", muted),
@@ -167,7 +167,7 @@ pub fn render_database_panel(
         let bottom_line = if db_state.confirming_pull.is_some() {
             Line::from(vec![
                 Span::styled(" pp", accent),
-                Span::styled("ull ", Style::new().fg(theme::YELLOW)),
+                Span::styled("ull ", Style::new().fg(theme::FG)),
                 Span::styled("───", border_fg),
                 Span::styled(" any", accent),
                 Span::styled(" cancel ", muted),
