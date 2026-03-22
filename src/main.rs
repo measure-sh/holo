@@ -157,7 +157,7 @@ fn run_app(
                 if key.kind != KeyEventKind::Press {
                     continue;
                 }
-                match app.handle_key(key.code) {
+                match app.handle_key(key) {
                     Action::Quit => return Ok(()),
                     Action::OpenApp => {
                         spawn_app_action(&adb, &device.serial, package, |adb, s, p| {

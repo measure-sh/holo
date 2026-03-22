@@ -100,10 +100,16 @@ pub fn render_database_panel(
 
         let editing = matches!(input_mode, InputMode::EditingQuery);
 
-        let input_row = Rect {
+        let prompt_area = Rect {
             x: inner.x,
             y: inner.y + inner.height.saturating_sub(1),
-            width: inner.width,
+            width: 2.min(inner.width),
+            height: 1.min(inner.height),
+        };
+        let textarea_area = Rect {
+            x: inner.x + 2.min(inner.width),
+            y: inner.y + inner.height.saturating_sub(1),
+            width: inner.width.saturating_sub(2),
             height: 1.min(inner.height),
         };
         let history_area = Rect {
@@ -115,18 +121,17 @@ pub fn render_database_panel(
 
         let selected = Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD);
 
-        let input_line = if editing {
-            Line::from(vec![
-                Span::styled("> ", selected),
-                Span::styled(db_state.input.clone(), selected),
-                Span::styled("_", Style::new().fg(theme::FG)),
-            ])
+        if editing {
+            frame.render_widget(Line::from(Span::styled("> ", selected)), prompt_area);
+            db_state.textarea.set_style(selected);
+            db_state.textarea.set_cursor_style(Style::new().fg(theme::BG).bg(theme::FG));
+            frame.render_widget(&db_state.textarea, textarea_area);
         } else if db_state.history.is_empty() {
-            Line::from(Span::styled("press e to enter a query", muted))
+            let full_input_row = Rect { x: inner.x, y: prompt_area.y, width: inner.width, height: 1.min(inner.height) };
+            frame.render_widget(Line::from(Span::styled("press e to enter a query", muted)), full_input_row);
         } else {
-            Line::from(Span::styled("> ", muted))
-        };
-        frame.render_widget(input_line, input_row);
+            frame.render_widget(Line::from(Span::styled("> ", muted)), prompt_area);
+        }
 
         if !db_state.history.is_empty() {
             let visible_height = history_area.height as usize;

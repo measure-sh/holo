@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 
+use tui_textarea::TextArea;
+
 use crate::adb::Adb;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -15,11 +17,19 @@ pub struct DatabaseState {
     pub selected_index: usize,
     pub selected_db: Option<String>,
     pub history: Vec<ReplLine>,
-    pub input: String,
+    pub textarea: TextArea<'static>,
+    pub query_history: Vec<String>,
+    pub history_index: Option<usize>,
     pub scroll: usize,
     pub error: Option<String>,
     pub confirming_pull: Option<String>,
     pub copied_at: Option<std::time::Instant>,
+}
+
+fn new_textarea() -> TextArea<'static> {
+    let mut ta = TextArea::default();
+    ta.set_cursor_line_style(ratatui::style::Style::default());
+    ta
 }
 
 impl DatabaseState {
@@ -29,12 +39,18 @@ impl DatabaseState {
             selected_index: 0,
             selected_db: None,
             history: Vec::new(),
-            input: String::new(),
+            textarea: new_textarea(),
+            query_history: Vec::new(),
+            history_index: None,
             scroll: 0,
             error: None,
             confirming_pull: None,
             copied_at: None,
         }
+    }
+
+    pub fn textarea_text(&self) -> String {
+        self.textarea.lines().join("")
     }
 
     pub fn move_up(&mut self) {
@@ -57,7 +73,9 @@ impl DatabaseState {
         if let Some(db) = self.databases.get(self.selected_index) {
             self.selected_db = Some(db.clone());
             self.history.clear();
-            self.input.clear();
+            self.textarea = new_textarea();
+            self.query_history.clear();
+            self.history_index = None;
             self.scroll = 0;
         }
     }
@@ -65,8 +83,52 @@ impl DatabaseState {
     pub fn deselect_db(&mut self) {
         self.selected_db = None;
         self.history.clear();
-        self.input.clear();
+        self.textarea = new_textarea();
+        self.query_history.clear();
+        self.history_index = None;
         self.scroll = 0;
+    }
+
+    pub fn submit_query(&mut self) -> Option<String> {
+        let sql = self.textarea_text();
+        if sql.is_empty() {
+            return None;
+        }
+        self.push_query(&sql);
+        self.query_history.push(sql.clone());
+        self.history_index = None;
+        self.textarea = new_textarea();
+        self.scroll = 0;
+        Some(sql)
+    }
+
+    pub fn history_up(&mut self) {
+        if self.query_history.is_empty() {
+            return;
+        }
+        let idx = match self.history_index {
+            None => self.query_history.len() - 1,
+            Some(0) => return,
+            Some(i) => i - 1,
+        };
+        self.history_index = Some(idx);
+        self.set_textarea_text(&self.query_history[idx].clone());
+    }
+
+    pub fn history_down(&mut self) {
+        let Some(idx) = self.history_index else { return };
+        if idx + 1 >= self.query_history.len() {
+            self.history_index = None;
+            self.textarea = new_textarea();
+        } else {
+            self.history_index = Some(idx + 1);
+            self.set_textarea_text(&self.query_history[idx + 1].clone());
+        }
+    }
+
+    fn set_textarea_text(&mut self, text: &str) {
+        self.textarea = new_textarea();
+        self.textarea.insert_str(text);
     }
 
     pub fn push_query(&mut self, sql: &str) {
@@ -290,5 +352,86 @@ mod tests {
         state.push_query("bad sql");
         state.push_error("syntax error");
         assert_eq!(state.history_text().as_deref(), Some("> bad sql\nsyntax error"));
+    }
+
+    #[test]
+    fn submit_query_returns_text_and_clears() {
+        let mut state = DatabaseState::new();
+        state.textarea.insert_str("SELECT 1");
+        let sql = state.submit_query();
+        assert_eq!(sql.as_deref(), Some("SELECT 1"));
+        assert!(state.textarea_text().is_empty());
+        assert_eq!(state.history, vec![ReplLine::Input("SELECT 1".into())]);
+        assert_eq!(state.query_history, vec!["SELECT 1".to_string()]);
+    }
+
+    #[test]
+    fn submit_empty_query_returns_none() {
+        let mut state = DatabaseState::new();
+        assert_eq!(state.submit_query(), None);
+    }
+
+    #[test]
+    fn history_up_recalls_previous_query() {
+        let mut state = DatabaseState::new();
+        state.textarea.insert_str("SELECT 1");
+        state.submit_query();
+        state.textarea.insert_str("SELECT 2");
+        state.submit_query();
+        state.history_up();
+        assert_eq!(state.textarea_text(), "SELECT 2");
+        state.history_up();
+        assert_eq!(state.textarea_text(), "SELECT 1");
+    }
+
+    #[test]
+    fn history_up_stops_at_oldest() {
+        let mut state = DatabaseState::new();
+        state.textarea.insert_str("SELECT 1");
+        state.submit_query();
+        state.history_up();
+        assert_eq!(state.textarea_text(), "SELECT 1");
+        state.history_up();
+        assert_eq!(state.textarea_text(), "SELECT 1");
+    }
+
+    #[test]
+    fn history_down_returns_to_empty() {
+        let mut state = DatabaseState::new();
+        state.textarea.insert_str("SELECT 1");
+        state.submit_query();
+        state.history_up();
+        assert_eq!(state.textarea_text(), "SELECT 1");
+        state.history_down();
+        assert!(state.textarea_text().is_empty());
+    }
+
+    #[test]
+    fn history_down_noop_without_browsing() {
+        let mut state = DatabaseState::new();
+        state.textarea.insert_str("SELECT 1");
+        state.submit_query();
+        state.history_down();
+        assert!(state.textarea_text().is_empty());
+    }
+
+    #[test]
+    fn history_up_noop_when_empty() {
+        let mut state = DatabaseState::new();
+        state.history_up();
+        assert!(state.textarea_text().is_empty());
+    }
+
+    #[test]
+    fn select_db_clears_query_history() {
+        let mut state = DatabaseState::new();
+        state.databases = vec!["a.db".into()];
+        state.select_db();
+        state.textarea.insert_str("SELECT 1");
+        state.submit_query();
+        assert!(!state.query_history.is_empty());
+        state.select_db();
+        assert!(state.query_history.is_empty());
+        assert!(state.history_index.is_none());
     }
 }
