@@ -13,6 +13,12 @@ pub struct MemInfo {
     pub native_heap_kb: u64,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GfxInfo {
+    pub total_frames: u64,
+    pub janky_frames: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct Device {
     pub serial: String,
@@ -46,4 +52,5 @@ pub trait Adb: Send + Sync {
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo>;
     fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32>;
     fn get_net_stats(&self, serial: &str) -> Result<(u64, u64)>;
+    fn get_gfx_info(&self, serial: &str, package: &str) -> Result<GfxInfo>;
 }

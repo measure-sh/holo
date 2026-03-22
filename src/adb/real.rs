@@ -4,7 +4,7 @@ use std::process::Command;
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
-use super::{Adb, Device, MemInfo};
+use super::{Adb, Device, GfxInfo, MemInfo};
 
 pub struct RealAdb;
 
@@ -345,6 +345,20 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn get_gfx_info(&self, serial: &str, package: &str) -> Result<GfxInfo> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "gfxinfo", package])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("dumpsys gfxinfo failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_gfx_info(&stdout))
+    }
+
 }
 
 fn parse_app_version(output: &str) -> (String, String) {
@@ -537,6 +551,25 @@ fn extract_summary_kb(line: &str) -> Option<u64> {
     line.split_whitespace()
         .filter_map(|w| w.parse::<u64>().ok())
         .next()
+}
+
+fn parse_gfx_info(output: &str) -> GfxInfo {
+    let mut info = GfxInfo::default();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("Total frames rendered:") {
+            if let Ok(v) = rest.trim().parse::<u64>() {
+                info.total_frames = v;
+            }
+        } else if let Some(rest) = trimmed.strip_prefix("Janky frames:") {
+            if let Some(num_str) = rest.trim().split_whitespace().next() {
+                if let Ok(v) = num_str.parse::<u64>() {
+                    info.janky_frames = v;
+                }
+            }
+        }
+    }
+    info
 }
 
 pub fn parse_database_list(output: &str) -> Vec<String> {
@@ -918,5 +951,37 @@ Inter-|   Receive                                                |  Transmit
         let (rx, tx) = parse_net_dev(output);
         assert_eq!(rx, 0);
         assert_eq!(tx, 0);
+    }
+
+    #[test]
+    fn parses_gfx_info() {
+        let output = "\
+Profile data in ms:
+
+Total frames rendered: 12345
+Janky frames: 123 (1.00%)
+50th percentile: 5ms
+";
+        let info = parse_gfx_info(output);
+        assert_eq!(info.total_frames, 12345);
+        assert_eq!(info.janky_frames, 123);
+    }
+
+    #[test]
+    fn gfx_info_empty_output() {
+        let info = parse_gfx_info("");
+        assert_eq!(info.total_frames, 0);
+        assert_eq!(info.janky_frames, 0);
+    }
+
+    #[test]
+    fn gfx_info_zero_frames() {
+        let output = "\
+Total frames rendered: 0
+Janky frames: 0 (0.00%)
+";
+        let info = parse_gfx_info(output);
+        assert_eq!(info.total_frames, 0);
+        assert_eq!(info.janky_frames, 0);
     }
 }
