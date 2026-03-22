@@ -2,14 +2,14 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{List, ListItem},
+    widgets::{Block, BorderType, Borders, List, ListItem},
     Frame,
 };
 
 use crate::files::{FilesState, FlatEntry};
 use crate::panel;
 use crate::theme;
-use crate::ui::panel_block;
+use crate::ui::panel_title;
 
 pub fn render_files_panel(
     frame: &mut Frame,
@@ -17,7 +17,44 @@ pub fn render_files_panel(
     focused: bool,
     state: &FilesState,
 ) {
-    let block = panel_block(panel::FILES, focused);
+    let color = panel::by_number(panel::FILES).border_color(focused);
+    let accent = Style::new().fg(panel::by_number(panel::FILES).bright_color);
+    let muted = Style::new().fg(theme::MUTED);
+    let border_fg = Style::new().fg(color);
+
+    let pull_flash_active = state
+        .pull_flash
+        .as_ref()
+        .is_some_and(|(_, t)| t.elapsed() < std::time::Duration::from_secs(2));
+
+    let bottom_spans = if focused {
+        let mut spans = vec![
+            Span::styled(" p", accent),
+            Span::styled("ull ", muted),
+            Span::styled("───", border_fg),
+            Span::styled(" o", accent),
+            Span::styled("pen ", muted),
+            Span::styled("───", border_fg),
+            Span::styled(" esc", accent),
+            Span::styled(" back ", muted),
+        ];
+        if pull_flash_active {
+            spans.insert(0, Span::styled("───", border_fg));
+            spans.insert(0, Span::styled(" pulled! ", Style::new().fg(theme::GREEN)));
+        }
+        Some(spans)
+    } else {
+        None
+    };
+
+    let mut block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(panel_title(panel::FILES, focused))
+        .border_style(border_fg);
+    if let Some(spans) = bottom_spans {
+        block = block.title_bottom(Line::from(spans));
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
