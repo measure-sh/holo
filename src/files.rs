@@ -28,12 +28,19 @@ pub enum ToggleResult {
     Collapse,
 }
 
+#[derive(Clone, PartialEq)]
+pub enum FileConfirm {
+    Pull(String),
+    Open(String),
+}
+
 pub struct FilesState {
     pub package: String,
     pub root_children: Option<Vec<FileNode>>,
     pub selected_index: usize,
     pub error: Option<String>,
-    pub pull_flash: Option<(String, std::time::Instant)>,
+    pub confirming: Option<FileConfirm>,
+    pub action_flash: Option<(&'static str, std::time::Instant)>,
 }
 
 impl FilesState {
@@ -43,7 +50,8 @@ impl FilesState {
             root_children: None,
             selected_index: 0,
             error: None,
-            pull_flash: None,
+            confirming: None,
+            action_flash: None,
         }
     }
 

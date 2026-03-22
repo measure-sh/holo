@@ -162,9 +162,10 @@ impl DataSources {
         if let Some(rx) = &self.files_pull_rx {
             if let Ok(result) = rx.try_recv() {
                 match result {
-                    Ok((dest, _)) => {
-                        app.files_state_mut().pull_flash =
-                            Some((dest, std::time::Instant::now()));
+                    Ok((_, opened)) => {
+                        let label = if opened { "opened!" } else { "pulled!" };
+                        app.files_state_mut().action_flash =
+                            Some((label, std::time::Instant::now()));
                     }
                     Err(e) => app.files_state_mut().error = Some(e),
                 }

@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::database::DatabaseState;
-use crate::files::{FilesState, ToggleResult};
+use crate::files::{FileConfirm, FilesState, ToggleResult};
 use crate::logcat_state::LogcatState;
 use crate::panel;
 use crate::permissions::PermissionsState;
@@ -190,6 +190,22 @@ impl App {
             }
         }
 
+        if self.files_state.confirming.is_some() {
+            return match code {
+                KeyCode::Enter => {
+                    let confirm = self.files_state.confirming.take().unwrap();
+                    match confirm {
+                        FileConfirm::Pull(path) => Action::PullFile(path),
+                        FileConfirm::Open(path) => Action::OpenFile(path),
+                    }
+                }
+                _ => {
+                    self.files_state.confirming = None;
+                    Action::None
+                }
+            };
+        }
+
         if self.focused == Some(panel::FILES) {
             match code {
                 KeyCode::Up => {
@@ -217,7 +233,7 @@ impl App {
                 KeyCode::Char('p') => {
                     if !self.files_state.selected_is_dir() {
                         if let Some(path) = self.files_state.selected_path() {
-                            return Action::PullFile(path);
+                            self.files_state.confirming = Some(FileConfirm::Pull(path));
                         }
                     }
                     return Action::None;
@@ -225,7 +241,7 @@ impl App {
                 KeyCode::Char('o') => {
                     if !self.files_state.selected_is_dir() {
                         if let Some(path) = self.files_state.selected_path() {
-                            return Action::OpenFile(path);
+                            self.files_state.confirming = Some(FileConfirm::Open(path));
                         }
                     }
                     return Action::None;

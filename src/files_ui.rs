@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::files::{FilesState, FlatEntry};
+use crate::files::{FileConfirm, FilesState, FlatEntry};
 use crate::panel;
 use crate::theme;
 use crate::ui::panel_title;
@@ -22,13 +22,34 @@ pub fn render_files_panel(
     let muted = Style::new().fg(theme::MUTED);
     let border_fg = Style::new().fg(color);
 
-    let pull_flash_active = state
-        .pull_flash
+    let flash_active = state
+        .action_flash
         .as_ref()
-        .is_some_and(|(_, t)| t.elapsed() < std::time::Duration::from_secs(2));
+        .is_some_and(|(_, t)| t.elapsed() < std::time::Duration::from_secs(1));
 
-    let bottom_spans = if focused {
-        let mut spans = vec![
+    let confirm_label = match &state.confirming {
+        Some(FileConfirm::Pull(_)) => Some("pull?"),
+        Some(FileConfirm::Open(_)) => Some("open?"),
+        None => None,
+    };
+
+    let bottom_spans = if let Some(label) = confirm_label {
+        Some(vec![
+            Span::styled(format!(" {label} "), Style::new().fg(theme::YELLOW)),
+            Span::styled("↩", accent),
+            Span::styled(" yes ", muted),
+            Span::styled("───", border_fg),
+            Span::styled(" any", accent),
+            Span::styled(" cancel ", muted),
+        ])
+    } else if focused {
+        let mut spans = Vec::new();
+        if flash_active {
+            let msg = state.action_flash.as_ref().unwrap().0;
+            spans.push(Span::styled(format!(" {msg} "), Style::new().fg(theme::GREEN)));
+            spans.push(Span::styled("───", border_fg));
+        }
+        spans.extend([
             Span::styled(" p", accent),
             Span::styled("ull ", muted),
             Span::styled("───", border_fg),
@@ -37,11 +58,7 @@ pub fn render_files_panel(
             Span::styled("───", border_fg),
             Span::styled(" esc", accent),
             Span::styled(" back ", muted),
-        ];
-        if pull_flash_active {
-            spans.insert(0, Span::styled("───", border_fg));
-            spans.insert(0, Span::styled(" pulled! ", Style::new().fg(theme::GREEN)));
-        }
+        ]);
         Some(spans)
     } else {
         None
