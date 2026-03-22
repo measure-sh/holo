@@ -23,9 +23,6 @@ pub fn render_logcat_panel(
     logcat_lines: &[String],
     app: &mut App,
 ) {
-    let filter_tag = app.logcat_state().filter.tag.clone();
-    let filter_search = app.logcat_state().filter.search.clone();
-    let filter_level = app.logcat_state().filter.level;
     let input_mode = app.input_mode();
 
     let copied_active = app.logcat_state().copied_at
@@ -43,20 +40,10 @@ pub fn render_logcat_panel(
         .border_style(Style::new().fg(color));
     let inner = block.inner(area);
 
+    let filter = &app.logcat_state().filter;
     let filtered: Vec<&String> = logcat_lines
         .iter()
-        .filter(|line| {
-            let Some(parsed) = logcat::parse(line) else {
-                return true;
-            };
-            let tag_ok = filter_tag.is_empty()
-                || parsed.tag.to_lowercase().contains(&filter_tag.to_lowercase());
-            let search_ok = filter_search.is_empty()
-                || line.to_lowercase().contains(&filter_search.to_lowercase());
-            let level_ok =
-                filter_level.is_none() || Some(parsed.level) == filter_level;
-            tag_ok && search_ok && level_ok
-        })
+        .filter(|line| filter.matches(line))
         .collect();
 
     let visible_height = inner.height as usize;

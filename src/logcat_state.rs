@@ -22,6 +22,18 @@ impl LogcatFilter {
             level: None,
         }
     }
+
+    pub fn matches(&self, line: &str) -> bool {
+        let Some(parsed) = crate::logcat::parse(line) else {
+            return true;
+        };
+        let tag_ok = self.tag.is_empty()
+            || parsed.tag.to_lowercase().contains(&self.tag.to_lowercase());
+        let search_ok = self.search.is_empty()
+            || line.to_lowercase().contains(&self.search.to_lowercase());
+        let level_ok = self.level.is_none() || Some(parsed.level) == self.level;
+        tag_ok && search_ok && level_ok
+    }
 }
 
 pub struct LogcatState {
@@ -141,5 +153,35 @@ mod tests {
         state.scroll = 0;
         state.adjust_scroll_for_new_lines(3);
         assert_eq!(state.scroll, 0);
+    }
+
+    #[test]
+    fn filter_matches_all_by_default() {
+        let filter = LogcatFilter::new();
+        assert!(filter.matches("01-01 12:00:00.000  1234  5678 D MyTag   : hello"));
+    }
+
+    #[test]
+    fn filter_by_level() {
+        let mut filter = LogcatFilter::new();
+        filter.level = Some('E');
+        assert!(!filter.matches("01-01 12:00:00.000  1234  5678 D MyTag   : hello"));
+        assert!(filter.matches("01-01 12:00:00.000  1234  5678 E MyTag   : error"));
+    }
+
+    #[test]
+    fn filter_by_tag() {
+        let mut filter = LogcatFilter::new();
+        filter.tag = "MyTag".into();
+        assert!(filter.matches("01-01 12:00:00.000  1234  5678 D MyTag   : hello"));
+        assert!(!filter.matches("01-01 12:00:00.000  1234  5678 D Other   : hello"));
+    }
+
+    #[test]
+    fn filter_by_search() {
+        let mut filter = LogcatFilter::new();
+        filter.search = "error".into();
+        assert!(filter.matches("01-01 12:00:00.000  1234  5678 D MyTag   : some error here"));
+        assert!(!filter.matches("01-01 12:00:00.000  1234  5678 D MyTag   : hello world"));
     }
 }

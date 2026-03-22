@@ -252,7 +252,13 @@ fn run_app(
                         copy_to_clipboard(&text);
                     }
                     Action::CopyLogcat => {
-                        let text = data.logcat_lines.join("\n");
+                        let filter = &app.logcat_state().filter;
+                        let text: String = data.logcat_lines
+                            .iter()
+                            .filter(|line| filter.matches(line))
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join("\n");
                         copy_to_clipboard(&text);
                     }
                     Action::CopyText(text) => {
