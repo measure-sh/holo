@@ -13,6 +13,8 @@ pub struct MonitorSample {
     pub cpu_percent: f32,
     pub net_rx_bytes: u64,
     pub net_tx_bytes: u64,
+    pub total_frames: u64,
+    pub janky_frames: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,6 +28,8 @@ pub struct MonitorState {
     pub history: Vec<MonitorSample>,
     pub download_history: Vec<u64>,
     pub upload_history: Vec<u64>,
+    pub frame_count_history: Vec<u64>,
+    pub janky_percent_history: Vec<f32>,
 }
 
 impl MonitorState {
@@ -34,6 +38,8 @@ impl MonitorState {
             history: Vec::new(),
             download_history: Vec::new(),
             upload_history: Vec::new(),
+            frame_count_history: Vec::new(),
+            janky_percent_history: Vec::new(),
         }
     }
 
@@ -41,6 +47,15 @@ impl MonitorState {
         if let Some(prev) = self.history.last() {
             self.download_history.push(sample.net_rx_bytes.saturating_sub(prev.net_rx_bytes));
             self.upload_history.push(sample.net_tx_bytes.saturating_sub(prev.net_tx_bytes));
+
+            let frame_delta = sample.total_frames.saturating_sub(prev.total_frames);
+            let jank_delta = sample.janky_frames.saturating_sub(prev.janky_frames);
+            self.frame_count_history.push(frame_delta);
+            self.janky_percent_history.push(if frame_delta > 0 {
+                jank_delta as f32 / frame_delta as f32 * 100.0
+            } else {
+                0.0
+            });
         }
         self.history.push(sample);
         if self.history.len() > MAX_SAMPLES {
@@ -51,6 +66,12 @@ impl MonitorState {
         }
         if self.upload_history.len() > MAX_SAMPLES {
             self.upload_history.remove(0);
+        }
+        if self.frame_count_history.len() > MAX_SAMPLES {
+            self.frame_count_history.remove(0);
+        }
+        if self.janky_percent_history.len() > MAX_SAMPLES {
+            self.janky_percent_history.remove(0);
         }
     }
 
@@ -204,6 +225,51 @@ mod tests {
         });
         assert_eq!(state.download_history, vec![5000]);
         assert_eq!(state.upload_history, vec![2500]);
+    }
+
+    #[test]
+    fn frame_history_computes_deltas() {
+        let mut state = MonitorState::new();
+        state.push(MonitorSample {
+            total_frames: 100,
+            janky_frames: 10,
+            ..Default::default()
+        });
+        state.push(MonitorSample {
+            total_frames: 200,
+            janky_frames: 30,
+            ..Default::default()
+        });
+        assert_eq!(state.frame_count_history, vec![100]);
+        assert_eq!(state.janky_percent_history, vec![20.0]);
+    }
+
+    #[test]
+    fn frame_history_zero_delta_no_panic() {
+        let mut state = MonitorState::new();
+        state.push(MonitorSample {
+            total_frames: 50,
+            janky_frames: 5,
+            ..Default::default()
+        });
+        state.push(MonitorSample {
+            total_frames: 50,
+            janky_frames: 5,
+            ..Default::default()
+        });
+        assert_eq!(state.frame_count_history, vec![0]);
+        assert_eq!(state.janky_percent_history, vec![0.0]);
+    }
+
+    #[test]
+    fn frame_history_empty_with_single_sample() {
+        let mut state = MonitorState::new();
+        state.push(MonitorSample {
+            total_frames: 100,
+            ..Default::default()
+        });
+        assert!(state.frame_count_history.is_empty());
+        assert!(state.janky_percent_history.is_empty());
     }
 
     #[test]
