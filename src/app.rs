@@ -140,7 +140,7 @@ impl App {
                     }
                     return Action::None;
                 }
-                KeyCode::Char('r') => {
+                KeyCode::Char('r') if self.db_state.selected_db.is_some() => {
                     self.db_state.reset();
                     return Action::ResetDb;
                 }
@@ -822,12 +822,12 @@ mod tests {
     }
 
     #[test]
-    fn r_resets_db_from_list_view() {
+    fn r_ignored_in_db_list_view() {
         let mut app = App::new();
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(KeyCode::Char('d'));
-        assert!(matches!(app.handle_key(KeyCode::Char('r')), Action::ResetDb));
-        assert!(app.db_state().databases.is_empty());
+        assert!(matches!(app.handle_key(KeyCode::Char('r')), Action::None));
+        assert!(!app.db_state().databases.is_empty());
     }
 
     #[test]

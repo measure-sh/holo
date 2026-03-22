@@ -162,9 +162,6 @@ pub fn render_database_panel(
             Line::from(vec![
                 Span::styled(" p", accent),
                 Span::styled("ull ", muted),
-                Span::styled("───", border_fg),
-                Span::styled(" r", accent),
-                Span::styled("eset ", muted),
             ])
         } else {
             Line::default()
