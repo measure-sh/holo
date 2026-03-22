@@ -197,31 +197,23 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
 
     let accent = panel::by_number(panel::COMMANDS).bright_color;
 
+    let mut bounds_spans = vec![
+        Span::styled("b", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("ounds", Style::new().fg(theme::MUTED)),
+    ];
     if app.layout_bounds() {
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled("b", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("ounds ", Style::new().fg(theme::MUTED)),
-            Span::styled("●", Style::new().fg(accent)),
-        ])));
-    } else {
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled("b", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("ounds", Style::new().fg(theme::MUTED)),
-        ])));
+        bounds_spans.push(Span::styled(" ●", Style::new().fg(accent)));
     }
+    items.push(ListItem::new(Line::from(bounds_spans)));
 
+    let mut airplane_spans = vec![
+        Span::styled("a", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("irplane", Style::new().fg(theme::MUTED)),
+    ];
     if app.airplane_mode() {
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled("a", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("irplane ", Style::new().fg(theme::MUTED)),
-            Span::styled("●", Style::new().fg(accent)),
-        ])));
-    } else {
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled("a", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("irplane", Style::new().fg(theme::MUTED)),
-        ])));
+        airplane_spans.push(Span::styled(" ●", Style::new().fg(accent)));
     }
+    items.push(ListItem::new(Line::from(airplane_spans)));
 
     let list = List::new(items);
     frame.render_widget(list, inner);
