@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::List,
+    widgets::{List, ListItem},
     Frame,
 };
 
@@ -123,11 +123,16 @@ fn net_line(label: &str, throughput: u64, color: ratatui::style::Color) -> Line<
     ])
 }
 
-fn section_label(label: &str) -> Line<'static> {
-    Line::from(Span::styled(
+fn section_header(label: &str, first: bool) -> ListItem<'static> {
+    let label_line = Line::from(Span::styled(
         format!(" {}", label),
         Style::new().fg(theme::MUTED),
-    ))
+    ));
+    if first {
+        ListItem::new(vec![label_line])
+    } else {
+        ListItem::new(vec![Line::raw(""), label_line])
+    }
 }
 
 pub fn render_monitor_panel(
@@ -154,21 +159,18 @@ pub fn render_monitor_panel(
     let cpu_data = state.sparkline_f32(|m| m.cpu_percent);
     let (rx_throughput, tx_throughput) = state.net_throughput();
 
-    let mut items = vec![
-        section_label("── memory"),
-        mem_line("Total PSS", &total_data, state.trend_u64(|m| m.total_pss_kb), spark_width),
-        mem_line("Java Heap", &java_data, state.trend_u64(|m| m.java_heap_kb), spark_width),
-        mem_line("Native", &native_data, state.trend_u64(|m| m.native_heap_kb), spark_width),
-        Line::raw(" "),
-        section_label("── cpu"),
-        cpu_line(&cpu_data, spark_width),
-        Line::raw(" "),
-        section_label("── network"),
-        net_line("↓ rx", rx_throughput, theme::CYAN),
-        net_line("↑ tx", tx_throughput, theme::YELLOW),
+    let items: Vec<ListItem> = vec![
+        section_header("── memory", true),
+        ListItem::new(mem_line("Total PSS", &total_data, state.trend_u64(|m| m.total_pss_kb), spark_width)),
+        ListItem::new(mem_line("Java Heap", &java_data, state.trend_u64(|m| m.java_heap_kb), spark_width)),
+        ListItem::new(mem_line("Native", &native_data, state.trend_u64(|m| m.native_heap_kb), spark_width)),
+        section_header("── cpu", false),
+        ListItem::new(cpu_line(&cpu_data, spark_width)),
+        section_header("── network", false),
+        ListItem::new(net_line("↓ rx", rx_throughput, theme::CYAN)),
+        ListItem::new(net_line("↑ tx", tx_throughput, theme::YELLOW)),
     ];
 
-    items.truncate(inner.height as usize);
     frame.render_widget(List::new(items), inner);
 }
 
