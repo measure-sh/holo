@@ -185,12 +185,10 @@ fn run_app(
                     }
                     Action::ChangeDevice(d) => {
                         app.toolbar_mut().device = Some(d.clone());
-                        if let Some(p) = &package {
-                            data = Some(build_data(&adb, &d, p, &mut app));
-                            title = build_title(&d, p, data.as_ref().unwrap());
-                        } else if app.toolbar().last_package.is_some() {
-                            packages_rx = Some(spawn_fetch_packages(&adb, &d.serial));
-                        }
+                        app.toolbar_mut().package = None;
+                        data = None;
+                        title = String::new();
+                        packages_rx = Some(spawn_fetch_packages(&adb, &d.serial));
                     }
                     Action::ChangeApp(p) => {
                         app.toolbar_mut().package = Some(p.clone());
