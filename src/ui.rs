@@ -153,21 +153,36 @@ fn build_toolbar_title(app: &App) -> Line<'_> {
     let device_label = tb.device_label();
     let app_label = tb.app_label();
 
-    let dot_color = if has_device { theme::GREEN } else { theme::MUTED };
     let device_fg = if has_device { theme::FG } else { theme::MUTED };
-    let app_dot_color = if has_app { theme::GREEN } else { theme::MUTED };
+    let device_bg = if has_device { theme::SURFACE } else { theme::BG };
+    let device_dot_color = if has_device { theme::GREEN } else { theme::MUTED };
     let app_fg = if has_app { theme::FG } else { theme::MUTED };
+    let app_bg = if has_app { theme::SURFACE } else { theme::BG };
+    let app_dot_color = if has_app { theme::GREEN } else { theme::MUTED };
 
     Line::from(vec![
         Span::styled(" F1", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" ", Style::new()),
-        Span::styled(if has_device { "●" } else { "○" }, Style::new().fg(dot_color)),
-        Span::styled(format!(" {device_label} \u{25BE}"), Style::new().fg(device_fg)),
-        Span::styled("  \u{2502}  ", Style::new().fg(theme::SURFACE)),
+        Span::styled(" ", Style::new().bg(device_bg)),
+        Span::styled(
+            if has_device { "● " } else { "○ " },
+            Style::new().fg(device_dot_color).bg(device_bg),
+        ),
+        Span::styled(
+            format!("{device_label} \u{25BE} "),
+            Style::new().fg(device_fg).bg(device_bg),
+        ),
+        Span::styled("  ", Style::new()),
         Span::styled("F2", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" ", Style::new().bg(app_bg)),
+        Span::styled(
+            if has_app { "● " } else { "○ " },
+            Style::new().fg(app_dot_color).bg(app_bg),
+        ),
+        Span::styled(
+            format!("{app_label} \u{25BE} "),
+            Style::new().fg(app_fg).bg(app_bg),
+        ),
         Span::styled(" ", Style::new()),
-        Span::styled(if has_app { "●" } else { "○" }, Style::new().fg(app_dot_color)),
-        Span::styled(format!(" {app_label} \u{25BE} "), Style::new().fg(app_fg)),
     ])
 }
 
