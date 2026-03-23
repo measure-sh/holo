@@ -9,9 +9,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, InputMode};
+use crate::app::App;
 use crate::logcat;
-use crate::logcat_state::LogcatFilter;
+use crate::logcat_state::{LogcatEditTarget, LogcatFilter};
 use crate::panel;
 use crate::theme;
 use crate::ui::panel_title;
@@ -23,7 +23,7 @@ pub fn render_logcat_panel(
     logcat_lines: &[String],
     app: &mut App,
 ) {
-    let input_mode = app.input_mode();
+    let editing = app.logcat_state().editing;
 
     let copied_active = app.logcat_state().copied_at
         .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
@@ -38,7 +38,7 @@ pub fn render_logcat_panel(
         .title(panel_title(panel::LOGCAT, focused))
         .border_style(Style::new().fg(color));
     if focused {
-        block = block.title_bottom(logcat_filter_bar(&app.logcat_state().filter, input_mode, copied_active));
+        block = block.title_bottom(logcat_filter_bar(&app.logcat_state().filter, editing, copied_active));
     }
     let inner = block.inner(area);
 
@@ -92,7 +92,7 @@ pub fn render_logcat_panel(
     }
 }
 
-fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, copied_active: bool) -> Line<'static> {
+fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, copied_active: bool) -> Line<'static> {
     let accent = Style::new().fg(theme::KEY_HINT);
     let muted = Style::new().fg(theme::MUTED);
     let border = Style::new().fg(panel::by_number(panel::LOGCAT).border_color(true));
@@ -104,14 +104,14 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, copied_active
     } else {
         filter.tag.clone()
     };
-    let tag_display = match input_mode {
-        InputMode::EditingTag => tag_value.replace('*', ""),
+    let tag_display = match editing {
+        Some(LogcatEditTarget::Tag) => tag_value.replace('*', ""),
         _ => tag_value,
     };
     spans.push(Span::styled(" t", accent));
     spans.push(Span::styled("ag:", muted));
     spans.push(Span::styled(format!("{}", tag_display), Style::new().fg(theme::FG)));
-    if matches!(input_mode, InputMode::EditingTag) {
+    if matches!(editing, Some(LogcatEditTarget::Tag)) {
         spans.push(Span::styled("_", Style::new().fg(theme::FG)));
         spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
     } else {
@@ -125,8 +125,8 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, copied_active
     } else {
         filter.search.clone()
     };
-    let search_display = match input_mode {
-        InputMode::EditingSearch => search_value.clone(),
+    let search_display = match editing {
+        Some(LogcatEditTarget::Search) => search_value.clone(),
         _ => {
             if search_value.is_empty() {
                 "*".to_string()
@@ -138,7 +138,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, copied_active
     spans.push(Span::styled(" s", accent));
     spans.push(Span::styled("earch:", muted));
     spans.push(Span::styled(format!("{}", search_display), Style::new().fg(theme::FG)));
-    if matches!(input_mode, InputMode::EditingSearch) {
+    if matches!(editing, Some(LogcatEditTarget::Search)) {
         spans.push(Span::styled("_", Style::new().fg(theme::FG)));
         spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
     } else {

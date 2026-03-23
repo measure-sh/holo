@@ -31,6 +31,7 @@ pub enum Action {
     FetchDevices,
     FetchApps,
     Noop,
+    Unfocus,
     OpenApp,
     KillApp,
     ClearData,
@@ -59,8 +60,6 @@ pub enum Action {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum InputMode {
     Normal,
-    EditingTag,
-    EditingSearch,
     EditingQuery,
 }
 
@@ -114,25 +113,11 @@ impl App {
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
         let code = key.code;
+        if self.logcat_state.editing.is_some() {
+            return self.logcat_state.handle_key(code).unwrap_or(Action::Noop);
+        }
+
         match self.input_mode {
-            InputMode::EditingTag => {
-                match code {
-                    KeyCode::Char(c) => self.logcat_state.filter.tag.push(c),
-                    KeyCode::Backspace => { self.logcat_state.filter.tag.pop(); }
-                    KeyCode::Enter | KeyCode::Esc => self.input_mode = InputMode::Normal,
-                    _ => {}
-                }
-                return Action::Noop;
-            }
-            InputMode::EditingSearch => {
-                match code {
-                    KeyCode::Char(c) => self.logcat_state.filter.search.push(c),
-                    KeyCode::Backspace => { self.logcat_state.filter.search.pop(); }
-                    KeyCode::Enter | KeyCode::Esc => self.input_mode = InputMode::Normal,
-                    _ => {}
-                }
-                return Action::Noop;
-            }
             InputMode::EditingQuery => {
                 match code {
                     KeyCode::Enter => {
@@ -395,52 +380,12 @@ impl App {
         }
 
         if self.focused == Some(panel::LOGCAT) {
-            match code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.logcat_state.scroll += 1;
-                    return Action::Noop;
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.logcat_state.scroll = self.logcat_state.scroll.saturating_sub(1);
-                    return Action::Noop;
-                }
-                KeyCode::Char(' ') => {
-                    self.logcat_state.scroll += 20;
-                    return Action::Noop;
-                }
-                KeyCode::Esc if self.logcat_state.scroll > 0 => {
-                    self.logcat_state.scroll = 0;
-                    return Action::Noop;
-                }
-                KeyCode::Esc => {
+            if let Some(action) = self.logcat_state.handle_key(code) {
+                if matches!(action, Action::Unfocus) {
                     self.focused = None;
                     return Action::Noop;
                 }
-                KeyCode::Char('t') => {
-                    self.input_mode = InputMode::EditingTag;
-                    return Action::Noop;
-                }
-                KeyCode::Char('s') => {
-                    self.input_mode = InputMode::EditingSearch;
-                    return Action::Noop;
-                }
-                KeyCode::Right => {
-                    self.logcat_state.cycle_level(true);
-                    return Action::Noop;
-                }
-                KeyCode::Left => {
-                    self.logcat_state.cycle_level(false);
-                    return Action::Noop;
-                }
-                KeyCode::Char('c') => {
-                    self.logcat_state.copied_at = Some(std::time::Instant::now());
-                    return Action::CopyLogcat;
-                }
-                KeyCode::Char('r') => {
-                    self.logcat_state.reset();
-                    return Action::ResetLogcat;
-                }
-                _ => {}
+                return action;
             }
         }
 
@@ -543,6 +488,7 @@ impl App {
             self.focused = Some(n);
         }
         self.input_mode = InputMode::Normal;
+        self.logcat_state.editing = None;
         self.commands_filter.clear();
         self.commands_cursor = 0;
     }
@@ -676,6 +622,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::logcat_state;
     use crossterm::event::KeyModifiers;
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -819,7 +766,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
-        assert_eq!(app.input_mode(), InputMode::EditingTag);
+        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Tag));
         assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
     }
 
@@ -828,7 +775,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
-        assert_eq!(app.input_mode(), InputMode::EditingSearch);
+        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
         assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
     }
 
@@ -905,9 +852,9 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
-        assert_eq!(app.input_mode(), InputMode::EditingSearch);
+        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
         app.handle_key(key(KeyCode::Enter));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert_eq!(app.logcat_state().editing, None);
     }
 
     #[test]
@@ -1270,10 +1217,10 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
-        assert_eq!(app.input_mode(), InputMode::EditingTag);
+        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Tag));
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('l')));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert_eq!(app.logcat_state().editing, None);
     }
 
     #[test]
@@ -1281,10 +1228,10 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
-        assert_eq!(app.input_mode(), InputMode::EditingSearch);
+        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('l')));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert_eq!(app.logcat_state().editing, None);
     }
 
     #[test]

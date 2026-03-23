@@ -1,3 +1,13 @@
+use crossterm::event::KeyCode;
+
+use crate::app::Action;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LogcatEditTarget {
+    Tag,
+    Search,
+}
+
 const LEVELS: [Option<char>; 7] = [
     None,
     Some('V'),
@@ -40,6 +50,7 @@ pub struct LogcatState {
     pub filter: LogcatFilter,
     pub scroll: usize,
     pub copied_at: Option<std::time::Instant>,
+    pub editing: Option<LogcatEditTarget>,
 }
 
 impl LogcatState {
@@ -48,6 +59,70 @@ impl LogcatState {
             filter: LogcatFilter::new(),
             scroll: 0,
             copied_at: None,
+            editing: None,
+        }
+    }
+
+    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+        if let Some(target) = self.editing {
+            match code {
+                KeyCode::Char(c) => match target {
+                    LogcatEditTarget::Tag => self.filter.tag.push(c),
+                    LogcatEditTarget::Search => self.filter.search.push(c),
+                },
+                KeyCode::Backspace => match target {
+                    LogcatEditTarget::Tag => { self.filter.tag.pop(); }
+                    LogcatEditTarget::Search => { self.filter.search.pop(); }
+                },
+                KeyCode::Enter | KeyCode::Esc => self.editing = None,
+                _ => {}
+            }
+            return Some(Action::Noop);
+        }
+
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.scroll += 1;
+                Some(Action::Noop)
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.scroll = self.scroll.saturating_sub(1);
+                Some(Action::Noop)
+            }
+            KeyCode::Char(' ') => {
+                self.scroll += 20;
+                Some(Action::Noop)
+            }
+            KeyCode::Esc if self.scroll > 0 => {
+                self.scroll = 0;
+                Some(Action::Noop)
+            }
+            KeyCode::Esc => Some(Action::Unfocus),
+            KeyCode::Char('t') => {
+                self.editing = Some(LogcatEditTarget::Tag);
+                Some(Action::Noop)
+            }
+            KeyCode::Char('s') => {
+                self.editing = Some(LogcatEditTarget::Search);
+                Some(Action::Noop)
+            }
+            KeyCode::Right => {
+                self.cycle_level(true);
+                Some(Action::Noop)
+            }
+            KeyCode::Left => {
+                self.cycle_level(false);
+                Some(Action::Noop)
+            }
+            KeyCode::Char('c') => {
+                self.copied_at = Some(std::time::Instant::now());
+                Some(Action::CopyLogcat)
+            }
+            KeyCode::Char('r') => {
+                self.reset();
+                Some(Action::ResetLogcat)
+            }
+            _ => None,
         }
     }
 
