@@ -483,6 +483,37 @@ impl Adb for RealAdb {
         Ok(addr)
     }
 
+    fn get_disk_usage(&self, serial: &str, package: &str) -> Result<(u64, u64)> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "run-as", package, "du", "-s", ".", "./cache"])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("du failed: {stderr}");
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_du_output(&stdout))
+    }
+
+}
+
+fn parse_du_output(output: &str) -> (u64, u64) {
+    let mut data_kb = 0u64;
+    let mut cache_kb = 0u64;
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 2 {
+            if let Ok(size) = parts[0].trim().parse::<u64>() {
+                let path = parts[1].trim();
+                if path == "./cache" {
+                    cache_kb = size;
+                } else if path == "." {
+                    data_kb = size;
+                }
+            }
+        }
+    }
+    (data_kb, cache_kb)
 }
 
 fn parse_device_ip(output: &str) -> Option<String> {
@@ -1068,5 +1099,22 @@ Janky frames: 10 (2.00%)
     fn device_ip_none_when_only_cellular() {
         let output = "100.109.184.96/27 dev rmnet_data1 proto kernel scope link src 100.109.184.112\n";
         assert_eq!(parse_device_ip(output), None);
+    }
+
+    #[test]
+    fn parses_du_output() {
+        let output = "1234\t./cache\n5678\t.\n";
+        assert_eq!(parse_du_output(output), (5678, 1234));
+    }
+
+    #[test]
+    fn parses_du_output_no_cache() {
+        let output = "5678\t.\n";
+        assert_eq!(parse_du_output(output), (5678, 0));
+    }
+
+    #[test]
+    fn parses_du_output_empty() {
+        assert_eq!(parse_du_output(""), (0, 0));
     }
 }

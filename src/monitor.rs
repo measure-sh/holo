@@ -12,6 +12,8 @@ pub struct MonitorSample {
     pub total_frames: u64,
     pub slow_frames: u64,
     pub frozen_frames: u64,
+    pub data_kb: u64,
+    pub cache_kb: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -114,6 +116,7 @@ pub fn spawn_poller(
                 let mem = s.spawn(|| adb.get_meminfo(&serial, &package));
                 let cpu = s.spawn(|| adb.get_cpu_usage(&serial, &package));
                 let gfx = s.spawn(|| adb.get_gfx_info(&serial, &package));
+                let disk = s.spawn(|| adb.get_disk_usage(&serial, &package));
 
                 if let Ok(Ok(mem)) = mem.join() {
                     sample.rss_kb = mem.rss_kb;
@@ -125,6 +128,10 @@ pub fn spawn_poller(
                     sample.total_frames = gfx.total_frames;
                     sample.slow_frames = gfx.slow_frames;
                     sample.frozen_frames = gfx.frozen_frames;
+                }
+                if let Ok(Ok((data, cache))) = disk.join() {
+                    sample.data_kb = data;
+                    sample.cache_kb = cache;
                 }
             });
 

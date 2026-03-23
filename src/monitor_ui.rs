@@ -203,6 +203,9 @@ pub fn render_monitor_panel(
     let rss_data = state.sparkline_u64(|m| m.rss_kb);
     let cpu_data = state.sparkline_f32(|m| m.cpu_percent);
 
+    let data_kb_data = state.sparkline_u64(|m| m.data_kb);
+    let cache_kb_data = state.sparkline_u64(|m| m.cache_kb);
+
     let items: Vec<ListItem> = vec![
         section_header("── memory", true),
         mem_item("RSS", &rss_data, state.trend_u64(|m| m.rss_kb), spark_width),
@@ -212,6 +215,9 @@ pub fn render_monitor_panel(
         percent_item("Slow", &state.slow_percent_history, theme::YELLOW, spark_width),
         percent_item("Frozen", &state.frozen_percent_history, theme::RED, spark_width),
         frames_item(&state.frame_count_history, spark_width),
+        section_header("── disk", false),
+        mem_item("Data", &data_kb_data, state.trend_u64(|m| m.data_kb), spark_width),
+        mem_item("Cache", &cache_kb_data, state.trend_u64(|m| m.cache_kb), spark_width),
     ];
 
     frame.render_widget(List::new(items), inner);
