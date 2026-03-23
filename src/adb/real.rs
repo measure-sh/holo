@@ -495,6 +495,25 @@ impl Adb for RealAdb {
         Ok(parse_du_output(&stdout))
     }
 
+    fn get_dark_mode(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "get", "secure", "ui_night_mode"])
+            .output()?;
+        let value = String::from_utf8_lossy(&output.stdout);
+        Ok(value.trim() == "2")
+    }
+
+    fn set_dark_mode(&self, serial: &str, enabled: bool) -> Result<()> {
+        let mode = if enabled { "yes" } else { "no" };
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "cmd", "uimode", "night", mode])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("cmd uimode night {mode} failed: {stderr}");
+        }
+        Ok(())
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {

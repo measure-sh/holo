@@ -41,6 +41,7 @@ pub enum Action {
     StopTrace,
     Screenshot,
     ToggleWifi,
+    ToggleDarkMode,
     WirelessAdb,
 }
 
@@ -57,6 +58,7 @@ pub struct App {
     layout_bounds: bool,
     airplane_mode: bool,
     wifi_enabled: bool,
+    dark_mode: bool,
     confirming_quit: bool,
     trace_state: TraceState,
 }
@@ -79,6 +81,7 @@ impl App {
             layout_bounds: false,
             airplane_mode: false,
             wifi_enabled: false,
+            dark_mode: false,
             confirming_quit: false,
             trace_state: TraceState::new(pkg),
         }
@@ -319,6 +322,14 @@ impl App {
 
     pub fn set_wifi_enabled(&mut self, v: bool) {
         self.wifi_enabled = v;
+    }
+
+    pub fn dark_mode(&self) -> bool {
+        self.dark_mode
+    }
+
+    pub fn set_dark_mode(&mut self, v: bool) {
+        self.dark_mode = v;
     }
 
     pub fn confirming_quit(&self) -> bool {

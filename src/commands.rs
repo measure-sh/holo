@@ -8,6 +8,7 @@ const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
     ("kill app", || Action::KillApp),
     ("wakeup device", || Action::WakeScreen),
     ("clear data", || Action::ClearData),
+    ("dark mode", || Action::ToggleDarkMode),
     ("take screenshot", || Action::Screenshot),
     ("layout bounds", || Action::ToggleLayoutBounds),
     ("wifi", || Action::ToggleWifi),

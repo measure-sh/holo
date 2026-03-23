@@ -127,6 +127,13 @@ impl DispatchContext {
                     spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_wifi_enabled(s, enabled));
                 }
             }
+            Action::ToggleDarkMode => {
+                app.set_dark_mode(!app.dark_mode());
+                if let Some(s) = &serial {
+                    let enabled = app.dark_mode();
+                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_dark_mode(s, enabled));
+                }
+            }
             Action::WirelessAdb => {
                 if let Some(s) = &serial {
                     spawn_app_action(&self.adb, s, "", |adb, s, _| adb.enable_wireless_adb(s).map(|_| ()));
@@ -276,6 +283,7 @@ pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut 
     app.set_layout_bounds(data.initial_layout_bounds);
     app.set_airplane_mode(data.initial_airplane_mode);
     app.set_wifi_enabled(data.initial_wifi_enabled);
+    app.set_dark_mode(data.initial_dark_mode);
     data
 }
 

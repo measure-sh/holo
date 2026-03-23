@@ -58,4 +58,6 @@ pub trait Adb: Send + Sync {
     fn set_wifi_enabled(&self, serial: &str, enabled: bool) -> Result<()>;
     fn enable_wireless_adb(&self, serial: &str) -> Result<String>;
     fn get_disk_usage(&self, serial: &str, package: &str) -> Result<(u64, u64)>;
+    fn get_dark_mode(&self, serial: &str) -> Result<bool>;
+    fn set_dark_mode(&self, serial: &str, enabled: bool) -> Result<()>;
 }

@@ -50,6 +50,7 @@ pub struct DataSources {
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
     pub initial_wifi_enabled: bool,
+    pub initial_dark_mode: bool,
     pub app_version: Option<(String, String)>,
 }
 
@@ -58,6 +59,7 @@ impl DataSources {
         let initial_layout_bounds = adb.get_layout_bounds(serial).unwrap_or(false);
         let initial_airplane_mode = adb.get_airplane_mode(serial).unwrap_or(false);
         let initial_wifi_enabled = adb.get_wifi_enabled(serial).unwrap_or(false);
+        let initial_dark_mode = adb.get_dark_mode(serial).unwrap_or(false);
         let app_version = adb.get_app_version(serial, package).ok();
         Self {
             battery_rx: battery::spawn_poller(adb.clone(), serial.to_string()),
@@ -96,6 +98,7 @@ impl DataSources {
             initial_layout_bounds,
             initial_airplane_mode,
             initial_wifi_enabled,
+            initial_dark_mode,
             app_version,
         }
     }
