@@ -36,7 +36,7 @@ pub const PANELS: [PanelDef; 9] = [
     PanelDef { number: 2, name: "trace",       dim_color: theme::DIM_BLUE,    bright_color: theme::ACCENT,  focus_key: Some('t') },
     PanelDef { number: 3, name: "frames",      dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
     PanelDef { number: 4, name: "disk",        dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
-    PanelDef { number: 5, name: "system",      dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
+    PanelDef { number: 5, name: "cpu & memory", dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
     PanelDef { number: 6, name: "permissions", dim_color: theme::DIM_CYAN,    bright_color: theme::CYAN,    focus_key: Some('p') },
     PanelDef { number: 7, name: "files",       dim_color: theme::DIM_MAGENTA, bright_color: theme::MAGENTA, focus_key: Some('f') },
     PanelDef { number: 8, name: "database",    dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: Some('d') },
