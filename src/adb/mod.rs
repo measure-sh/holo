@@ -8,9 +8,7 @@ use color_eyre::Result;
 
 #[derive(Debug, Clone, Default)]
 pub struct MemInfo {
-    pub total_pss_kb: u64,
-    pub java_heap_kb: u64,
-    pub native_heap_kb: u64,
+    pub rss_kb: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default)]

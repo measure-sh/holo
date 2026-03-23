@@ -300,17 +300,18 @@ impl Adb for RealAdb {
     }
 
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
+        let cmd = format!("cat /proc/$(pidof -s {})/status", package);
         let output = Command::new("adb")
-            .args(["-s", serial, "shell", "dumpsys", "meminfo", package])
+            .args(["-s", serial, "shell", &cmd])
             .output()?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("dumpsys meminfo failed: {stderr}");
+            bail!("proc status failed: {stderr}");
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_meminfo(&stdout))
+        Ok(parse_proc_status(&stdout))
     }
 
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()> {
@@ -526,41 +527,16 @@ fn parse_top_cpu(output: &str, package: &str) -> f32 {
     0.0
 }
 
-fn parse_meminfo(output: &str) -> MemInfo {
+fn parse_proc_status(output: &str) -> MemInfo {
     let mut info = MemInfo::default();
-    let mut in_summary = false;
-
     for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("App Summary") {
-            in_summary = true;
-            continue;
-        }
-        if in_summary {
-            if trimmed.starts_with("TOTAL PSS:") || trimmed.starts_with("TOTAL RSS:") {
-                if info.total_pss_kb == 0 {
-                    if let Some(val) = extract_summary_kb(trimmed) {
-                        info.total_pss_kb = val;
-                    }
-                }
-            } else if trimmed.starts_with("Java Heap:") {
-                if let Some(val) = extract_summary_kb(trimmed) {
-                    info.java_heap_kb = val;
-                }
-            } else if trimmed.starts_with("Native Heap:") {
-                if let Some(val) = extract_summary_kb(trimmed) {
-                    info.native_heap_kb = val;
-                }
+        if let Some(rest) = line.strip_prefix("VmRSS:") {
+            if let Some(val) = rest.trim().strip_suffix("kB").and_then(|s| s.trim().parse::<u64>().ok()) {
+                info.rss_kb = val;
             }
         }
     }
     info
-}
-
-fn extract_summary_kb(line: &str) -> Option<u64> {
-    line.split_whitespace()
-        .filter_map(|w| w.parse::<u64>().ok())
-        .next()
 }
 
 fn parse_gfx_info(output: &str) -> GfxInfo {
@@ -856,51 +832,29 @@ mod tests {
     }
 
     #[test]
-    fn parses_meminfo_app_summary() {
+    fn parses_proc_status_vmrss() {
         let output = "\
-Applications Memory Usage (in Kilobytes):
-Uptime: 123456 Realtime: 654321
-
-** MEMINFO in pid 12345 [com.example.app] **
-                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
-                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
-                ------   ------   ------   ------   ------   ------   ------   ------
-  Native Heap    56000    55000      100        0    58000    80000    60000    20000
-  Dalvik Heap    42000    41000      200        0    44000    50000    43000     7000
-
- App Summary
-                       Pss(KB)                        Rss(KB)
-                        ------                         ------
-           Java Heap:    42000                          44000
-         Native Heap:    56000                          58000
-                Code:     8000                          12000
-               Stack:     2000                           2500
-            Graphics:    18000                          18000
-       Private Other:     3000
-              System:     5000
-             Unknown:     1000
-
-           TOTAL PSS:   128000            TOTAL RSS:   150000
+Name:\tcom.example.app
+VmPeak:\t 2048000 kB
+VmSize:\t 1900000 kB
+VmRSS:\t  128000 kB
+VmSwap:\t       0 kB
 ";
-        let info = parse_meminfo(output);
-        assert_eq!(info.total_pss_kb, 128000);
-        assert_eq!(info.java_heap_kb, 42000);
-        assert_eq!(info.native_heap_kb, 56000);
+        let info = parse_proc_status(output);
+        assert_eq!(info.rss_kb, 128000);
     }
 
     #[test]
-    fn parses_meminfo_empty_output() {
-        let info = parse_meminfo("");
-        assert_eq!(info.total_pss_kb, 0);
-        assert_eq!(info.java_heap_kb, 0);
-        assert_eq!(info.native_heap_kb, 0);
+    fn proc_status_empty_output() {
+        let info = parse_proc_status("");
+        assert_eq!(info.rss_kb, 0);
     }
 
     #[test]
-    fn parses_meminfo_no_summary_section() {
-        let output = "some unrelated output\nNative Heap: 1000\n";
-        let info = parse_meminfo(output);
-        assert_eq!(info.total_pss_kb, 0);
+    fn proc_status_no_vmrss() {
+        let output = "Name:\tcom.example.app\nVmSize:\t 1000 kB\n";
+        let info = parse_proc_status(output);
+        assert_eq!(info.rss_kb, 0);
     }
 
     #[test]

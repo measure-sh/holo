@@ -7,9 +7,7 @@ const MAX_SAMPLES: usize = 60;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MonitorSample {
-    pub total_pss_kb: u64,
-    pub java_heap_kb: u64,
-    pub native_heap_kb: u64,
+    pub rss_kb: u64,
     pub cpu_percent: f32,
     pub total_frames: u64,
     pub janky_frames: u64,
@@ -106,9 +104,7 @@ pub fn spawn_poller(
             let mut sample = MonitorSample::default();
 
             if let Ok(mem) = adb.get_meminfo(&serial, &package) {
-                sample.total_pss_kb = mem.total_pss_kb;
-                sample.java_heap_kb = mem.java_heap_kb;
-                sample.native_heap_kb = mem.native_heap_kb;
+                sample.rss_kb = mem.rss_kb;
             }
 
             if let Ok(cpu) = adb.get_cpu_usage(&serial, &package) {
@@ -133,11 +129,9 @@ pub fn spawn_poller(
 mod tests {
     use super::*;
 
-    fn sample(total: u64, java: u64, native: u64) -> MonitorSample {
+    fn sample(rss: u64) -> MonitorSample {
         MonitorSample {
-            total_pss_kb: total,
-            java_heap_kb: java,
-            native_heap_kb: native,
+            rss_kb: rss,
             ..Default::default()
         }
     }
@@ -146,53 +140,53 @@ mod tests {
     fn push_caps_at_max_samples() {
         let mut state = MonitorState::new();
         for i in 0..70 {
-            state.push(sample(i, 0, 0));
+            state.push(sample(i));
         }
         assert_eq!(state.history.len(), MAX_SAMPLES);
-        assert_eq!(state.latest().unwrap().total_pss_kb, 69);
+        assert_eq!(state.latest().unwrap().rss_kb, 69);
     }
 
     #[test]
     fn trend_stable_with_few_samples() {
         let mut state = MonitorState::new();
-        state.push(sample(100, 0, 0));
-        state.push(sample(200, 0, 0));
-        assert_eq!(state.trend_u64(|m| m.total_pss_kb), Trend::Stable);
+        state.push(sample(100));
+        state.push(sample(200));
+        assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Stable);
     }
 
     #[test]
     fn trend_rising_when_increasing() {
         let mut state = MonitorState::new();
         for i in 0..5 {
-            state.push(sample(100 + i * 20, 0, 0));
+            state.push(sample(100 + i * 20));
         }
-        assert_eq!(state.trend_u64(|m| m.total_pss_kb), Trend::Rising);
+        assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Rising);
     }
 
     #[test]
     fn trend_falling_when_decreasing() {
         let mut state = MonitorState::new();
         for i in 0..5 {
-            state.push(sample(200 - i * 20, 0, 0));
+            state.push(sample(200 - i * 20));
         }
-        assert_eq!(state.trend_u64(|m| m.total_pss_kb), Trend::Falling);
+        assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Falling);
     }
 
     #[test]
     fn trend_stable_with_small_changes() {
         let mut state = MonitorState::new();
         for i in 0..5 {
-            state.push(sample(1000 + i, 0, 0));
+            state.push(sample(1000 + i));
         }
-        assert_eq!(state.trend_u64(|m| m.total_pss_kb), Trend::Stable);
+        assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Stable);
     }
 
     #[test]
     fn sparkline_extracts_values() {
         let mut state = MonitorState::new();
-        state.push(sample(100, 40, 50));
-        state.push(sample(120, 45, 55));
-        assert_eq!(state.sparkline_u64(|m| m.java_heap_kb), vec![40, 45]);
+        state.push(sample(100));
+        state.push(sample(120));
+        assert_eq!(state.sparkline_u64(|m| m.rss_kb), vec![100, 120]);
     }
 
     #[test]
