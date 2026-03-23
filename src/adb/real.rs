@@ -393,6 +393,47 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn take_screenshot(&self, serial: &str, dest: &std::path::Path) -> Result<()> {
+        let shell = |args: &[&str]| -> Result<()> {
+            let mut cmd_args = vec!["-s", serial, "shell"];
+            cmd_args.extend_from_slice(args);
+            let output = Command::new("adb").args(&cmd_args).output()?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                bail!("adb shell failed: {stderr}");
+            }
+            Ok(())
+        };
+
+        shell(&["settings", "put", "global", "sysui_demo_allowed", "1"])?;
+        shell(&["am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "enter"])?;
+        shell(&["am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "clock", "-e", "hhmm", "1000"])?;
+        shell(&["am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "battery", "-e", "level", "100", "-e", "plugged", "false"])?;
+        shell(&["am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "network", "-e", "wifi", "show", "-e", "level", "4"])?;
+        shell(&["am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "notifications", "-e", "visible", "false"])?;
+
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        let result = Command::new("adb")
+            .args(["-s", serial, "exec-out", "screencap", "-p"])
+            .output();
+
+        let _ = shell(&["am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "exit"]);
+
+        let output = result?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("screencap failed: {stderr}");
+        }
+
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut file = std::fs::File::create(dest)?;
+        file.write_all(&output.stdout)?;
+        Ok(())
+    }
+
 }
 
 fn parse_app_version(output: &str) -> (String, String) {

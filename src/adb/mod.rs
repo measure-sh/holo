@@ -52,4 +52,5 @@ pub trait Adb: Send + Sync {
     fn get_gfx_info(&self, serial: &str, package: &str) -> Result<GfxInfo>;
     fn start_trace(&self, serial: &str, config: &str) -> Result<()>;
     fn stop_and_pull_trace(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
+    fn take_screenshot(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
 }

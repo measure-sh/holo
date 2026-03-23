@@ -34,6 +34,7 @@ pub enum Action {
     OpenFile(String),
     StartTrace,
     StopTrace,
+    Screenshot,
 }
 
 pub enum SettingsAction {
@@ -531,6 +532,10 @@ impl App {
             KeyCode::Char('a') => {
                 self.airplane_mode = !self.airplane_mode;
                 Action::ToggleAirplaneMode
+            }
+            KeyCode::Char('x') => {
+                self.command_flash = Some((2, std::time::Instant::now()));
+                Action::Screenshot
             }
             KeyCode::Char(c @ '1'..='7') => {
                 self.toggle_visibility(c as u8 - b'0');

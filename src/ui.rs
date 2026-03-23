@@ -16,9 +16,10 @@ use crate::panel;
 use crate::permissions_ui;
 use crate::theme;
 
-const COMMAND_LABELS: [&str; 2] = [
+const COMMAND_LABELS: [&str; 3] = [
     "open app",
     "wake screen",
+    "x screenshot",
 ];
 
 pub const SUPERSCRIPT_DIGITS: [char; 7] = [

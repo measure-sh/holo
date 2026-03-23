@@ -233,6 +233,21 @@ fn run_app(
                             adb.set_airplane_mode(s, enabled)
                         });
                     }
+                    Action::Screenshot => {
+                        let adb = adb.clone();
+                        let serial = device.serial.clone();
+                        let package = package.to_string();
+                        std::thread::spawn(move || {
+                            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                            let dest = std::env::temp_dir().join("msh")
+                                .join(&package)
+                                .join("screenshots")
+                                .join(format!("{timestamp}_screenshot.png"));
+                            if adb.take_screenshot(&serial, &dest).is_ok() {
+                                let _ = open::that(&dest);
+                            }
+                        });
+                    }
                     Action::TogglePermission(perm, granted) => {
                         let adb = adb.clone();
                         let serial = device.serial.clone();
