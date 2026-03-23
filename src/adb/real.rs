@@ -301,17 +301,12 @@ impl Adb for RealAdb {
 
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
         let cmd = format!(
-            "cat /proc/$(pidof -s {0})/status /proc/$(pidof -s {0})/smaps_rollup",
+            "PID=$(pidof -s {0}); [ -n \"$PID\" ] && cat /proc/$PID/status 2>/dev/null; cat /proc/$PID/smaps_rollup 2>/dev/null; true",
             package
         );
         let output = Command::new("adb")
             .args(["-s", serial, "shell", &cmd])
             .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("proc status failed: {stderr}");
-        }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_proc_mem(&stdout))
