@@ -36,8 +36,10 @@ pub fn render_logcat_panel(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(panel_title(panel::LOGCAT, focused))
-        .title_bottom(logcat_filter_bar(&app.logcat_state().filter, input_mode, focused, copied_active))
         .border_style(Style::new().fg(color));
+    if focused {
+        block = block.title_bottom(logcat_filter_bar(&app.logcat_state().filter, input_mode, copied_active));
+    }
     let inner = block.inner(area);
 
     let filter = &app.logcat_state().filter;
@@ -90,10 +92,10 @@ pub fn render_logcat_panel(
     }
 }
 
-fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool, copied_active: bool) -> Line<'static> {
+fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, copied_active: bool) -> Line<'static> {
     let accent = Style::new().fg(theme::KEY_HINT);
     let muted = Style::new().fg(theme::MUTED);
-    let border = Style::new().fg(panel::by_number(panel::LOGCAT).border_color(focused));
+    let border = Style::new().fg(panel::by_number(panel::LOGCAT).border_color(true));
 
     let mut spans = Vec::new();
 
