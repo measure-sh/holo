@@ -20,6 +20,7 @@ pub enum ToolbarAction {
 pub struct ToolbarState {
     pub device: Option<Device>,
     pub package: Option<String>,
+    pub last_package: Option<String>,
     pub devices: Vec<Device>,
     pub packages: Vec<String>,
     pub open: Option<DropdownKind>,
@@ -33,6 +34,7 @@ impl ToolbarState {
         Self {
             device,
             package: None,
+            last_package: None,
             devices: Vec::new(),
             packages: Vec::new(),
             open: None,
@@ -77,11 +79,19 @@ impl ToolbarState {
         }
     }
 
-    pub fn receive_packages(&mut self, packages: Vec<String>) {
+    pub fn receive_packages(&mut self, packages: Vec<String>) -> Option<String> {
         self.packages = packages;
         if matches!(self.open, Some(DropdownKind::App)) {
             self.loading = false;
         }
+        if self.package.is_none() {
+            if let Some(last) = &self.last_package {
+                if self.packages.iter().any(|p| p == last) {
+                    return Some(last.clone());
+                }
+            }
+        }
+        None
     }
 
     pub fn filtered_devices(&self) -> Vec<&Device> {
@@ -339,5 +349,40 @@ mod tests {
         let filtered = state.filtered_devices();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].serial, "A");
+    }
+
+    #[test]
+    fn auto_selects_last_package_when_available() {
+        let mut state = ToolbarState::new(None);
+        state.last_package = Some("com.example.app".to_string());
+        let result = state.receive_packages(vec![
+            "com.other".to_string(),
+            "com.example.app".to_string(),
+        ]);
+        assert_eq!(result, Some("com.example.app".to_string()));
+    }
+
+    #[test]
+    fn no_auto_select_when_last_package_missing() {
+        let mut state = ToolbarState::new(None);
+        state.last_package = Some("com.example.app".to_string());
+        let result = state.receive_packages(vec!["com.other".to_string()]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn no_auto_select_when_package_already_set() {
+        let mut state = ToolbarState::new(None);
+        state.package = Some("com.current".to_string());
+        state.last_package = Some("com.example.app".to_string());
+        let result = state.receive_packages(vec!["com.example.app".to_string()]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn no_auto_select_without_cache() {
+        let mut state = ToolbarState::new(None);
+        let result = state.receive_packages(vec!["com.example.app".to_string()]);
+        assert_eq!(result, None);
     }
 }

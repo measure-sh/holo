@@ -134,7 +134,13 @@ fn run_app(
         }
         if let Some(rx) = &packages_rx {
             if let Ok(packages) = rx.try_recv() {
-                app.toolbar_mut().receive_packages(packages);
+                if let Some(auto_pkg) = app.toolbar_mut().receive_packages(packages) {
+                    app.toolbar_mut().package = Some(auto_pkg.clone());
+                    if let Some(device) = app.toolbar().device.clone() {
+                        data = Some(build_data(&adb, &device, &auto_pkg, &mut app));
+                        title = build_title(&device, &auto_pkg, data.as_ref().unwrap());
+                    }
+                }
                 packages_rx = None;
             }
         }
@@ -182,10 +188,13 @@ fn run_app(
                         if let Some(p) = &package {
                             data = Some(build_data(&adb, &d, p, &mut app));
                             title = build_title(&d, p, data.as_ref().unwrap());
+                        } else if app.toolbar().last_package.is_some() {
+                            packages_rx = Some(spawn_fetch_packages(&adb, &d.serial));
                         }
                     }
                     Action::ChangeApp(p) => {
                         app.toolbar_mut().package = Some(p.clone());
+                        app.toolbar_mut().last_package = Some(p.clone());
                         if let Some(device) = app.toolbar().device.clone() {
                             data = Some(build_data(&adb, &device, &p, &mut app));
                             title = build_title(&device, &p, data.as_ref().unwrap());
