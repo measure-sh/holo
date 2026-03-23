@@ -1,6 +1,6 @@
 use crate::adb::Device;
 
-fn device_label(d: &Device) -> String {
+pub fn device_label(d: &Device) -> String {
     match (&d.model, &d.device) {
         (Some(model), Some(device)) => format!("{model} ({device})"),
         (Some(model), None) => model.clone(),

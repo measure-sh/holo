@@ -20,6 +20,7 @@ mod permissions_ui;
 mod processes;
 mod selector;
 mod theme;
+mod toolbar;
 mod trace;
 mod ui;
 
