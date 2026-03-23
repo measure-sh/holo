@@ -90,8 +90,6 @@ pub fn render_app(
             .add_modifier(Modifier::BOLD),
     );
 
-    let toolbar_line = build_toolbar_title(app).alignment(Alignment::Center);
-
     let quit_spans = if app.confirming_quit() {
         vec![
             Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
@@ -113,8 +111,7 @@ pub fn render_app(
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(title_line)
-        .title(toolbar_line);
+        .title(title_line);
 
     if let Some(level) = battery_level {
         block = block.title(battery::battery_bar(level));
@@ -135,17 +132,22 @@ pub fn render_app(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    render_panels(frame, inner, app, logcat_lines);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner);
+
+    render_toolbar(frame, chunks[0], app);
+    render_panels(frame, chunks[1], app, logcat_lines);
 
     if app.toolbar().open.is_some() {
-        let toolbar_y = area.y;
-        render_dropdown_overlay(frame, area, toolbar_y, app);
+        render_dropdown_overlay(frame, chunks[0], app);
     } else if app.show_settings() {
         render_settings_dialog(frame, area, app);
     }
 }
 
-fn build_toolbar_title(app: &App) -> Line<'_> {
+fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let tb = app.toolbar();
     let has_device = tb.device.is_some();
     let has_app = tb.package.is_some();
@@ -153,45 +155,45 @@ fn build_toolbar_title(app: &App) -> Line<'_> {
     let device_label = tb.device_label();
     let app_label = tb.app_label();
 
+    let device_dot = if has_device { theme::CYAN } else { theme::MUTED };
     let device_fg = if has_device { theme::FG } else { theme::MUTED };
-    let device_bg = if has_device { theme::SURFACE } else { theme::BG };
-    let device_dot_color = if has_device { theme::GREEN } else { theme::MUTED };
+    let device_bg = if has_device { theme::DIM_CYAN } else { theme::SURFACE };
+    let app_dot = if has_app { theme::GREEN } else { theme::MUTED };
     let app_fg = if has_app { theme::FG } else { theme::MUTED };
-    let app_bg = if has_app { theme::SURFACE } else { theme::BG };
-    let app_dot_color = if has_app { theme::GREEN } else { theme::MUTED };
+    let app_bg = if has_app { theme::DIM_GREEN } else { theme::SURFACE };
 
-    Line::from(vec![
-        Span::styled(" F1", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" ", Style::new().bg(device_bg)),
-        Span::styled(
-            if has_device { "● " } else { "○ " },
-            Style::new().fg(device_dot_color).bg(device_bg),
-        ),
+    let line = Line::from(vec![
+        Span::styled(" F1 ", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" ● ", Style::new().fg(device_dot).bg(device_bg)),
         Span::styled(
             format!("{device_label} \u{25BE} "),
             Style::new().fg(device_fg).bg(device_bg),
         ),
         Span::styled("  ", Style::new()),
-        Span::styled("F2", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" ", Style::new().bg(app_bg)),
-        Span::styled(
-            if has_app { "● " } else { "○ " },
-            Style::new().fg(app_dot_color).bg(app_bg),
-        ),
+        Span::styled("F2 ", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" ● ", Style::new().fg(app_dot).bg(app_bg)),
         Span::styled(
             format!("{app_label} \u{25BE} "),
             Style::new().fg(app_fg).bg(app_bg),
         ),
-        Span::styled(" ", Style::new()),
-    ])
+    ]);
+
+    frame.render_widget(ratatui::widgets::Paragraph::new(line), area);
 }
 
-fn render_dropdown_overlay(frame: &mut Frame, outer_area: Rect, toolbar_y: u16, app: &App) {
+fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
-    let anchor_x = outer_area.x + 2;
-    let anchor_y = toolbar_y + 1;
+    // " F1 " = 4, " ● " = 3, "{label} ▾ " = label.len() + 3, "  " = 2
+    let device_label = tb.device_label();
+    let device_section_width = 4 + 3 + device_label.len() as u16 + 3 + 2;
+
+    let anchor_x = match kind {
+        DropdownKind::Device => toolbar_area.x + 4,
+        DropdownKind::App => toolbar_area.x + device_section_width + 3,
+    };
+    let anchor_y = toolbar_area.y + 1;
 
     let screen = frame.area();
     let width = 50.min(screen.width.saturating_sub(2));
@@ -207,31 +209,32 @@ fn render_dropdown_overlay(frame: &mut Frame, outer_area: Rect, toolbar_y: u16, 
 
     frame.render_widget(Clear, dropdown_area);
 
-    let title = match kind {
-        DropdownKind::Device => " devices ",
-        DropdownKind::App => " apps ",
+    let (title, accent_color, border_color) = match kind {
+        DropdownKind::Device => (" devices ", theme::CYAN, theme::DIM_CYAN),
+        DropdownKind::App => (" apps ", theme::GREEN, theme::DIM_GREEN),
     };
 
-    let mut bottom_spans = vec![
-        Span::styled(" ↩", Style::new().fg(theme::ACCENT)),
+    let filter_span = if !tb.filter.is_empty() {
+        format!(" /{}", tb.filter)
+    } else {
+        String::new()
+    };
+
+    let bottom_spans = vec![
+        Span::styled(&filter_span, Style::new().fg(theme::YELLOW)),
+        Span::styled(" ↩", Style::new().fg(accent_color)),
         Span::styled(" select ", Style::new().fg(theme::FG)),
-        Span::styled("───", Style::new().fg(theme::MUTED)),
-        Span::styled(" esc", Style::new().fg(theme::ACCENT)),
+        Span::styled("───", Style::new().fg(border_color)),
+        Span::styled(" esc", Style::new().fg(accent_color)),
         Span::styled(" close ", Style::new().fg(theme::FG)),
     ];
-    if !tb.filter.is_empty() {
-        bottom_spans.insert(0, Span::styled(
-            format!(" /{} ", tb.filter),
-            Style::new().fg(theme::YELLOW),
-        ));
-    }
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(Line::from(Span::styled(title, Style::new().fg(theme::ACCENT))))
+        .title(Line::from(Span::styled(title, Style::new().fg(accent_color))))
         .title_bottom(Line::from(bottom_spans))
-        .border_style(Style::new().fg(theme::MUTED))
+        .border_style(Style::new().fg(border_color))
         .style(Style::new().bg(theme::SURFACE));
 
     let inner = block.inner(dropdown_area);
@@ -250,14 +253,14 @@ fn render_dropdown_overlay(frame: &mut Frame, outer_area: Rect, toolbar_y: u16, 
             let items: Vec<ListItem> = filtered
                 .iter()
                 .map(|d| {
-                    ListItem::new(Line::from(vec![
-                        Span::styled("  □ ", Style::new().fg(theme::MUTED)),
-                        Span::styled(selector::device_label(d), Style::new().fg(theme::FG)),
-                    ]))
+                    ListItem::new(Line::from(Span::styled(
+                        format!("  {}", selector::device_label(d)),
+                        Style::new().fg(theme::FG),
+                    )))
                 })
                 .collect();
             let list = List::new(items)
-                .highlight_style(Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::new().fg(theme::CYAN).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▸");
             let clamped = tb.cursor.min(filtered.len().saturating_sub(1));
             let mut state = ListState::default().with_selected(Some(clamped));
@@ -275,7 +278,7 @@ fn render_dropdown_overlay(frame: &mut Frame, outer_area: Rect, toolbar_y: u16, 
                 })
                 .collect();
             let list = List::new(items)
-                .highlight_style(Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::new().fg(theme::GREEN).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▸");
             let clamped = tb.cursor.min(filtered.len().saturating_sub(1));
             let mut state = ListState::default().with_selected(Some(clamped));
