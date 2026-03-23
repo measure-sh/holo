@@ -319,6 +319,16 @@ fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
                 Span::styled(" s", accent),
                 Span::styled("tart ", muted),
             ]);
+            if !state.pulled_traces.is_empty() {
+                spans.extend([
+                    Span::styled("───", border),
+                    Span::styled(" ↩", accent),
+                    Span::styled(" open ", muted),
+                    Span::styled("───", border),
+                    Span::styled(" d", accent),
+                    Span::styled("elete ", muted),
+                ]);
+            }
         }
         spans.extend([
             Span::styled("───", border),
@@ -368,14 +378,22 @@ fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled("no traces yet", Style::new().fg(theme::MUTED)),
         )));
     } else {
-        for path in state.pulled_traces.iter().rev() {
+        for (i, path) in state.pulled_traces.iter().enumerate() {
             let name = path.file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            items.push(ListItem::new(Line::from(
-                Span::styled(name, Style::new().fg(theme::MUTED)),
-            )));
+            let selected = focused && i == state.selected_index;
+            let style = if selected {
+                Style::new().fg(accent_color).add_modifier(Modifier::BOLD)
+            } else {
+                Style::new().fg(theme::MUTED)
+            };
+            let prefix = if selected { "▸ " } else { "  " };
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(prefix, style),
+                Span::styled(name, style),
+            ])));
         }
     }
 

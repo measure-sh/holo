@@ -9,6 +9,7 @@ pub struct TraceState {
     pub status_message: Option<String>,
     pub message_at: Option<std::time::Instant>,
     pub pulled_traces: Vec<PathBuf>,
+    pub selected_index: usize,
 }
 
 impl TraceState {
@@ -19,7 +20,30 @@ impl TraceState {
             status_message: None,
             message_at: None,
             pulled_traces: Vec::new(),
+            selected_index: 0,
         }
+    }
+
+    pub fn clamp_selection(&mut self) {
+        if self.pulled_traces.is_empty() {
+            self.selected_index = 0;
+        } else if self.selected_index >= self.pulled_traces.len() {
+            self.selected_index = self.pulled_traces.len() - 1;
+        }
+    }
+
+    pub fn delete_selected(&mut self) -> Option<PathBuf> {
+        if self.pulled_traces.is_empty() {
+            return None;
+        }
+        let idx = self.selected_index;
+        let path = self.pulled_traces.remove(idx);
+        self.clamp_selection();
+        Some(path)
+    }
+
+    pub fn selected_path(&self) -> Option<&PathBuf> {
+        self.pulled_traces.get(self.selected_index)
     }
 }
 

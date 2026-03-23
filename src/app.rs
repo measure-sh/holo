@@ -446,6 +446,32 @@ impl App {
                         return Action::StartTrace;
                     }
                 }
+                KeyCode::Up | KeyCode::Char('k') if !self.trace_state.recording => {
+                    if self.trace_state.selected_index > 0 {
+                        self.trace_state.selected_index -= 1;
+                    }
+                    return Action::None;
+                }
+                KeyCode::Down | KeyCode::Char('j') if !self.trace_state.recording => {
+                    let max = self.trace_state.pulled_traces.len().saturating_sub(1);
+                    if self.trace_state.selected_index < max {
+                        self.trace_state.selected_index += 1;
+                    }
+                    return Action::None;
+                }
+                KeyCode::Enter if !self.trace_state.recording => {
+                    if let Some(path) = self.trace_state.selected_path() {
+                        let path = path.clone();
+                        let _ = open::that(&path);
+                    }
+                    return Action::None;
+                }
+                KeyCode::Char('d') if !self.trace_state.recording => {
+                    if let Some(path) = self.trace_state.delete_selected() {
+                        let _ = std::fs::remove_file(&path);
+                    }
+                    return Action::None;
+                }
                 KeyCode::Esc => {
                     self.focused = None;
                     return Action::None;
