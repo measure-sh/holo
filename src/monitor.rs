@@ -110,19 +110,23 @@ pub fn spawn_poller(
         loop {
             let mut sample = MonitorSample::default();
 
-            if let Ok(mem) = adb.get_meminfo(&serial, &package) {
-                sample.rss_kb = mem.rss_kb;
-            }
+            std::thread::scope(|s| {
+                let mem = s.spawn(|| adb.get_meminfo(&serial, &package));
+                let cpu = s.spawn(|| adb.get_cpu_usage(&serial, &package));
+                let gfx = s.spawn(|| adb.get_gfx_info(&serial, &package));
 
-            if let Ok(cpu) = adb.get_cpu_usage(&serial, &package) {
-                sample.cpu_percent = cpu;
-            }
-
-            if let Ok(gfx) = adb.get_gfx_info(&serial, &package) {
-                sample.total_frames = gfx.total_frames;
-                sample.slow_frames = gfx.slow_frames;
-                sample.frozen_frames = gfx.frozen_frames;
-            }
+                if let Ok(Ok(mem)) = mem.join() {
+                    sample.rss_kb = mem.rss_kb;
+                }
+                if let Ok(Ok(cpu)) = cpu.join() {
+                    sample.cpu_percent = cpu;
+                }
+                if let Ok(Ok(gfx)) = gfx.join() {
+                    sample.total_frames = gfx.total_frames;
+                    sample.slow_frames = gfx.slow_frames;
+                    sample.frozen_frames = gfx.frozen_frames;
+                }
+            });
 
             if tx.send(sample).is_err() {
                 return;
