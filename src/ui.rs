@@ -141,9 +141,9 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let left_visible = vis[0] || vis[1] || vis[3];
+    let left_visible = vis[0] || vis[1];
     let right_visible = vis[2];
-    let bot_visible = vis[4] || vis[5] || vis[6];
+    let bot_visible = vis[3] || vis[4] || vis[5] || vis[6];
 
     let top_visible = left_visible || right_visible;
 
@@ -164,37 +164,24 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
 
 fn render_left_column(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let panels: Vec<u8> = [panel::COMMANDS, panel::TRACE, panel::PERMISSIONS]
-        .iter()
-        .copied()
-        .filter(|&n| vis[(n - 1) as usize])
-        .collect();
-
-    if panels.is_empty() {
-        return;
-    }
-
-    let pct = 100 / panels.len() as u16;
-    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Percentage(pct)).collect();
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-
-    for (i, &pn) in panels.iter().enumerate() {
-        if pn == panel::COMMANDS {
-            render_commands_panel(frame, rows[i], app);
-        } else if pn == panel::TRACE {
-            render_trace_panel(frame, rows[i], app);
-        } else if pn == panel::PERMISSIONS {
-            permissions_ui::render_permissions_panel(frame, rows[i], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+    match (vis[0], vis[1]) {
+        (true, true) => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            render_commands_panel(frame, rows[0], app);
+            render_trace_panel(frame, rows[1], app);
         }
+        (true, false) => render_commands_panel(frame, area, app),
+        (false, true) => render_trace_panel(frame, area, app),
+        (false, false) => {}
     }
 }
 
 fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let left_visible = vis[0] || vis[1] || vis[3];
+    let left_visible = vis[0] || vis[1];
     match (left_visible, vis[2]) {
         (true, true) => {
             let cols = Layout::default()
@@ -402,23 +389,40 @@ fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let monitor_visible = vis[4];
+    let left_visible = vis[3] || vis[4];
     let right_visible = vis[5] || vis[6];
 
-    match (monitor_visible, right_visible) {
+    match (left_visible, right_visible) {
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            monitor_ui::render_monitor_panel(frame, cols[0], is_focused(app, panel::MONITOR), app.monitor_state());
+            render_bottom_left(frame, cols[0], app);
             render_right_column(frame, cols[1], app);
+        }
+        (true, false) => render_bottom_left(frame, area, app),
+        (false, true) => render_right_column(frame, area, app),
+        (false, false) => {}
+    }
+}
+
+fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
+    let vis = app.panel_visibility();
+    match (vis[4], vis[3]) {
+        (true, true) => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
+                .split(area);
+            monitor_ui::render_monitor_panel(frame, rows[0], is_focused(app, panel::MONITOR), app.monitor_state());
+            permissions_ui::render_permissions_panel(frame, rows[1], is_focused(app, panel::PERMISSIONS), app.permissions_state());
         }
         (true, false) => {
             monitor_ui::render_monitor_panel(frame, area, is_focused(app, panel::MONITOR), app.monitor_state());
         }
         (false, true) => {
-            render_right_column(frame, area, app);
+            permissions_ui::render_permissions_panel(frame, area, is_focused(app, panel::PERMISSIONS), app.permissions_state());
         }
         (false, false) => {}
     }

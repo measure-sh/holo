@@ -359,11 +359,11 @@ impl App {
 
         if self.focused == Some(panel::PERMISSIONS) {
             match code {
-                KeyCode::Up => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     self.permissions_state.move_up();
                     return Action::None;
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     self.permissions_state.move_down();
                     return Action::None;
                 }
