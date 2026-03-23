@@ -958,7 +958,7 @@ mod tests {
     fn d_focuses_database_panel() {
         let mut app = App::new("com.test");
         app.handle_key(key(KeyCode::Char('d')));
-        assert_eq!(app.focused_panel(), Some(5));
+        assert_eq!(app.focused_panel(), Some(6));
     }
 
     #[test]
@@ -985,7 +985,7 @@ mod tests {
         assert_eq!(app.input_mode(), InputMode::Normal);
         app.handle_key(key(KeyCode::Esc));
         assert!(app.db_state().selected_db.is_none());
-        assert_eq!(app.focused_panel(), Some(5));
+        assert_eq!(app.focused_panel(), Some(6));
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.focused_panel(), None);
     }
@@ -1045,7 +1045,7 @@ mod tests {
         app.handle_key(key(KeyCode::Esc)); // exit EditingQuery
         app.handle_key(key(KeyCode::Char('e')));
         assert_eq!(app.input_mode(), InputMode::EditingQuery);
-        assert_eq!(app.focused_panel(), Some(5));
+        assert_eq!(app.focused_panel(), Some(6));
     }
 
     #[test]
