@@ -304,16 +304,19 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let bot_right_visible = vis[6] || vis[7];
     let bot_visible = bot_left_visible || bot_right_visible;
 
+    let section_count = logcat_visible as u8 + mid_visible as u8 + bot_visible as u8;
+    if section_count == 0 { return; }
+
     let mut constraints = Vec::new();
-    if logcat_visible { constraints.push(Constraint::Percentage(40)); }
-    if mid_visible { constraints.push(Constraint::Percentage(15)); }
-    if bot_visible { constraints.push(Constraint::Min(0)); }
-    if constraints.is_empty() {
-        if logcat_visible {
-            logcat_ui::render_logcat_panel(frame, area, is_focused(app, panel::LOGCAT), logcat_lines, app);
-        }
-        return;
+    if logcat_visible {
+        if section_count == 1 { constraints.push(Constraint::Min(0)); }
+        else { constraints.push(Constraint::Percentage(40)); }
     }
+    if mid_visible {
+        if !bot_visible { constraints.push(Constraint::Min(0)); }
+        else { constraints.push(Constraint::Percentage(15)); }
+    }
+    if bot_visible { constraints.push(Constraint::Min(0)); }
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -485,12 +488,7 @@ fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
 
-    let constraints: Vec<Constraint> = panels.iter().map(|&p| match p {
-        panel::FRAMES => Constraint::Percentage(34),
-        panel::DISK => Constraint::Percentage(33),
-        panel::SYSTEM => Constraint::Percentage(33),
-        _ => Constraint::Min(0),
-    }).collect();
+    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints(constraints)
