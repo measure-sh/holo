@@ -113,7 +113,7 @@ fn main() -> Result<()> {
 
     let adb: Arc<dyn Adb> = Arc::new(RealAdb);
     let initial_device = adb.list_devices().ok()
-        .and_then(|d| if d.len() == 1 { Some(d.into_iter().next().unwrap()) } else { None });
+        .and_then(|mut d| if !d.is_empty() { Some(d.swap_remove(0)) } else { None });
 
     let terminal = ratatui::init();
     let result = run_app(terminal, adb, initial_device);
