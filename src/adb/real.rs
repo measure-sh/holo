@@ -487,9 +487,14 @@ impl Adb for RealAdb {
 
 fn parse_device_ip(output: &str) -> Option<String> {
     for line in output.lines() {
+        if !line.contains("wlan0") {
+            continue;
+        }
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 9 && parts[..2] == ["default", "via"] {
-            return Some(parts[8].to_string());
+        for (i, &part) in parts.iter().enumerate() {
+            if part == "src" {
+                return parts.get(i + 1).map(|s| s.to_string());
+            }
         }
     }
     None
@@ -1039,15 +1044,22 @@ Janky frames: 10 (2.00%)
     }
 
     #[test]
-    fn parses_device_ip_from_route() {
+    fn parses_device_ip_from_wlan0_route() {
+        let output = "100.109.184.96/27 dev rmnet_data1 proto kernel scope link src 100.109.184.112\n\
+            192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.66\n";
+        assert_eq!(parse_device_ip(output), Some("192.168.1.66".to_string()));
+    }
+
+    #[test]
+    fn parses_device_ip_with_default_route() {
         let output = "default via 192.168.1.1 dev wlan0 proto dhcp src 192.168.1.42 metric 600\n\
             192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.42\n";
         assert_eq!(parse_device_ip(output), Some("192.168.1.42".to_string()));
     }
 
     #[test]
-    fn device_ip_none_when_no_default_route() {
-        let output = "192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.42\n";
+    fn device_ip_none_when_no_wlan0() {
+        let output = "100.109.184.96/27 dev rmnet_data1 proto kernel scope link src 100.109.184.112\n";
         assert_eq!(parse_device_ip(output), None);
     }
 }
