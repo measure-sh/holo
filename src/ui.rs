@@ -198,10 +198,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
 
     frame.render_widget(Clear, dropdown_area);
 
-    let accent_color = match kind {
-        DropdownKind::Device => theme::CYAN,
-        DropdownKind::App => theme::GREEN,
-    };
+    let accent_color = theme::ACCENT;
 
     let title = match kind {
         DropdownKind::Device => " select device ",
