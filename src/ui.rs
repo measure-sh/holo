@@ -306,7 +306,7 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
 
     let mut constraints = Vec::new();
     if logcat_visible { constraints.push(Constraint::Percentage(40)); }
-    if mid_visible { constraints.push(Constraint::Percentage(20)); }
+    if mid_visible { constraints.push(Constraint::Percentage(15)); }
     if bot_visible { constraints.push(Constraint::Min(0)); }
     if constraints.is_empty() {
         if logcat_visible {
@@ -486,8 +486,8 @@ fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let constraints: Vec<Constraint> = panels.iter().map(|&p| match p {
-        panel::FRAMES => Constraint::Percentage(50),
-        panel::DISK => Constraint::Percentage(20),
+        panel::FRAMES => Constraint::Percentage(40),
+        panel::DISK => Constraint::Percentage(30),
         panel::SYSTEM => Constraint::Percentage(30),
         _ => Constraint::Min(0),
     }).collect();
