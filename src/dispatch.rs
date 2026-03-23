@@ -174,7 +174,7 @@ impl DispatchContext {
                 }
             }
             Action::CopyDbResult(text) => {
-                copy_to_clipboard(&text);
+                crate::clipboard::copy_to_clipboard(&text);
             }
             Action::CopyLogcat => {
                 if let Some(d) = &self.data {
@@ -185,7 +185,7 @@ impl DispatchContext {
                         .cloned()
                         .collect::<Vec<_>>()
                         .join("\n");
-                    copy_to_clipboard(&text);
+                    crate::clipboard::copy_to_clipboard(&text);
                 }
             }
             Action::RunQuery(db, sql) => {
@@ -228,7 +228,7 @@ impl DispatchContext {
                     d.stop_and_pull_trace(self.adb.clone(), s.clone(), p.clone());
                 }
             }
-            Action::Noop => {}
+            Action::Noop | Action::Unfocus => {}
         }
         false
     }
@@ -246,20 +246,6 @@ fn spawn_app_action(
     std::thread::spawn(move || {
         let _ = f(adb, &serial, &package);
     });
-}
-
-fn copy_to_clipboard(text: &str) {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-    if let Ok(mut child) = Command::new("pbcopy")
-        .stdin(Stdio::piped())
-        .spawn()
-    {
-        if let Some(stdin) = child.stdin.as_mut() {
-            let _ = stdin.write_all(text.as_bytes());
-        }
-        let _ = child.wait();
-    }
 }
 
 fn spawn_fetch_devices(adb: &Arc<dyn Adb>) -> mpsc::Receiver<Vec<Device>> {

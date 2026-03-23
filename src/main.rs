@@ -2,6 +2,7 @@ mod adb;
 mod app;
 mod apps;
 mod battery;
+mod clipboard;
 mod commands;
 mod data;
 mod database;
