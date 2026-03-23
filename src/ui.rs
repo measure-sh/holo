@@ -22,8 +22,8 @@ const COMMAND_LABELS: [&str; 3] = [
     "wake screen",
 ];
 
-pub const SUPERSCRIPT_DIGITS: [char; 6] = [
-    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}',
+pub const SUPERSCRIPT_DIGITS: [char; 7] = [
+    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}',
 ];
 
 pub fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
@@ -141,9 +141,9 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let left_visible = vis[0] || vis[2];
-    let right_visible = vis[1];
-    let bot_visible = vis[3] || vis[4] || vis[5];
+    let left_visible = vis[0] || vis[1] || vis[3];
+    let right_visible = vis[2];
+    let bot_visible = vis[4] || vis[5] || vis[6];
 
     let top_visible = left_visible || right_visible;
 
@@ -164,25 +164,38 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
 
 fn render_left_column(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    match (vis[0], vis[2]) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-                .split(area);
-            render_commands_panel(frame, rows[0], app);
-            permissions_ui::render_permissions_panel(frame, rows[1], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+    let panels: Vec<u8> = [panel::COMMANDS, panel::TRACE, panel::PERMISSIONS]
+        .iter()
+        .copied()
+        .filter(|&n| vis[(n - 1) as usize])
+        .collect();
+
+    if panels.is_empty() {
+        return;
+    }
+
+    let pct = 100 / panels.len() as u16;
+    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Percentage(pct)).collect();
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, &pn) in panels.iter().enumerate() {
+        if pn == panel::COMMANDS {
+            render_commands_panel(frame, rows[i], app);
+        } else if pn == panel::TRACE {
+            render_trace_panel(frame, rows[i], app);
+        } else if pn == panel::PERMISSIONS {
+            permissions_ui::render_permissions_panel(frame, rows[i], is_focused(app, panel::PERMISSIONS), app.permissions_state());
         }
-        (true, false) => render_commands_panel(frame, area, app),
-        (false, true) => permissions_ui::render_permissions_panel(frame, area, is_focused(app, panel::PERMISSIONS), app.permissions_state()),
-        (false, false) => {}
     }
 }
 
 fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let left_visible = vis[0] || vis[2];
-    match (left_visible, vis[1]) {
+    let left_visible = vis[0] || vis[1] || vis[3];
+    match (left_visible, vis[2]) {
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
@@ -283,10 +296,53 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     frame.render_widget(list, inner);
 }
 
+fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let block = panel_block(panel::TRACE, false);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let accent = panel::by_number(panel::TRACE).bright_color;
+    let state = app.trace_state();
+
+    let mut items: Vec<ListItem> = Vec::new();
+
+    if state.recording {
+        let elapsed = state.started_at
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0);
+        let mins = elapsed / 60;
+        let secs = elapsed % 60;
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("• ", Style::new().fg(accent)),
+            Span::styled(format!("recording {:02}:{:02}", mins, secs), Style::new().fg(accent)),
+        ])));
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("t", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("o stop", Style::new().fg(theme::MUTED)),
+        ])));
+    } else {
+        let flash_active = state.status_message.is_some()
+            && state.message_at.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(3));
+        if flash_active {
+            if let Some(msg) = &state.status_message {
+                items.push(ListItem::new(Line::from(
+                    Span::styled(msg.clone(), Style::new().fg(theme::GREEN)),
+                )));
+            }
+        }
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled("t", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("race", Style::new().fg(theme::MUTED)),
+        ])));
+    }
+
+    frame.render_widget(List::new(items), inner);
+}
+
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let monitor_visible = vis[3];
-    let right_visible = vis[4] || vis[5];
+    let monitor_visible = vis[4];
+    let right_visible = vis[5] || vis[6];
 
     match (monitor_visible, right_visible) {
         (true, true) => {
@@ -309,7 +365,7 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    match (vis[4], vis[5]) {
+    match (vis[5], vis[6]) {
         (true, true) => {
             let rows = Layout::default()
                 .direction(Direction::Vertical)

@@ -20,6 +20,7 @@ mod permissions_ui;
 mod processes;
 mod selector;
 mod theme;
+mod trace;
 mod ui;
 
 use std::sync::{mpsc, Arc};
@@ -283,6 +284,12 @@ fn run_app(
                     }
                     Action::OpenFile(path) => {
                         data.start_pull_file(adb.clone(), device.serial.clone(), package.to_string(), path, true);
+                    }
+                    Action::StartTrace => {
+                        data.start_trace(adb.clone(), device.serial.clone(), package.to_string());
+                    }
+                    Action::StopTrace => {
+                        data.stop_and_pull_trace(adb.clone(), device.serial.clone(), package.to_string());
                     }
                     Action::None => {}
                 }

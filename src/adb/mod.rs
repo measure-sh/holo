@@ -52,4 +52,6 @@ pub trait Adb: Send + Sync {
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo>;
     fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32>;
     fn get_gfx_info(&self, serial: &str, package: &str) -> Result<GfxInfo>;
+    fn start_trace(&self, serial: &str, config: &str) -> Result<()>;
+    fn stop_and_pull_trace(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
 }

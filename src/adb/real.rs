@@ -345,6 +345,55 @@ impl Adb for RealAdb {
         Ok(parse_gfx_info(&stdout))
     }
 
+    fn start_trace(&self, serial: &str, config: &str) -> Result<()> {
+        let mut child = Command::new("adb")
+            .args([
+                "-s", serial, "shell", "perfetto", "-d", "--txt", "-c", "-",
+                "-o", "/data/misc/perfetto-traces/msh_trace.perfetto-trace",
+            ])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(config.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("perfetto start failed: {stderr}");
+        }
+        Ok(())
+    }
+
+    fn stop_and_pull_trace(&self, serial: &str, dest: &std::path::Path) -> Result<()> {
+        let _ = Command::new("adb")
+            .args(["-s", serial, "shell", "pkill", "-INT", "perfetto"])
+            .output();
+
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let output = Command::new("adb")
+            .args([
+                "-s", serial, "pull",
+                "/data/misc/perfetto-traces/msh_trace.perfetto-trace",
+                &dest.to_string_lossy(),
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("trace pull failed: {stderr}");
+        }
+        Ok(())
+    }
+
 }
 
 fn parse_app_version(output: &str) -> (String, String) {

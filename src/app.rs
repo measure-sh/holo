@@ -6,6 +6,7 @@ use crate::logcat_state::LogcatState;
 use crate::monitor::MonitorState;
 use crate::panel;
 use crate::permissions::PermissionsState;
+use crate::trace::TraceState;
 
 pub enum Action {
     Quit,
@@ -31,6 +32,8 @@ pub enum Action {
     ExpandDir(String),
     PullFile(String),
     OpenFile(String),
+    StartTrace,
+    StopTrace,
 }
 
 pub enum SettingsAction {
@@ -54,7 +57,7 @@ pub enum InputMode {
 }
 
 pub struct App {
-    visible: [bool; 6],
+    visible: [bool; 7],
     focused: Option<u8>,
     input_mode: InputMode,
     logcat_state: LogcatState,
@@ -73,12 +76,13 @@ pub struct App {
     pub command_flash: Option<(usize, std::time::Instant)>,
     pub clear_flash: Option<std::time::Instant>,
     pub uninstall_flash: Option<std::time::Instant>,
+    trace_state: TraceState,
 }
 
 impl App {
     pub fn new(package: &str) -> Self {
         Self {
-            visible: [true; 6],
+            visible: [true; 7],
             focused: None,
             input_mode: InputMode::Normal,
             logcat_state: LogcatState::new(),
@@ -96,6 +100,7 @@ impl App {
             settings_index: 0,
             command_flash: None,
             clear_flash: None,
+            trace_state: TraceState::new(),
             uninstall_flash: None,
         }
     }
@@ -464,7 +469,20 @@ impl App {
                 self.airplane_mode = !self.airplane_mode;
                 Action::ToggleAirplaneMode
             }
-            KeyCode::Char(c @ '1'..='6') => {
+            KeyCode::Char('t') => {
+                if self.trace_state.recording {
+                    self.trace_state.recording = false;
+                    self.trace_state.started_at = None;
+                    Action::StopTrace
+                } else {
+                    self.trace_state.recording = true;
+                    self.trace_state.started_at = Some(std::time::Instant::now());
+                    self.trace_state.status_message = None;
+                    self.trace_state.message_at = None;
+                    Action::StartTrace
+                }
+            }
+            KeyCode::Char(c @ '1'..='7') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
             }
@@ -479,7 +497,7 @@ impl App {
     }
 
     fn toggle_visibility(&mut self, n: u8) {
-        if !(1..=6).contains(&n) {
+        if !(1..=7).contains(&n) {
             return;
         }
         let idx = (n - 1) as usize;
@@ -498,7 +516,7 @@ impl App {
         self.input_mode = InputMode::Normal;
     }
 
-    pub fn panel_visibility(&self) -> &[bool; 6] {
+    pub fn panel_visibility(&self) -> &[bool; 7] {
         &self.visible
     }
 
@@ -508,6 +526,14 @@ impl App {
 
     pub fn monitor_state_mut(&mut self) -> &mut MonitorState {
         &mut self.monitor_state
+    }
+
+    pub fn trace_state(&self) -> &TraceState {
+        &self.trace_state
+    }
+
+    pub fn trace_state_mut(&mut self) -> &mut TraceState {
+        &mut self.trace_state
     }
 
     #[cfg(test)]
@@ -609,7 +635,7 @@ mod tests {
     #[test]
     fn new_app_all_panels_visible() {
         let app = App::new("com.test");
-        assert_eq!(app.panel_visibility(), &[true; 6]);
+        assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
@@ -624,7 +650,7 @@ mod tests {
         app.toggle_visibility(3);
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true]
+            &[true, true, false, true, true, true, true]
         );
     }
 
@@ -633,23 +659,23 @@ mod tests {
         let mut app = App::new("com.test");
         app.toggle_visibility(3);
         app.toggle_visibility(3);
-        assert_eq!(app.panel_visibility(), &[true; 6]);
+        assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new("com.test");
-        for n in 2..=6 {
+        for n in 2..=7 {
             app.toggle_visibility(n);
         }
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false]
+            &[true, false, false, false, false, false, false]
         );
         app.toggle_visibility(1);
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false]
+            &[true, false, false, false, false, false, false]
         );
     }
 
@@ -659,7 +685,7 @@ mod tests {
         app.toggle_visibility(0);
         app.toggle_visibility(8);
         app.toggle_visibility(9);
-        assert_eq!(app.panel_visibility(), &[true; 6]);
+        assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
@@ -688,7 +714,7 @@ mod tests {
         ));
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true]
+            &[true, true, false, true, true, true, true]
         );
     }
 
@@ -699,14 +725,14 @@ mod tests {
             app.handle_key(key(KeyCode::Char('x'))),
             Action::None
         ));
-        assert_eq!(app.panel_visibility(), &[true; 6]);
+        assert_eq!(app.panel_visibility(), &[true; 7]);
     }
 
     #[test]
     fn focus_toggles_on_same_key() {
         let mut app = App::new("com.test");
         app.handle_key(key(KeyCode::Char('l')));
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.focused_panel(), Some(3));
         app.handle_key(key(KeyCode::Char('l')));
         assert_eq!(app.focused_panel(), None);
     }
@@ -737,7 +763,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.focused_panel(), Some(3));
     }
 
     #[test]
@@ -746,15 +772,26 @@ mod tests {
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.focused_panel(), Some(3));
     }
 
     #[test]
-    fn t_ignored_without_focus() {
+    fn t_starts_trace_without_logcat_focus() {
         let mut app = App::new("com.test");
-        assert_eq!(app.focused_panel(), None);
+        assert!(!app.trace_state().recording);
+        let action = app.handle_key(key(KeyCode::Char('t')));
+        assert!(matches!(action, Action::StartTrace));
+        assert!(app.trace_state().recording);
+    }
+
+    #[test]
+    fn t_stops_trace_when_recording() {
+        let mut app = App::new("com.test");
         app.handle_key(key(KeyCode::Char('t')));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(app.trace_state().recording);
+        let action = app.handle_key(key(KeyCode::Char('t')));
+        assert!(matches!(action, Action::StopTrace));
+        assert!(!app.trace_state().recording);
     }
 
     #[test]
@@ -909,14 +946,14 @@ mod tests {
         assert_eq!(app.logcat_state().scroll, 3);
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.logcat_state().scroll, 0);
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.focused_panel(), Some(3));
     }
 
     #[test]
     fn esc_unfocuses_logcat_when_at_bottom() {
         let mut app = App::new("com.test");
         app.handle_key(key(KeyCode::Char('l')));
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.focused_panel(), Some(3));
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.focused_panel(), None);
     }
@@ -982,7 +1019,7 @@ mod tests {
     fn d_focuses_database_panel() {
         let mut app = App::new("com.test");
         app.handle_key(key(KeyCode::Char('d')));
-        assert_eq!(app.focused_panel(), Some(6));
+        assert_eq!(app.focused_panel(), Some(7));
     }
 
     #[test]
@@ -1009,7 +1046,7 @@ mod tests {
         assert_eq!(app.input_mode(), InputMode::Normal);
         app.handle_key(key(KeyCode::Esc));
         assert!(app.db_state().selected_db.is_none());
-        assert_eq!(app.focused_panel(), Some(6));
+        assert_eq!(app.focused_panel(), Some(7));
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.focused_panel(), None);
     }
@@ -1069,7 +1106,7 @@ mod tests {
         app.handle_key(key(KeyCode::Esc)); // exit EditingQuery
         app.handle_key(key(KeyCode::Char('e')));
         assert_eq!(app.input_mode(), InputMode::EditingQuery);
-        assert_eq!(app.focused_panel(), Some(6));
+        assert_eq!(app.focused_panel(), Some(7));
     }
 
     #[test]

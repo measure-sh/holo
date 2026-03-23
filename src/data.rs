@@ -12,6 +12,7 @@ use crate::logcat;
 use crate::monitor;
 use crate::permissions;
 use crate::processes;
+use crate::trace;
 
 const MAX_LOGCAT_LINES: usize = 1000;
 
@@ -36,6 +37,9 @@ pub struct DataSources {
     files_pull_rx: Option<mpsc::Receiver<Result<(String, bool), String>>>,
 
     monitor_rx: mpsc::Receiver<MonitorSample>,
+
+    trace_start_rx: Option<mpsc::Receiver<Result<(), String>>>,
+    trace_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
 
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
@@ -79,6 +83,8 @@ impl DataSources {
                 serial.to_string(),
                 package.to_string(),
             ),
+            trace_start_rx: None,
+            trace_pull_rx: None,
             initial_layout_bounds,
             initial_airplane_mode,
             app_version,
@@ -184,6 +190,35 @@ impl DataSources {
                 self.files_pull_rx = None;
             }
         }
+        if let Some(rx) = &self.trace_start_rx {
+            if let Ok(result) = rx.try_recv() {
+                if let Err(e) = result {
+                    let ts = app.trace_state_mut();
+                    ts.recording = false;
+                    ts.started_at = None;
+                    ts.status_message = Some(format!("failed: {e}"));
+                    ts.message_at = Some(std::time::Instant::now());
+                }
+                self.trace_start_rx = None;
+            }
+        }
+        if let Some(rx) = &self.trace_pull_rx {
+            if let Ok(result) = rx.try_recv() {
+                let ts = app.trace_state_mut();
+                match result {
+                    Ok(path) => {
+                        ts.status_message = Some("saved!".to_string());
+                        ts.message_at = Some(std::time::Instant::now());
+                        let _ = open::that(&path);
+                    }
+                    Err(e) => {
+                        ts.status_message = Some(format!("failed: {e}"));
+                        ts.message_at = Some(std::time::Instant::now());
+                    }
+                }
+                self.trace_pull_rx = None;
+            }
+        }
     }
 
     pub fn start_query(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, db: String, sql: String) {
@@ -204,5 +239,13 @@ impl DataSources {
 
     pub fn start_pull_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String, open_after: bool) {
         self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path, open_after));
+    }
+
+    pub fn start_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
+        self.trace_start_rx = Some(trace::spawn_start_trace(adb, serial, package));
+    }
+
+    pub fn stop_and_pull_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
+        self.trace_pull_rx = Some(trace::spawn_stop_and_pull_trace(adb, serial, package));
     }
 }
