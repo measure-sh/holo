@@ -137,7 +137,7 @@ pub fn render_app(
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(inner);
 
     render_toolbar(frame, chunks[0], app);
@@ -158,37 +158,78 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let device_label = tb.device_label();
     let app_label = tb.app_label();
 
+    let device_width = (device_label.len() as u16 + 8).max(20);
+    let app_width = (app_label.len() as u16 + 8).max(20);
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(device_width),
+            Constraint::Length(1),
+            Constraint::Length(app_width),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    let dot = if has_device { "●" } else { "○" };
     let dot_color = if has_device { theme::GREEN } else { theme::MUTED };
     let device_fg = if has_device { theme::FG } else { theme::MUTED };
+    let device_border = if has_device { theme::MUTED } else { theme::SURFACE };
+
+    let device_title = Line::from(vec![
+        Span::styled(" F1", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" device ", Style::new().fg(theme::MUTED)),
+    ]);
+    let device_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(device_title)
+        .border_style(Style::new().fg(device_border));
+    let device_inner = device_block.inner(cols[0]);
+    frame.render_widget(device_block, cols[0]);
+
+    let device_line = Line::from(vec![
+        Span::styled(format!("{dot} "), Style::new().fg(dot_color)),
+        Span::styled(device_label, Style::new().fg(device_fg).add_modifier(Modifier::BOLD)),
+        Span::styled(" \u{25BE}", Style::new().fg(theme::MUTED)),
+    ]);
+    frame.render_widget(ratatui::widgets::Paragraph::new(device_line), device_inner);
+
     let app_fg = if has_app { theme::FG } else { theme::MUTED };
+    let app_border = if has_app { theme::MUTED } else { theme::SURFACE };
 
-    let spans = vec![
-        Span::styled(" ", Style::new()),
-        Span::styled("F1", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" □ ", Style::new().fg(theme::MUTED)),
-        Span::styled(&device_label, Style::new().fg(device_fg)),
-        Span::styled(" ", Style::new()),
-        Span::styled("•", Style::new().fg(dot_color)),
-        Span::styled("  ", Style::new()),
-        Span::styled("F2", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" ■ ", Style::new().fg(theme::MUTED)),
-        Span::styled(&app_label, Style::new().fg(app_fg)),
-        Span::styled(" ", Style::new()),
-    ];
+    let app_title = Line::from(vec![
+        Span::styled(" F2", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" app ", Style::new().fg(theme::MUTED)),
+    ]);
+    let app_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(app_title)
+        .border_style(Style::new().fg(app_border));
+    let app_inner = app_block.inner(cols[2]);
+    frame.render_widget(app_block, cols[2]);
 
-    let line = Line::from(spans);
-    frame.render_widget(ratatui::widgets::Paragraph::new(line), area);
+    let app_dot = if has_app { "●" } else { "○" };
+    let app_dot_color = if has_app { theme::GREEN } else { theme::MUTED };
+    let app_line = Line::from(vec![
+        Span::styled(format!("{app_dot} "), Style::new().fg(app_dot_color)),
+        Span::styled(app_label, Style::new().fg(app_fg).add_modifier(Modifier::BOLD)),
+        Span::styled(" \u{25BE}", Style::new().fg(theme::MUTED)),
+    ]);
+    frame.render_widget(ratatui::widgets::Paragraph::new(app_line), app_inner);
 }
 
 fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
+    let device_width = (tb.device_label().len() as u16 + 8).max(20);
     let anchor_x = match kind {
-        DropdownKind::Device => toolbar_area.x + 1,
-        DropdownKind::App => toolbar_area.x + 1,
+        DropdownKind::Device => toolbar_area.x,
+        DropdownKind::App => toolbar_area.x + device_width + 1,
     };
-    let anchor_y = toolbar_area.y + 1;
+    let anchor_y = toolbar_area.y + toolbar_area.height;
 
     let screen = frame.area();
     let width = 50.min(screen.width.saturating_sub(2));
@@ -287,7 +328,6 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let top_right_visible = vis[0] || vis[1];
     let bot_left_visible = vis[2] || vis[3] || vis[4];
     let bot_right_visible = vis[6] || vis[7];
     let bot_visible = bot_left_visible || bot_right_visible;
