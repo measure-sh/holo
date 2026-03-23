@@ -208,13 +208,16 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
         DropdownKind::App => " select app ",
     };
 
-    let mut bottom_spans = Vec::new();
-    if !tb.filter.is_empty() {
-        bottom_spans.push(Span::styled(format!(" /{}", tb.filter), Style::new().fg(theme::YELLOW)));
-        bottom_spans.push(Span::styled(" ", Style::new()));
+    let mut bottom_spans = vec![
+        Span::styled(" /", Style::new().fg(accent_color)),
+    ];
+    if tb.filter.is_empty() {
+        bottom_spans.push(Span::styled("search ", Style::new().fg(theme::MUTED)));
+    } else {
+        bottom_spans.push(Span::styled(format!("{} ", tb.filter), Style::new().fg(theme::YELLOW)));
     }
     bottom_spans.extend([
-        Span::styled(" ↩", Style::new().fg(accent_color)),
+        Span::styled("↩", Style::new().fg(accent_color)),
         Span::styled(" select ", Style::new().fg(theme::MUTED)),
         Span::styled("esc", Style::new().fg(accent_color)),
         Span::styled(" close ", Style::new().fg(theme::MUTED)),
