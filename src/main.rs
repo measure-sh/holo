@@ -22,6 +22,7 @@ mod selector;
 mod theme;
 mod toolbar;
 mod trace;
+mod trace_ui;
 mod ui;
 
 use std::sync::Arc;
