@@ -300,7 +300,10 @@ impl Adb for RealAdb {
     }
 
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
-        let cmd = format!("cat /proc/$(pidof -s {})/status", package);
+        let cmd = format!(
+            "cat /proc/$(pidof -s {0})/status /proc/$(pidof -s {0})/smaps_rollup",
+            package
+        );
         let output = Command::new("adb")
             .args(["-s", serial, "shell", &cmd])
             .output()?;
@@ -311,7 +314,7 @@ impl Adb for RealAdb {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_proc_status(&stdout))
+        Ok(parse_proc_mem(&stdout))
     }
 
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()> {
@@ -527,12 +530,26 @@ fn parse_top_cpu(output: &str, package: &str) -> f32 {
     0.0
 }
 
-fn parse_proc_status(output: &str) -> MemInfo {
+fn parse_kb_value(line: &str, prefix: &str) -> Option<u64> {
+    line.strip_prefix(prefix)?
+        .trim()
+        .strip_suffix("kB")?
+        .trim()
+        .parse::<u64>()
+        .ok()
+}
+
+fn parse_proc_mem(output: &str) -> MemInfo {
     let mut info = MemInfo::default();
     for line in output.lines() {
-        if let Some(rest) = line.strip_prefix("VmRSS:") {
-            if let Some(val) = rest.trim().strip_suffix("kB").and_then(|s| s.trim().parse::<u64>().ok()) {
+        if info.rss_kb == 0 {
+            if let Some(val) = parse_kb_value(line, "VmRSS:") {
                 info.rss_kb = val;
+            }
+        }
+        if info.pss_kb == 0 {
+            if let Some(val) = parse_kb_value(line, "Pss:") {
+                info.pss_kb = val;
             }
         }
     }
@@ -832,29 +849,32 @@ mod tests {
     }
 
     #[test]
-    fn parses_proc_status_vmrss() {
+    fn parses_proc_mem() {
         let output = "\
 Name:\tcom.example.app
-VmPeak:\t 2048000 kB
-VmSize:\t 1900000 kB
 VmRSS:\t  128000 kB
 VmSwap:\t       0 kB
+Rss:           200000 kB
+Pss:            95000 kB
 ";
-        let info = parse_proc_status(output);
+        let info = parse_proc_mem(output);
         assert_eq!(info.rss_kb, 128000);
+        assert_eq!(info.pss_kb, 95000);
     }
 
     #[test]
-    fn proc_status_empty_output() {
-        let info = parse_proc_status("");
+    fn proc_mem_empty_output() {
+        let info = parse_proc_mem("");
         assert_eq!(info.rss_kb, 0);
+        assert_eq!(info.pss_kb, 0);
     }
 
     #[test]
-    fn proc_status_no_vmrss() {
-        let output = "Name:\tcom.example.app\nVmSize:\t 1000 kB\n";
-        let info = parse_proc_status(output);
-        assert_eq!(info.rss_kb, 0);
+    fn proc_mem_no_pss() {
+        let output = "VmRSS:\t  50000 kB\n";
+        let info = parse_proc_mem(output);
+        assert_eq!(info.rss_kb, 50000);
+        assert_eq!(info.pss_kb, 0);
     }
 
     #[test]

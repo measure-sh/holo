@@ -201,10 +201,12 @@ pub fn render_monitor_panel(
     let spark_width = (inner.width as usize).saturating_sub(25).max(5);
 
     let rss_data = state.sparkline_u64(|m| m.rss_kb);
+    let pss_data = state.sparkline_u64(|m| m.pss_kb);
     let cpu_data = state.sparkline_f32(|m| m.cpu_percent);
 
     let items: Vec<ListItem> = vec![
         section_header("── memory", true),
+        mem_item("PSS", &pss_data, state.trend_u64(|m| m.pss_kb), spark_width),
         mem_item("RSS", &rss_data, state.trend_u64(|m| m.rss_kb), spark_width),
         section_header("── cpu", false),
         cpu_item(&cpu_data, spark_width),
