@@ -1,7 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::adb::Device;
-use crate::command_palette::CommandPaletteState;
 use crate::database::DatabaseState;
 use crate::files::{FileConfirm, FilesState, ToggleResult};
 use crate::logcat_state::LogcatState;
@@ -10,6 +9,19 @@ use crate::panel;
 use crate::permissions::PermissionsState;
 use crate::toolbar::{ToolbarAction, ToolbarState};
 use crate::trace::{self, TraceState};
+
+pub const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
+    ("open app", || Action::OpenApp),
+    ("wake screen", || Action::WakeScreen),
+    ("kill app", || Action::KillApp),
+    ("clear data", || Action::ClearData),
+    ("uninstall app", || Action::UninstallApp),
+    ("screenshot", || Action::Screenshot),
+    ("toggle layout bounds", || Action::ToggleLayoutBounds),
+    ("toggle airplane mode", || Action::ToggleAirplaneMode),
+    ("toggle wifi", || Action::ToggleWifi),
+    ("wireless adb", || Action::WirelessAdb),
+];
 
 pub enum Action {
     Quit,
@@ -61,7 +73,7 @@ pub struct App {
     files_state: FilesState,
     monitor_state: MonitorState,
     toolbar: ToolbarState,
-    palette: CommandPaletteState,
+    commands_cursor: usize,
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
@@ -85,7 +97,7 @@ impl App {
             files_state: FilesState::new(pkg),
             monitor_state: MonitorState::new(),
             toolbar,
-            palette: CommandPaletteState::new(),
+            commands_cursor: 0,
             package: pkg.to_string(),
             layout_bounds: false,
             airplane_mode: false,
@@ -163,11 +175,28 @@ impl App {
             };
         }
 
-        if self.palette.open {
-            if let Some(action) = self.palette.handle_key(code) {
-                return action;
+        if self.focused == Some(panel::COMMANDS) {
+            match code {
+                KeyCode::Up => {
+                    self.commands_cursor = self.commands_cursor.saturating_sub(1);
+                    return Action::None;
+                }
+                KeyCode::Down => {
+                    self.commands_cursor = (self.commands_cursor + 1).min(COMMAND_LIST.len().saturating_sub(1));
+                    return Action::None;
+                }
+                KeyCode::Enter => {
+                    if let Some((_, action_fn)) = COMMAND_LIST.get(self.commands_cursor) {
+                        return action_fn();
+                    }
+                    return Action::None;
+                }
+                KeyCode::Esc => {
+                    self.focused = None;
+                    return Action::None;
+                }
+                _ => {}
             }
-            return Action::None;
         }
 
         if self.db_state.confirming_pull.is_some() {
@@ -453,10 +482,8 @@ impl App {
                 self.toolbar.open_apps();
                 Action::FetchApps
             }
-            KeyCode::Char('/') => {
-                self.palette.open();
-                Action::None
-            }
+            KeyCode::Char('o') => Action::OpenApp,
+            KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('q') => {
                 self.confirming_quit = true;
                 Action::None
@@ -584,8 +611,8 @@ impl App {
         self.confirming_quit
     }
 
-    pub fn palette(&self) -> &CommandPaletteState {
-        &self.palette
+    pub fn commands_cursor(&self) -> usize {
+        self.commands_cursor
     }
 
     pub fn reset_for_new_app(&mut self, package: &str) {
@@ -720,18 +747,30 @@ mod tests {
     }
 
     #[test]
-    fn slash_opens_palette() {
+    fn o_opens_app() {
         let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('/')));
-        assert!(app.palette().open);
+        assert!(matches!(app.handle_key(key(KeyCode::Char('o'))), Action::OpenApp));
     }
 
     #[test]
-    fn palette_esc_closes() {
+    fn k_kills_app() {
         let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('/')));
-        app.handle_key(key(KeyCode::Esc));
-        assert!(!app.palette().open);
+        assert!(matches!(app.handle_key(key(KeyCode::Char('k'))), Action::KillApp));
+    }
+
+    #[test]
+    fn c_focuses_commands_panel() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('c')));
+        assert_eq!(app.focused_panel(), Some(panel::COMMANDS));
+    }
+
+    #[test]
+    fn commands_panel_enter_executes() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('c')));
+        let action = app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(action, Action::OpenApp));
     }
 
     #[test]

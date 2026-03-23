@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::App;
+use crate::app::{App, COMMAND_LIST};
 use crate::selector;
 use crate::toolbar::DropdownKind;
 use crate::battery;
@@ -97,12 +97,7 @@ pub fn render_app(
             Span::styled("uit ", Style::new().fg(theme::MUTED)),
         ]
     };
-    let mut hint_spans = Vec::new();
-    hint_spans.extend(quit_spans);
-    hint_spans.push(Span::styled("───", Style::new().fg(theme::SURFACE)));
-    hint_spans.push(Span::styled(" /", Style::new().fg(theme::KEY_HINT)));
-    hint_spans.push(Span::styled("commands ", Style::new().fg(theme::MUTED)));
-    let hint_line = Line::from(hint_spans);
+    let hint_line = Line::from(quit_spans);
 
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -138,8 +133,6 @@ pub fn render_app(
 
     if app.toolbar().open.is_some() {
         render_dropdown_overlay(frame, chunks[0], app);
-    } else if app.palette().open {
-        render_command_palette(frame, area, app);
     }
 }
 
@@ -299,7 +292,7 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let logcat_visible = vis[0];
     let trace_visible = vis[1];
     let permissions_visible = vis[5];
-    let mid_visible = trace_visible || permissions_visible;
+    let mid_visible = true; // commands panel always visible
     let bot_left_visible = vis[2] || vis[3] || vis[4];
     let bot_right_visible = vis[6] || vis[7];
     let bot_visible = bot_left_visible || bot_right_visible;
@@ -338,18 +331,60 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
 }
 
 fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, permissions_visible: bool) {
-    match (trace_visible, permissions_visible) {
-        (true, true) => {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            render_trace_panel(frame, cols[0], app);
-            permissions_ui::render_permissions_panel(frame, cols[1], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+    let mut panels: Vec<(&str, u8)> = Vec::new();
+    panels.push(("commands", panel::COMMANDS));
+    if trace_visible { panels.push(("trace", panel::TRACE)); }
+    if permissions_visible { panels.push(("permissions", panel::PERMISSIONS)); }
+
+    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, &(_, p)) in panels.iter().enumerate() {
+        match p {
+            panel::COMMANDS => render_commands_panel(frame, cols[i], app),
+            panel::TRACE => render_trace_panel(frame, cols[i], app),
+            panel::PERMISSIONS => permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state()),
+            _ => {}
         }
-        (true, false) => render_trace_panel(frame, area, app),
-        (false, true) => permissions_ui::render_permissions_panel(frame, area, is_focused(app, panel::PERMISSIONS), app.permissions_state()),
-        (false, false) => {}
+    }
+}
+
+fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let focused = is_focused(app, panel::COMMANDS);
+    let block = panel_block(panel::COMMANDS, focused);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let accent = panel::by_number(panel::COMMANDS).bright_color;
+
+    let items: Vec<ListItem> = COMMAND_LIST
+        .iter()
+        .map(|(name, _)| {
+            let is_toggle_on = (*name == "toggle layout bounds" && app.layout_bounds())
+                || (*name == "toggle airplane mode" && app.airplane_mode())
+                || (*name == "toggle wifi" && app.wifi_enabled());
+            let prefix = if is_toggle_on { "• " } else { "  " };
+            let prefix_color = if is_toggle_on { accent } else { theme::FG };
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix, Style::new().fg(prefix_color)),
+                Span::styled(*name, Style::new().fg(theme::FG)),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .highlight_style(Style::new().fg(accent).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▸ ");
+
+    if focused {
+        let cursor = app.commands_cursor().min(COMMAND_LIST.len().saturating_sub(1));
+        let mut state = ListState::default().with_selected(Some(cursor));
+        frame.render_stateful_widget(list, inner, &mut state);
+    } else {
+        frame.render_widget(list, inner);
     }
 }
 
@@ -539,70 +574,3 @@ fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 }
 
-fn render_command_palette(frame: &mut Frame, area: Rect, app: &App) {
-    let palette = app.palette();
-    let filtered = palette.filtered_commands();
-
-    let width = area.width.saturating_sub(10).max(40);
-    let height = (filtered.len() as u16 + 5).min(area.height.saturating_sub(4));
-    let x = area.x + (area.width.saturating_sub(width)) / 2;
-    let y = area.y + (area.height.saturating_sub(height)) / 2;
-    let dialog_area = Rect::new(x, y, width, height);
-
-    let dim = ratatui::widgets::Block::default().style(Style::new().bg(theme::BG).fg(theme::MUTED));
-    frame.render_widget(dim, area);
-    frame.render_widget(Clear, dialog_area);
-
-    let title = Line::from(Span::styled(" commands ", Style::new().fg(theme::ACCENT)));
-
-    let filter_span = if palette.filter.is_empty() {
-        Span::styled(" /", Style::new().fg(theme::ACCENT))
-    } else {
-        Span::styled(format!(" /{}", palette.filter), Style::new().fg(theme::YELLOW))
-    };
-
-    let bottom_spans = vec![
-        filter_span,
-        Span::styled(" ", Style::new()),
-        Span::styled("───", Style::new().fg(theme::MUTED)),
-        Span::styled(" ↩", Style::new().fg(theme::ACCENT)),
-        Span::styled(" run ", Style::new().fg(theme::FG)),
-        Span::styled("───", Style::new().fg(theme::MUTED)),
-        Span::styled(" esc", Style::new().fg(theme::ACCENT)),
-        Span::styled(" close ", Style::new().fg(theme::FG)),
-    ];
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .title(title)
-        .title_bottom(Line::from(bottom_spans))
-        .border_style(Style::new().fg(theme::MUTED))
-        .style(Style::new().bg(theme::SURFACE));
-
-    let inner = block.inner(dialog_area);
-    frame.render_widget(block, dialog_area);
-
-    let items: Vec<ListItem> = filtered
-        .iter()
-        .map(|(name, _)| {
-            let is_toggle_on = (*name == "toggle layout bounds" && app.layout_bounds())
-                || (*name == "toggle airplane mode" && app.airplane_mode())
-                || (*name == "toggle wifi" && app.wifi_enabled());
-            let prefix = if is_toggle_on { "• " } else { "  " };
-            let prefix_color = if is_toggle_on { theme::CYAN } else { theme::FG };
-            ListItem::new(Line::from(vec![
-                Span::styled(prefix, Style::new().fg(prefix_color)),
-                Span::styled(*name, Style::new().fg(theme::FG)),
-            ]))
-        })
-        .collect();
-
-    let list = List::new(items)
-        .highlight_style(Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD))
-        .highlight_symbol(" ▸");
-
-    let clamped = palette.cursor.min(filtered.len().saturating_sub(1));
-    let mut state = ListState::default().with_selected(Some(clamped));
-    frame.render_stateful_widget(list, inner, &mut state);
-}

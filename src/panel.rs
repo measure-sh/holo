@@ -20,6 +20,7 @@ impl PanelDef {
     }
 }
 
+pub const COMMANDS: u8 = 0;
 pub const LOGCAT: u8 = 1;
 pub const TRACE: u8 = 2;
 pub const FRAMES: u8 = 3;
@@ -30,7 +31,7 @@ pub const FILES: u8 = 7;
 pub const DATABASE: u8 = 8;
 
 pub const PANELS: [PanelDef; 9] = [
-    PanelDef { number: 0, name: "commands",    dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: None },
+    PanelDef { number: 0, name: "commands",    dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: Some('c') },
     PanelDef { number: 1, name: "logcat",      dim_color: theme::DIM_GREEN,   bright_color: theme::GREEN,   focus_key: Some('l') },
     PanelDef { number: 2, name: "trace",       dim_color: theme::DIM_BLUE,    bright_color: theme::ACCENT,  focus_key: Some('t') },
     PanelDef { number: 3, name: "frames",      dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
