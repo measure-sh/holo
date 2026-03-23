@@ -112,13 +112,12 @@ pub fn render_app(
         Span::styled(heart, heart_style),
         Span::styled(" by ", Style::new().fg(theme::MUTED)),
         Span::styled("measure.sh ", Style::new().fg(theme::ACCENT)),
-    ]).alignment(Alignment::Right);
+    ]).alignment(Alignment::Center);
 
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(title_line)
-        .title(branding_line);
+        .title(title_line);
 
     if let Some(level) = battery_level {
         block = block.title(battery::battery_bar(level));
@@ -132,6 +131,7 @@ pub fn render_app(
 
     block = block
         .title_bottom(hint_line)
+        .title_bottom(branding_line)
         .title_bottom(info_line)
         .border_style(Style::new().fg(theme::SURFACE))
         .style(Style::new().bg(theme::BG).fg(theme::FG));
