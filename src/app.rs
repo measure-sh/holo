@@ -168,11 +168,23 @@ impl App {
         }
 
         if self.toolbar.open.is_some() {
-            return match self.toolbar.handle_key(code) {
-                ToolbarAction::SelectDevice(d) => Action::ChangeDevice(d),
-                ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
-                ToolbarAction::Close | ToolbarAction::None => Action::None,
-            };
+            match code {
+                KeyCode::F(1) => {
+                    self.toolbar.open_devices();
+                    return Action::FetchDevices;
+                }
+                KeyCode::F(2) => {
+                    self.toolbar.open_apps();
+                    return Action::FetchApps;
+                }
+                _ => {
+                    return match self.toolbar.handle_key(code) {
+                        ToolbarAction::SelectDevice(d) => Action::ChangeDevice(d),
+                        ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
+                        ToolbarAction::Close | ToolbarAction::None => Action::None,
+                    };
+                }
+            }
         }
 
         if self.confirming_quit {
