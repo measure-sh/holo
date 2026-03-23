@@ -746,6 +746,13 @@ impl App {
         self.settings_index
     }
 
+    pub fn reset_for_new_app(&mut self, package: &str) {
+        self.package = package.to_string();
+        self.db_state = DatabaseState::new();
+        self.files_state = FilesState::new(package);
+        self.permissions_state = PermissionsState::new();
+    }
+
     pub fn toolbar(&self) -> &ToolbarState {
         &self.toolbar
     }

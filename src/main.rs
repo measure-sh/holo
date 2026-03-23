@@ -221,6 +221,7 @@ fn run_app(
                         app.toolbar_mut().package = Some(p.clone());
                         app.toolbar_mut().last_package = Some(p.clone());
                         toolbar::save_last_package(&p);
+                        app.reset_for_new_app(&p);
                         if let Some(device) = app.toolbar().device.clone() {
                             data = Some(build_data(&adb, &device, &p, &mut app));
                             title = build_title(&device, &p, data.as_ref().unwrap());
