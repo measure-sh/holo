@@ -3,7 +3,10 @@ use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
 
+use crossterm::event::KeyCode;
+
 use crate::adb::Adb;
+use crate::app::Action;
 
 pub struct TraceState {
     pub recording: bool,
@@ -35,6 +38,51 @@ impl TraceState {
             message_at: None,
             pulled_traces,
             selected_index: 0,
+        }
+    }
+
+    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+        match code {
+            KeyCode::Char('s') => {
+                if self.recording {
+                    self.recording = false;
+                    self.started_at = None;
+                    Some(Action::StopTrace)
+                } else {
+                    self.recording = true;
+                    self.started_at = Some(std::time::Instant::now());
+                    self.status_message = None;
+                    self.message_at = None;
+                    Some(Action::StartTrace)
+                }
+            }
+            KeyCode::Up | KeyCode::Char('k') if !self.recording => {
+                if self.selected_index > 0 {
+                    self.selected_index -= 1;
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Down | KeyCode::Char('j') if !self.recording => {
+                let max = self.pulled_traces.len().saturating_sub(1);
+                if self.selected_index < max {
+                    self.selected_index += 1;
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Enter if !self.recording => {
+                if let Some(path) = self.selected_path() {
+                    open_in_perfetto_ui(path);
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Char('d') if !self.recording => {
+                if let Some(path) = self.delete_selected() {
+                    let _ = std::fs::remove_file(&path);
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Esc => Some(Action::Unfocus),
+            _ => None,
         }
     }
 

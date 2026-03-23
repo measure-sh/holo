@@ -9,7 +9,7 @@ use crate::monitor::MonitorState;
 use crate::panel;
 use crate::permissions::PermissionsState;
 use crate::toolbar::{ToolbarAction, ToolbarState};
-use crate::trace::{self, TraceState};
+use crate::trace::TraceState;
 
 pub const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
     ("open app", || Action::OpenApp),
@@ -390,50 +390,12 @@ impl App {
         }
 
         if self.focused == Some(panel::TRACE) {
-            match code {
-                KeyCode::Char('s') => {
-                    if self.trace_state.recording {
-                        self.trace_state.recording = false;
-                        self.trace_state.started_at = None;
-                        return Action::StopTrace;
-                    } else {
-                        self.trace_state.recording = true;
-                        self.trace_state.started_at = Some(std::time::Instant::now());
-                        self.trace_state.status_message = None;
-                        self.trace_state.message_at = None;
-                        return Action::StartTrace;
-                    }
-                }
-                KeyCode::Up | KeyCode::Char('k') if !self.trace_state.recording => {
-                    if self.trace_state.selected_index > 0 {
-                        self.trace_state.selected_index -= 1;
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Down | KeyCode::Char('j') if !self.trace_state.recording => {
-                    let max = self.trace_state.pulled_traces.len().saturating_sub(1);
-                    if self.trace_state.selected_index < max {
-                        self.trace_state.selected_index += 1;
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Enter if !self.trace_state.recording => {
-                    if let Some(path) = self.trace_state.selected_path() {
-                        trace::open_in_perfetto_ui(path);
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Char('d') if !self.trace_state.recording => {
-                    if let Some(path) = self.trace_state.delete_selected() {
-                        let _ = std::fs::remove_file(&path);
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Esc => {
+            if let Some(action) = self.trace_state.handle_key(code) {
+                if matches!(action, Action::Unfocus) {
                     self.focused = None;
                     return Action::Noop;
                 }
-                _ => {}
+                return action;
             }
         }
 
