@@ -392,9 +392,10 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
         .map(|(name, _)| {
             let is_toggle_on = (*name == "layout bounds" && app.layout_bounds())
                 || (*name == "airplane mode" && app.airplane_mode())
-                || (*name == "wifi" && app.wifi_enabled());
+                || (*name == "wifi" && app.wifi_enabled())
+                || (*name == "dark mode" && app.dark_mode());
             let is_global = *name == "open app" || *name == "kill app";
-            let display_name = if *name == "layout bounds" || *name == "wifi" || *name == "airplane mode" {
+            let display_name = if *name == "layout bounds" || *name == "wifi" || *name == "airplane mode" || *name == "dark mode" {
                 let verb = if is_toggle_on { "disable" } else { "enable" };
                 format!("{} {}", verb, name)
             } else {
