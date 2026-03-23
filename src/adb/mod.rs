@@ -9,7 +9,6 @@ use color_eyre::Result;
 #[derive(Debug, Clone, Default)]
 pub struct MemInfo {
     pub rss_kb: u64,
-    pub pss_kb: u64,
 }
 
 #[derive(Debug, Clone, Copy, Default)]

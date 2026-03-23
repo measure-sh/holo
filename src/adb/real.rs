@@ -301,7 +301,7 @@ impl Adb for RealAdb {
 
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
         let cmd = format!(
-            "PID=$(pidof -s {0}); [ -n \"$PID\" ] && cat /proc/$PID/status 2>/dev/null; cat /proc/$PID/smaps_rollup 2>/dev/null; true",
+            "PID=$(pidof -s {0}); [ -n \"$PID\" ] && cat /proc/$PID/status 2>/dev/null; true",
             package
         );
         let output = Command::new("adb")
@@ -537,15 +537,9 @@ fn parse_kb_value(line: &str, prefix: &str) -> Option<u64> {
 fn parse_proc_mem(output: &str) -> MemInfo {
     let mut info = MemInfo::default();
     for line in output.lines() {
-        if info.rss_kb == 0 {
-            if let Some(val) = parse_kb_value(line, "VmRSS:") {
-                info.rss_kb = val;
-            }
-        }
-        if info.pss_kb == 0 {
-            if let Some(val) = parse_kb_value(line, "Pss:") {
-                info.pss_kb = val;
-            }
+        if let Some(val) = parse_kb_value(line, "VmRSS:") {
+            info.rss_kb = val;
+            break;
         }
     }
     info
@@ -849,27 +843,15 @@ mod tests {
 Name:\tcom.example.app
 VmRSS:\t  128000 kB
 VmSwap:\t       0 kB
-Rss:           200000 kB
-Pss:            95000 kB
 ";
         let info = parse_proc_mem(output);
         assert_eq!(info.rss_kb, 128000);
-        assert_eq!(info.pss_kb, 95000);
     }
 
     #[test]
     fn proc_mem_empty_output() {
         let info = parse_proc_mem("");
         assert_eq!(info.rss_kb, 0);
-        assert_eq!(info.pss_kb, 0);
-    }
-
-    #[test]
-    fn proc_mem_no_pss() {
-        let output = "VmRSS:\t  50000 kB\n";
-        let info = parse_proc_mem(output);
-        assert_eq!(info.rss_kb, 50000);
-        assert_eq!(info.pss_kb, 0);
     }
 
     #[test]

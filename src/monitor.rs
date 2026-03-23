@@ -8,7 +8,6 @@ const MAX_SAMPLES: usize = 60;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MonitorSample {
     pub rss_kb: u64,
-    pub pss_kb: u64,
     pub cpu_percent: f32,
     pub total_frames: u64,
     pub janky_frames: u64,
@@ -106,7 +105,6 @@ pub fn spawn_poller(
 
             if let Ok(mem) = adb.get_meminfo(&serial, &package) {
                 sample.rss_kb = mem.rss_kb;
-                sample.pss_kb = mem.pss_kb;
             }
 
             if let Ok(cpu) = adb.get_cpu_usage(&serial, &package) {
