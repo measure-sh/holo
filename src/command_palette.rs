@@ -67,9 +67,7 @@ impl CommandPaletteState {
             }
             KeyCode::Enter => {
                 let filtered = self.filtered_commands();
-                let result = filtered.get(self.cursor).map(|(_, action_fn)| action_fn());
-                self.close();
-                result
+                filtered.get(self.cursor).map(|(_, action_fn)| action_fn())
             }
             KeyCode::Backspace => {
                 self.filter.pop();
@@ -172,7 +170,7 @@ mod tests {
         state.filter = "quit".to_string();
         let result = state.handle_key(KeyCode::Enter);
         assert!(matches!(result, Some(Action::Quit)));
-        assert!(!state.open);
+        assert!(state.open);
     }
 
     #[test]
