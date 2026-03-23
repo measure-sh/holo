@@ -332,9 +332,6 @@ fn run_app(
                             copy_to_clipboard(&text);
                         }
                     }
-                    Action::CopyText(text) => {
-                        copy_to_clipboard(&text);
-                    }
                     Action::RunQuery(db, sql) => {
                         if let (Some(d), Some(s), Some(p)) = (&mut data, &serial, &package) {
                             d.start_query(adb.clone(), s.clone(), p.clone(), db, sql);

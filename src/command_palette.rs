@@ -3,11 +3,6 @@ use crossterm::event::KeyCode;
 use crate::app::Action;
 use crate::apps;
 
-pub struct Command {
-    pub name: &'static str,
-    pub action: Action,
-}
-
 const COMMANDS: &[(&str, fn() -> Action)] = &[
     ("open app", || Action::OpenApp),
     ("wake screen", || Action::WakeScreen),

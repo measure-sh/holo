@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::adb::Device;
+use crate::command_palette::CommandPaletteState;
 use crate::database::DatabaseState;
 use crate::files::{FileConfirm, FilesState, ToggleResult};
 use crate::logcat_state::LogcatState;
@@ -31,7 +32,6 @@ pub enum Action {
     ToggleAirplaneMode,
     TogglePermission(String, bool),
     CopyLogcat,
-    CopyText(String),
     RefreshFiles,
     ExpandDir(String),
     PullFile(String),
@@ -41,16 +41,6 @@ pub enum Action {
     Screenshot,
     ToggleWifi,
     WirelessAdb,
-}
-
-pub enum SettingsAction {
-    Copy,
-}
-
-pub struct SettingsItem {
-    pub label: &'static str,
-    pub value: String,
-    pub action: SettingsAction,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -71,23 +61,12 @@ pub struct App {
     files_state: FilesState,
     monitor_state: MonitorState,
     toolbar: ToolbarState,
+    palette: CommandPaletteState,
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
     wifi_enabled: bool,
     confirming_quit: bool,
-    confirming_kill: bool,
-    confirming_clear: bool,
-    confirming_uninstall: bool,
-    confirming_screenshot: bool,
-    show_settings: bool,
-    settings_index: usize,
-    pub command_flash: Option<(usize, std::time::Instant)>,
-    pub kill_flash: Option<std::time::Instant>,
-    pub clear_flash: Option<std::time::Instant>,
-    pub uninstall_flash: Option<std::time::Instant>,
-    pub screenshot_flash: Option<std::time::Instant>,
-    pub wireless_flash: Option<std::time::Instant>,
     trace_state: TraceState,
 }
 
@@ -106,24 +85,13 @@ impl App {
             files_state: FilesState::new(pkg),
             monitor_state: MonitorState::new(),
             toolbar,
+            palette: CommandPaletteState::new(),
             package: pkg.to_string(),
             layout_bounds: false,
             airplane_mode: false,
             wifi_enabled: false,
             confirming_quit: false,
-            confirming_kill: false,
-            confirming_clear: false,
-            confirming_uninstall: false,
-            confirming_screenshot: false,
-            show_settings: false,
-            settings_index: 0,
-            command_flash: None,
-            kill_flash: None,
-            clear_flash: None,
             trace_state: TraceState::new(pkg),
-            uninstall_flash: None,
-            screenshot_flash: None,
-            wireless_flash: None,
         }
     }
 
@@ -195,76 +163,11 @@ impl App {
             };
         }
 
-        if self.confirming_kill {
-            self.confirming_kill = false;
-            return match code {
-                KeyCode::Char('k') => {
-                    self.kill_flash = Some(std::time::Instant::now());
-                    Action::KillApp
-                }
-                _ => Action::None,
-            };
-        }
-
-        if self.confirming_clear {
-            self.confirming_clear = false;
-            return match code {
-                KeyCode::Char('c') => {
-                    self.clear_flash = Some(std::time::Instant::now());
-                    Action::ClearData
-                }
-                _ => Action::None,
-            };
-        }
-
-        if self.confirming_uninstall {
-            self.confirming_uninstall = false;
-            return match code {
-                KeyCode::Char('u') => {
-                    self.uninstall_flash = Some(std::time::Instant::now());
-                    Action::UninstallApp
-                }
-                _ => Action::None,
-            };
-        }
-
-        if self.confirming_screenshot {
-            self.confirming_screenshot = false;
-            return match code {
-                KeyCode::Char('s') => {
-                    self.screenshot_flash = Some(std::time::Instant::now());
-                    Action::Screenshot
-                }
-                _ => Action::None,
-            };
-        }
-
-        if self.show_settings {
-            return match code {
-                KeyCode::Esc => {
-                    self.show_settings = false;
-                    Action::None
-                }
-                KeyCode::Enter => {
-                    let item = self.settings_items().remove(self.settings_index);
-                    self.show_settings = false;
-                    match item.action {
-                        SettingsAction::Copy => Action::CopyText(item.value),
-                    }
-                }
-                KeyCode::Up => {
-                    self.settings_index = self.settings_index.saturating_sub(1);
-                    Action::None
-                }
-                KeyCode::Down => {
-                    let max = self.settings_items().len().saturating_sub(1);
-                    if self.settings_index < max {
-                        self.settings_index += 1;
-                    }
-                    Action::None
-                }
-                _ => Action::None,
-            };
+        if self.palette.open {
+            if let Some(action) = self.palette.handle_key(code) {
+                return action;
+            }
+            return Action::None;
         }
 
         if self.db_state.confirming_pull.is_some() {
@@ -550,54 +453,13 @@ impl App {
                 self.toolbar.open_apps();
                 Action::FetchApps
             }
-            KeyCode::Char('\\') => {
-                self.show_settings = true;
-                self.settings_index = 0;
-                Action::None
-            }
-            KeyCode::Char('s') => {
-                self.confirming_screenshot = true;
+            KeyCode::Char('/') => {
+                self.palette.open();
                 Action::None
             }
             KeyCode::Char('q') => {
                 self.confirming_quit = true;
                 Action::None
-            }
-            KeyCode::Char('o') => {
-                self.command_flash = Some((0, std::time::Instant::now()));
-                Action::OpenApp
-            }
-            KeyCode::Char('k') => {
-                self.confirming_kill = true;
-                Action::None
-            }
-            KeyCode::Char('c') => {
-                self.confirming_clear = true;
-                Action::None
-            }
-            KeyCode::Char('u') => {
-                self.confirming_uninstall = true;
-                Action::None
-            }
-            KeyCode::Char('w') => {
-                self.command_flash = Some((1, std::time::Instant::now()));
-                Action::WakeScreen
-            }
-            KeyCode::Char('b') => {
-                self.layout_bounds = !self.layout_bounds;
-                Action::ToggleLayoutBounds
-            }
-            KeyCode::Char('a') => {
-                self.airplane_mode = !self.airplane_mode;
-                Action::ToggleAirplaneMode
-            }
-            KeyCode::Char('$') => {
-                self.wifi_enabled = !self.wifi_enabled;
-                Action::ToggleWifi
-            }
-            KeyCode::Char('&') => {
-                self.wireless_flash = Some(std::time::Instant::now());
-                Action::WirelessAdb
             }
             KeyCode::Char(c @ '1'..='8') => {
                 self.toggle_visibility(c as u8 - b'0');
@@ -722,28 +584,8 @@ impl App {
         self.confirming_quit
     }
 
-    pub fn confirming_kill(&self) -> bool {
-        self.confirming_kill
-    }
-
-    pub fn confirming_clear(&self) -> bool {
-        self.confirming_clear
-    }
-
-    pub fn confirming_uninstall(&self) -> bool {
-        self.confirming_uninstall
-    }
-
-    pub fn confirming_screenshot(&self) -> bool {
-        self.confirming_screenshot
-    }
-
-    pub fn show_settings(&self) -> bool {
-        self.show_settings
-    }
-
-    pub fn settings_index(&self) -> usize {
-        self.settings_index
+    pub fn palette(&self) -> &CommandPaletteState {
+        &self.palette
     }
 
     pub fn reset_for_new_app(&mut self, package: &str) {
@@ -761,12 +603,6 @@ impl App {
         &mut self.toolbar
     }
 
-    pub fn settings_items(&self) -> Vec<SettingsItem> {
-        let path = std::env::temp_dir().join("msh").join(&self.package);
-        vec![
-            SettingsItem { label: "downloads path", value: format!("{}", path.display()), action: SettingsAction::Copy },
-        ]
-    }
 }
 
 #[cfg(test)]
@@ -843,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn q_then_other_key_cancels_quit() {
+    fn q_then_other_cancels_quit() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.confirming_quit());
@@ -884,34 +720,18 @@ mod tests {
     }
 
     #[test]
-    fn o_opens_app() {
+    fn slash_opens_palette() {
         let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('o'))), Action::OpenApp));
+        app.handle_key(key(KeyCode::Char('/')));
+        assert!(app.palette().open);
     }
 
     #[test]
-    fn kk_kills_app() {
+    fn palette_esc_closes() {
         let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('k'))), Action::None));
-        assert!(app.confirming_kill());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('k'))), Action::KillApp));
-    }
-
-    #[test]
-    fn k_then_other_cancels_kill() {
-        let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('k')));
-        assert!(app.confirming_kill());
+        app.handle_key(key(KeyCode::Char('/')));
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.confirming_kill());
-    }
-
-    #[test]
-    fn cc_clears_data() {
-        let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::None));
-        assert!(app.confirming_clear());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::ClearData));
+        assert!(!app.palette().open);
     }
 
     #[test]
@@ -1447,102 +1267,5 @@ mod tests {
         assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::None));
     }
 
-    #[test]
-    fn cc_falls_through_to_clear_data_in_list_view() {
-        let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
-        app.handle_key(key(KeyCode::Char('d')));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::None));
-        assert!(app.confirming_clear());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::ClearData));
-    }
-
-    #[test]
-    fn a_toggles_airplane_mode() {
-        let mut app = App::new(None, Some("com.test"));
-        assert!(!app.airplane_mode());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('a'))), Action::ToggleAirplaneMode));
-        assert!(app.airplane_mode());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('a'))), Action::ToggleAirplaneMode));
-        assert!(!app.airplane_mode());
-    }
-
-    #[test]
-    fn backslash_opens_settings() {
-        let mut app = App::new(None, Some("com.test"));
-        assert!(!app.show_settings());
-        app.handle_key(key(KeyCode::Char('\\')));
-        assert!(app.show_settings());
-    }
-
-    #[test]
-    fn esc_closes_settings() {
-        let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('\\')));
-        assert!(app.show_settings());
-        app.handle_key(key(KeyCode::Esc));
-        assert!(!app.show_settings());
-    }
-
-    #[test]
-    fn enter_in_settings_copies_and_closes() {
-        let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('\\')));
-        let action = app.handle_key(key(KeyCode::Enter));
-        assert!(matches!(action, Action::CopyText(_)));
-        assert!(!app.show_settings());
-    }
-
-    #[test]
-    fn settings_traps_keys() {
-        let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('\\')));
-        let action = app.handle_key(key(KeyCode::Char('q')));
-        assert!(matches!(action, Action::None));
-        assert!(app.show_settings());
-    }
-
-    #[test]
-    fn settings_copy_path() {
-        let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('\\')));
-        let action = app.handle_key(key(KeyCode::Enter));
-        assert!(matches!(action, Action::CopyText(_)));
-        assert!(!app.show_settings());
-    }
-
-    #[test]
-    fn ss_takes_screenshot() {
-        let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('s'))), Action::None));
-        assert!(app.confirming_screenshot());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('s'))), Action::Screenshot));
-    }
-
-    #[test]
-    fn s_then_other_cancels_screenshot() {
-        let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('s')));
-        assert!(app.confirming_screenshot());
-        app.handle_key(key(KeyCode::Esc));
-        assert!(!app.confirming_screenshot());
-    }
-
-    #[test]
-    fn dollar_toggles_wifi() {
-        let mut app = App::new(None, Some("com.test"));
-        assert!(!app.wifi_enabled());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('$'))), Action::ToggleWifi));
-        assert!(app.wifi_enabled());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('$'))), Action::ToggleWifi));
-        assert!(!app.wifi_enabled());
-    }
-
-    #[test]
-    fn ampersand_triggers_wireless_adb() {
-        let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('&'))), Action::WirelessAdb));
-        assert!(app.wireless_flash.is_some());
-    }
 
 }

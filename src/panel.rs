@@ -20,7 +20,6 @@ impl PanelDef {
     }
 }
 
-pub const COMMANDS: u8 = 0;
 pub const LOGCAT: u8 = 1;
 pub const TRACE: u8 = 2;
 pub const FRAMES: u8 = 3;
