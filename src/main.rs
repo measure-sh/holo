@@ -254,18 +254,21 @@ fn run_app(
                         }
                     }
                     Action::ToggleLayoutBounds => {
+                        app.set_layout_bounds(!app.layout_bounds());
                         if let Some(s) = &serial {
                             let enabled = app.layout_bounds();
                             spawn_app_action(&adb, s, "", move |adb, s, _| adb.set_layout_bounds(s, enabled));
                         }
                     }
                     Action::ToggleAirplaneMode => {
+                        app.set_airplane_mode(!app.airplane_mode());
                         if let Some(s) = &serial {
                             let enabled = app.airplane_mode();
                             spawn_app_action(&adb, s, "", move |adb, s, _| adb.set_airplane_mode(s, enabled));
                         }
                     }
                     Action::ToggleWifi => {
+                        app.set_wifi_enabled(!app.wifi_enabled());
                         if let Some(s) = &serial {
                             let enabled = app.wifi_enabled();
                             spawn_app_action(&adb, s, "", move |adb, s, _| adb.set_wifi_enabled(s, enabled));
