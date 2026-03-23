@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::path::{Path, PathBuf};
 use std::sync::{mpsc, Arc};
 
 use crate::adb::Adb;
@@ -174,4 +176,70 @@ pub fn spawn_stop_and_pull_trace(
         let _ = tx.send(result);
     });
     rx
+}
+
+pub fn open_in_perfetto_ui(path: &Path) {
+    let path = path.to_path_buf();
+    std::thread::spawn(move || {
+        let fname = path.file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+
+        let listener = match TcpListener::bind("127.0.0.1:9001") {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+
+        let url = format!(
+            "https://ui.perfetto.dev/#!/?url=http://127.0.0.1:9001/{fname}"
+        );
+        let _ = open::that(&url);
+
+        let trace_data = match std::fs::read(&path) {
+            Ok(d) => d,
+            Err(_) => return,
+        };
+
+        listener.set_nonblocking(false).ok();
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { break };
+
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let req = String::from_utf8_lossy(&buf[..n]);
+
+            let requested_path = req.lines().next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .unwrap_or("");
+
+            if req.starts_with("OPTIONS") {
+                let response = "HTTP/1.1 204 No Content\r\n\
+                     Access-Control-Allow-Origin: https://ui.perfetto.dev\r\n\
+                     Access-Control-Allow-Methods: GET\r\n\
+                     Access-Control-Allow-Headers: *\r\n\
+                     Content-Length: 0\r\n\r\n";
+                let _ = stream.write_all(response.as_bytes());
+                continue;
+            }
+
+            if requested_path != format!("/{fname}") {
+                let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+                let _ = stream.write_all(response.as_bytes());
+                continue;
+            }
+
+            let response = format!(
+                "HTTP/1.1 200 OK\r\n\
+                 Access-Control-Allow-Origin: https://ui.perfetto.dev\r\n\
+                 Content-Type: application/octet-stream\r\n\
+                 Cache-Control: no-cache\r\n\
+                 Content-Length: {}\r\n\r\n",
+                trace_data.len()
+            );
+            let _ = stream.write_all(response.as_bytes());
+            let _ = stream.write_all(&trace_data);
+            break;
+        }
+    });
 }

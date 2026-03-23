@@ -6,7 +6,7 @@ use crate::logcat_state::LogcatState;
 use crate::monitor::MonitorState;
 use crate::panel;
 use crate::permissions::PermissionsState;
-use crate::trace::TraceState;
+use crate::trace::{self, TraceState};
 
 pub enum Action {
     Quit,
@@ -461,8 +461,7 @@ impl App {
                 }
                 KeyCode::Enter if !self.trace_state.recording => {
                     if let Some(path) = self.trace_state.selected_path() {
-                        let path = path.clone();
-                        let _ = open::that(&path);
+                        trace::open_in_perfetto_ui(path);
                     }
                     return Action::None;
                 }

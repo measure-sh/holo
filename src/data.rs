@@ -209,8 +209,8 @@ impl DataSources {
                     Ok(path) => {
                         ts.status_message = Some("done!".to_string());
                         ts.message_at = Some(std::time::Instant::now());
-                        ts.pulled_traces.push(path.clone());
-                        let _ = open::that(&path);
+                        trace::open_in_perfetto_ui(&path);
+                        ts.pulled_traces.push(path);
                     }
                     Err(e) => {
                         ts.status_message = Some(format!("failed: {e}"));
