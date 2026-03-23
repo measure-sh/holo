@@ -380,10 +380,18 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
                 || (*name == "toggle wifi" && app.wifi_enabled());
             let prefix = if is_toggle_on { "• " } else { "  " };
             let prefix_color = if is_toggle_on { accent } else { theme::FG };
-            ListItem::new(Line::from(vec![
+            let is_global = *name == "open app" || *name == "kill app";
+            let mut spans = vec![
                 Span::styled(prefix, Style::new().fg(prefix_color)),
-                Span::styled(*name, Style::new().fg(theme::FG)),
-            ]))
+            ];
+            if is_global {
+                let (first, rest) = name.split_at(1);
+                spans.push(Span::styled(first.to_string(), Style::new().fg(theme::KEY_HINT)));
+                spans.push(Span::styled(rest.to_string(), Style::new().fg(theme::FG)));
+            } else {
+                spans.push(Span::styled(*name, Style::new().fg(theme::FG)));
+            }
+            ListItem::new(Line::from(spans))
         })
         .collect();
 
