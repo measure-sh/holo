@@ -100,6 +100,14 @@ fn build_title(device: &Device, package: &str, data: &DataSources) -> String {
     }
 }
 
+fn try_auto_select_package(adb: &Arc<dyn Adb>, device: &Device, last_package: Option<&str>) -> (Vec<String>, Option<String>) {
+    let packages = adb.list_packages(&device.serial).unwrap_or_default();
+    let auto = last_package.and_then(|lp| {
+        packages.iter().find(|p| p.as_str() == lp).cloned()
+    });
+    (packages, auto)
+}
+
 fn main() -> Result<()> {
     color_eyre::install()?;
 
@@ -121,6 +129,11 @@ fn run_app(
     let mut app = App::new(initial_device.clone(), None);
     let mut data: Option<DataSources> = None;
     let mut title = String::new();
+
+    if let Some(device) = &initial_device {
+        let (packages, _) = try_auto_select_package(&adb, device, app.toolbar().last_package.as_deref());
+        app.toolbar_mut().receive_packages(packages);
+    }
 
     let mut devices_rx: Option<mpsc::Receiver<Vec<Device>>> = None;
     let mut packages_rx: Option<mpsc::Receiver<Vec<String>>> = None;
@@ -184,11 +197,18 @@ fn run_app(
                         }
                     }
                     Action::ChangeDevice(d) => {
+                        let last = app.toolbar().last_package.clone();
                         app.toolbar_mut().device = Some(d.clone());
                         app.toolbar_mut().package = None;
                         data = None;
                         title = String::new();
-                        packages_rx = Some(spawn_fetch_packages(&adb, &d.serial));
+                        let (packages, auto) = try_auto_select_package(&adb, &d, last.as_deref());
+                        app.toolbar_mut().receive_packages(packages);
+                        if let Some(pkg) = auto {
+                            app.toolbar_mut().package = Some(pkg.clone());
+                            data = Some(build_data(&adb, &d, &pkg, &mut app));
+                            title = build_title(&d, &pkg, data.as_ref().unwrap());
+                        }
                     }
                     Action::ChangeApp(p) => {
                         app.toolbar_mut().package = Some(p.clone());
