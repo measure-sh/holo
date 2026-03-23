@@ -296,13 +296,45 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     frame.render_widget(list, inner);
 }
 
+const SPINNER: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
-    let block = panel_block(panel::TRACE, false);
+    let focused = is_focused(app, panel::TRACE);
+    let state = app.trace_state();
+
+    let mut block = panel_block(panel::TRACE, focused);
+
+    if focused {
+        let accent = Style::new().fg(theme::KEY_HINT);
+        let muted = Style::new().fg(theme::MUTED);
+        let border = Style::new().fg(panel::by_number(panel::TRACE).border_color(true));
+        let mut spans = Vec::new();
+        if state.recording {
+            spans.extend([
+                Span::styled(" s", accent),
+                Span::styled("top ", muted),
+            ]);
+        } else {
+            spans.extend([
+                Span::styled(" s", accent),
+                Span::styled("tart ", muted),
+            ]);
+        }
+        spans.extend([
+            Span::styled("───", border),
+            Span::styled(" esc", accent),
+            Span::styled(" close ", muted),
+        ]);
+        block = block.title_bottom(Line::from(spans));
+    }
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let accent = panel::by_number(panel::TRACE).bright_color;
-    let state = app.trace_state();
+    let accent_color = panel::by_number(panel::TRACE).bright_color;
+
+    let flash_active = state.message_at
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
 
     let mut items: Vec<ListItem> = Vec::new();
 
@@ -312,28 +344,39 @@ fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
             .unwrap_or(0);
         let mins = elapsed / 60;
         let secs = elapsed % 60;
+        let spinner_idx = state.started_at
+            .map(|t| (t.elapsed().as_millis() / 80) as usize % SPINNER.len())
+            .unwrap_or(0);
         items.push(ListItem::new(Line::from(vec![
-            Span::styled("• ", Style::new().fg(accent)),
-            Span::styled(format!("recording {:02}:{:02}", mins, secs), Style::new().fg(accent)),
+            Span::styled(
+                format!("{} ", SPINNER[spinner_idx]),
+                Style::new().fg(accent_color),
+            ),
+            Span::styled(
+                format!("tracing {:02}:{:02}", mins, secs),
+                Style::new().fg(accent_color),
+            ),
         ])));
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled("t", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("o stop", Style::new().fg(theme::MUTED)),
-        ])));
-    } else {
-        let flash_active = state.status_message.is_some()
-            && state.message_at.is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(3));
-        if flash_active {
-            if let Some(msg) = &state.status_message {
-                items.push(ListItem::new(Line::from(
-                    Span::styled(msg.clone(), Style::new().fg(theme::GREEN)),
-                )));
-            }
+    } else if flash_active {
+        if let Some(msg) = &state.status_message {
+            items.push(ListItem::new(Line::from(
+                Span::styled(msg.clone(), Style::new().fg(theme::GREEN)),
+            )));
         }
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled("t", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("race", Style::new().fg(theme::MUTED)),
-        ])));
+    } else if state.pulled_traces.is_empty() {
+        items.push(ListItem::new(Line::from(
+            Span::styled("no traces yet", Style::new().fg(theme::MUTED)),
+        )));
+    } else {
+        for path in state.pulled_traces.iter().rev() {
+            let name = path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            items.push(ListItem::new(Line::from(
+                Span::styled(name, Style::new().fg(theme::MUTED)),
+            )));
+        }
     }
 
     frame.render_widget(List::new(items), inner);

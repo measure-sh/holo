@@ -207,8 +207,9 @@ impl DataSources {
                 let ts = app.trace_state_mut();
                 match result {
                     Ok(path) => {
-                        ts.status_message = Some("saved!".to_string());
+                        ts.status_message = Some("done!".to_string());
                         ts.message_at = Some(std::time::Instant::now());
+                        ts.pulled_traces.push(path.clone());
                         let _ = open::that(&path);
                     }
                     Err(e) => {

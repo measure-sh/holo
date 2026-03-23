@@ -30,7 +30,7 @@ pub const DATABASE: u8 = 7;
 
 pub const PANELS: [PanelDef; 7] = [
     PanelDef { number: 1, name: "commands",    dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: None },
-    PanelDef { number: 2, name: "trace",       dim_color: theme::DIM_BLUE,    bright_color: theme::ACCENT,  focus_key: None },
+    PanelDef { number: 2, name: "trace",       dim_color: theme::DIM_BLUE,    bright_color: theme::ACCENT,  focus_key: Some('t') },
     PanelDef { number: 3, name: "logcat",      dim_color: theme::DIM_GREEN,   bright_color: theme::GREEN,   focus_key: Some('l') },
     PanelDef { number: 4, name: "permissions", dim_color: theme::DIM_CYAN,    bright_color: theme::CYAN,    focus_key: Some('p') },
     PanelDef { number: 5, name: "monitor",     dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: Some('m') },

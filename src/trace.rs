@@ -8,6 +8,7 @@ pub struct TraceState {
     pub started_at: Option<std::time::Instant>,
     pub status_message: Option<String>,
     pub message_at: Option<std::time::Instant>,
+    pub pulled_traces: Vec<PathBuf>,
 }
 
 impl TraceState {
@@ -17,6 +18,7 @@ impl TraceState {
             started_at: None,
             status_message: None,
             message_at: None,
+            pulled_traces: Vec::new(),
         }
     }
 }

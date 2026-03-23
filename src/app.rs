@@ -431,6 +431,29 @@ impl App {
             }
         }
 
+        if self.focused == Some(panel::TRACE) {
+            match code {
+                KeyCode::Char('s') => {
+                    if self.trace_state.recording {
+                        self.trace_state.recording = false;
+                        self.trace_state.started_at = None;
+                        return Action::StopTrace;
+                    } else {
+                        self.trace_state.recording = true;
+                        self.trace_state.started_at = Some(std::time::Instant::now());
+                        self.trace_state.status_message = None;
+                        self.trace_state.message_at = None;
+                        return Action::StartTrace;
+                    }
+                }
+                KeyCode::Esc => {
+                    self.focused = None;
+                    return Action::None;
+                }
+                _ => {}
+            }
+        }
+
         match code {
             KeyCode::Char('s') => {
                 self.show_settings = true;
@@ -468,19 +491,6 @@ impl App {
             KeyCode::Char('a') => {
                 self.airplane_mode = !self.airplane_mode;
                 Action::ToggleAirplaneMode
-            }
-            KeyCode::Char('t') => {
-                if self.trace_state.recording {
-                    self.trace_state.recording = false;
-                    self.trace_state.started_at = None;
-                    Action::StopTrace
-                } else {
-                    self.trace_state.recording = true;
-                    self.trace_state.started_at = Some(std::time::Instant::now());
-                    self.trace_state.status_message = None;
-                    self.trace_state.message_at = None;
-                    Action::StartTrace
-                }
             }
             KeyCode::Char(c @ '1'..='7') => {
                 self.toggle_visibility(c as u8 - b'0');
@@ -776,22 +786,40 @@ mod tests {
     }
 
     #[test]
-    fn t_starts_trace_without_logcat_focus() {
+    fn t_focuses_trace_panel() {
         let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('t')));
+        assert_eq!(app.focused_panel(), Some(2));
+    }
+
+    #[test]
+    fn s_starts_trace_when_focused() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('t')));
         assert!(!app.trace_state().recording);
-        let action = app.handle_key(key(KeyCode::Char('t')));
+        let action = app.handle_key(key(KeyCode::Char('s')));
         assert!(matches!(action, Action::StartTrace));
         assert!(app.trace_state().recording);
     }
 
     #[test]
-    fn t_stops_trace_when_recording() {
+    fn s_stops_trace_when_recording() {
         let mut app = App::new("com.test");
         app.handle_key(key(KeyCode::Char('t')));
+        app.handle_key(key(KeyCode::Char('s')));
         assert!(app.trace_state().recording);
-        let action = app.handle_key(key(KeyCode::Char('t')));
+        let action = app.handle_key(key(KeyCode::Char('s')));
         assert!(matches!(action, Action::StopTrace));
         assert!(!app.trace_state().recording);
+    }
+
+    #[test]
+    fn esc_unfocuses_trace_panel() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('t')));
+        assert_eq!(app.focused_panel(), Some(2));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.focused_panel(), None);
     }
 
     #[test]
