@@ -486,9 +486,9 @@ fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 
     let constraints: Vec<Constraint> = panels.iter().map(|&p| match p {
-        panel::FRAMES => Constraint::Percentage(40),
-        panel::DISK => Constraint::Percentage(30),
-        panel::SYSTEM => Constraint::Percentage(30),
+        panel::FRAMES => Constraint::Percentage(34),
+        panel::DISK => Constraint::Percentage(33),
+        panel::SYSTEM => Constraint::Percentage(33),
         _ => Constraint::Min(0),
     }).collect();
     let rows = Layout::default()
