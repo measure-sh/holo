@@ -146,18 +146,18 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
     let logcat_visible = vis[0];
-    let left_visible = vis[1] || vis[2] || vis[3] || vis[4];
-    let right_visible = vis[5] || vis[6] || vis[7];
-    let bot_visible = left_visible || right_visible;
+    let bot_left_visible = vis[2] || vis[3] || vis[4];
+    let bot_right_visible = vis[6] || vis[7];
+    let bot_visible = bot_left_visible || bot_right_visible;
 
     let top_visible = logcat_visible;
 
     let mut constraints = Vec::new();
     let mut sections = Vec::new();
 
-    // commands is always shown as a narrow left column
+    // left sidebar: commands, trace, permissions stacked
     constraints.push(Constraint::Length(22));
-    sections.push("commands");
+    sections.push("left");
 
     // main area takes the rest
     constraints.push(Constraint::Min(0));
@@ -168,7 +168,7 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         .constraints(constraints)
         .split(area);
 
-    render_commands_panel(frame, cols[0], app);
+    render_left_sidebar(frame, cols[0], app);
 
     let main_area = cols[1];
     match (top_visible, bot_visible) {
@@ -185,6 +185,34 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         }
         (false, true) => render_bottom_section(frame, main_area, app),
         (false, false) => {}
+    }
+}
+
+fn render_left_sidebar(frame: &mut Frame, area: Rect, app: &mut App) {
+    let vis = app.panel_visibility();
+    let mut panels: Vec<(&str, u8)> = Vec::new();
+    panels.push(("commands", panel::COMMANDS));
+    if vis[1] { panels.push(("trace", panel::TRACE)); }
+    if vis[5] { panels.push(("permissions", panel::PERMISSIONS)); }
+
+    let constraints: Vec<Constraint> = panels.iter().enumerate().map(|(i, _)| {
+        if i == 0 { Constraint::Length(14) } else { Constraint::Ratio(1, (panels.len() - 1).max(1) as u32) }
+    }).collect();
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, &(name, p)) in panels.iter().enumerate() {
+        match name {
+            "commands" => render_commands_panel(frame, rows[i], app),
+            "trace" => render_trace_panel(frame, rows[i], app),
+            "permissions" => {
+                permissions_ui::render_permissions_panel(frame, rows[i], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+            }
+            _ => {}
+        }
     }
 }
 
@@ -432,8 +460,8 @@ fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let left_visible = vis[1] || vis[2] || vis[3] || vis[4];
-    let right_visible = vis[5] || vis[6] || vis[7];
+    let left_visible = vis[2] || vis[3] || vis[4];
+    let right_visible = vis[6] || vis[7];
 
     match (left_visible, right_visible) {
         (true, true) => {
@@ -453,7 +481,6 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
 fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
     let panels: Vec<u8> = [
-        (vis[1], panel::TRACE),
         (vis[2], panel::FRAMES),
         (vis[3], panel::DISK),
         (vis[4], panel::SYSTEM),
@@ -475,7 +502,6 @@ fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
 
     for (i, &p) in panels.iter().enumerate() {
         match p {
-            panel::TRACE => render_trace_panel(frame, rows[i], app),
             panel::FRAMES => monitor_ui::render_frames_panel(frame, rows[i], false, app.monitor_state()),
             panel::DISK => monitor_ui::render_disk_panel(frame, rows[i], false, app.monitor_state()),
             panel::SYSTEM => monitor_ui::render_system_panel(frame, rows[i], false, app.monitor_state()),
@@ -487,7 +513,6 @@ fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
 fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
     let panels: Vec<u8> = [
-        (vis[5], panel::PERMISSIONS),
         (vis[6], panel::FILES),
         (vis[7], panel::DATABASE),
     ]
@@ -508,9 +533,6 @@ fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
 
     for (i, &p) in panels.iter().enumerate() {
         match p {
-            panel::PERMISSIONS => {
-                permissions_ui::render_permissions_panel(frame, rows[i], is_focused(app, panel::PERMISSIONS), app.permissions_state());
-            }
             panel::FILES => {
                 files_ui::render_files_panel(frame, rows[i], is_focused(app, panel::FILES), app.files_state());
             }
