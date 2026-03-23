@@ -220,9 +220,6 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
         Span::styled(&filter_span, Style::new().fg(theme::YELLOW)),
         Span::styled(" ↩", Style::new().fg(accent_color)),
         Span::styled(" select ", Style::new().fg(theme::FG)),
-        Span::styled("───", Style::new().fg(border_color)),
-        Span::styled(" esc", Style::new().fg(accent_color)),
-        Span::styled(" close ", Style::new().fg(theme::FG)),
     ];
 
     let block = Block::default()
@@ -394,21 +391,23 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = filtered
         .iter()
         .map(|(name, _)| {
-            let is_toggle_on = (*name == "toggle layout bounds" && app.layout_bounds())
-                || (*name == "toggle airplane mode" && app.airplane_mode())
-                || (*name == "toggle wifi" && app.wifi_enabled());
-            let prefix = if is_toggle_on { "• " } else { "  " };
-            let prefix_color = if is_toggle_on { accent } else { theme::FG };
+            let is_toggle_on = (*name == "layout bounds" && app.layout_bounds())
+                || (*name == "airplane mode" && app.airplane_mode())
+                || (*name == "wifi" && app.wifi_enabled());
             let is_global = *name == "open app" || *name == "kill app";
-            let mut spans = vec![
-                Span::styled(prefix, Style::new().fg(prefix_color)),
-            ];
+            let display_name = if *name == "layout bounds" || *name == "wifi" || *name == "airplane mode" {
+                let verb = if is_toggle_on { "disable" } else { "enable" };
+                format!("{} {}", verb, name)
+            } else {
+                name.to_string()
+            };
+            let mut spans = vec![];
             if is_global {
-                let (first, rest) = name.split_at(1);
+                let (first, rest) = display_name.split_at(1);
                 spans.push(Span::styled(first.to_string(), Style::new().fg(theme::KEY_HINT)));
                 spans.push(Span::styled(rest.to_string(), Style::new().fg(theme::FG)));
             } else {
-                spans.push(Span::styled(*name, Style::new().fg(theme::FG)));
+                spans.push(Span::styled(display_name, Style::new().fg(theme::FG)));
             }
             ListItem::new(Line::from(spans))
         })
@@ -605,8 +604,7 @@ fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
                 files_ui::render_files_panel(frame, rows[i], is_focused(app, panel::FILES), app.files_state());
             }
             panel::DATABASE => {
-                let im = app.input_mode();
-                database_ui::render_database_panel(frame, rows[i], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
+                database_ui::render_database_panel(frame, rows[i], is_focused(app, panel::DATABASE), app.db_state_mut());
             }
             _ => {}
         }

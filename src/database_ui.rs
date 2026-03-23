@@ -9,7 +9,6 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::InputMode;
 use crate::database::{DatabaseState, ReplLine};
 use crate::panel;
 use crate::theme;
@@ -20,7 +19,6 @@ pub fn render_database_panel(
     area: Rect,
     focused: bool,
     db_state: &mut DatabaseState,
-    input_mode: InputMode,
 ) {
     let accent = Style::new().fg(theme::KEY_HINT);
     let muted = Style::new().fg(theme::MUTED);
@@ -96,7 +94,7 @@ pub fn render_database_panel(
         let inner = block.inner(area);
         frame.render_widget(block, area);
 
-        let editing = matches!(input_mode, InputMode::EditingQuery);
+        let editing = db_state.editing_query;
 
         let prompt_area = Rect {
             x: inner.x,

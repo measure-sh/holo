@@ -1,9 +1,11 @@
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 
+use crossterm::event::{KeyCode, KeyEvent};
 use tui_textarea::TextArea;
 
 use crate::adb::Adb;
+use crate::app::Action;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReplLine {
@@ -24,6 +26,7 @@ pub struct DatabaseState {
     pub error: Option<String>,
     pub confirming_pull: Option<String>,
     pub copied_at: Option<std::time::Instant>,
+    pub editing_query: bool,
 }
 
 fn new_textarea() -> TextArea<'static> {
@@ -46,6 +49,98 @@ impl DatabaseState {
             error: None,
             confirming_pull: None,
             copied_at: None,
+            editing_query: false,
+        }
+    }
+
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let code = key.code;
+
+        if self.editing_query {
+            match code {
+                KeyCode::Enter => {
+                    if let Some(db) = self.selected_db.clone() {
+                        if let Some(sql) = self.submit_query() {
+                            return Some(Action::RunQuery(db, sql));
+                        }
+                    }
+                }
+                KeyCode::Esc => self.editing_query = false,
+                KeyCode::Up => self.history_up(),
+                KeyCode::Down => self.history_down(),
+                _ => { self.textarea.input(key); }
+            }
+            return Some(Action::Noop);
+        }
+
+        if self.confirming_pull.is_some() {
+            return Some(match code {
+                KeyCode::Char('p') => {
+                    let db = self.confirming_pull.take().unwrap();
+                    Action::PullDb(db)
+                }
+                _ => {
+                    self.confirming_pull = None;
+                    Action::Noop
+                }
+            });
+        }
+
+        match code {
+            KeyCode::Up | KeyCode::Down if self.selected_db.is_none() => {
+                if code == KeyCode::Up {
+                    self.move_up();
+                } else {
+                    self.move_down();
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Char('p') if self.selected_db.is_none() => {
+                if let Some(db) = self.databases.get(self.selected_index).cloned() {
+                    self.confirming_pull = Some(db);
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Enter if self.selected_db.is_none() => {
+                self.select_db();
+                if self.selected_db.is_some() {
+                    self.editing_query = true;
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Char('p') if self.selected_db.is_some() => {
+                self.confirming_pull = self.selected_db.clone();
+                Some(Action::Noop)
+            }
+            KeyCode::Char('e') if self.selected_db.is_some() => {
+                self.editing_query = true;
+                Some(Action::Noop)
+            }
+            KeyCode::Char('c') if self.selected_db.is_some() => {
+                if let Some(text) = self.history_text() {
+                    self.copied_at = Some(std::time::Instant::now());
+                    return Some(Action::CopyDbResult(text));
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Char('r') => {
+                self.reset();
+                Some(Action::ResetDb)
+            }
+            KeyCode::Up if self.selected_db.is_some() => {
+                self.move_up();
+                Some(Action::Noop)
+            }
+            KeyCode::Down if self.selected_db.is_some() => {
+                self.move_down();
+                Some(Action::Noop)
+            }
+            KeyCode::Esc if self.selected_db.is_some() => {
+                self.deselect_db();
+                Some(Action::Noop)
+            }
+            KeyCode::Esc => Some(Action::Unfocus),
+            _ => None,
         }
     }
 

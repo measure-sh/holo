@@ -57,17 +57,10 @@ pub enum Action {
     WirelessAdb,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum InputMode {
-    Normal,
-    EditingQuery,
-}
-
 pub struct App {
     commands_visible: bool,
     visible: [bool; 8],
     focused: Option<u8>,
-    input_mode: InputMode,
     logcat_state: LogcatState,
     db_state: DatabaseState,
     permissions_state: PermissionsState,
@@ -93,7 +86,6 @@ impl App {
             commands_visible: true,
             visible: [true; 8],
             focused: None,
-            input_mode: InputMode::Normal,
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
             permissions_state: PermissionsState::new(),
@@ -117,24 +109,8 @@ impl App {
             return self.logcat_state.handle_key(code).unwrap_or(Action::Noop);
         }
 
-        match self.input_mode {
-            InputMode::EditingQuery => {
-                match code {
-                    KeyCode::Enter => {
-                        if let Some(db) = self.db_state.selected_db.clone() {
-                            if let Some(sql) = self.db_state.submit_query() {
-                                return Action::RunQuery(db, sql);
-                            }
-                        }
-                    }
-                    KeyCode::Esc => self.input_mode = InputMode::Normal,
-                    KeyCode::Up => self.db_state.history_up(),
-                    KeyCode::Down => self.db_state.history_down(),
-                    _ => { self.db_state.textarea.input(key); }
-                }
-                return Action::Noop;
-            }
-            InputMode::Normal => {}
+        if self.db_state.editing_query {
+            return self.db_state.handle_key(key).unwrap_or(Action::Noop);
         }
 
         if self.toolbar.open.is_some() {
@@ -203,78 +179,13 @@ impl App {
             }
         }
 
-        if self.db_state.confirming_pull.is_some() {
-            return match code {
-                KeyCode::Char('p') => {
-                    let db = self.db_state.confirming_pull.take().unwrap();
-                    Action::PullDb(db)
-                }
-                _ => {
-                    self.db_state.confirming_pull = None;
-                    Action::Noop
-                }
-            };
-        }
-
-        if self.focused == Some(panel::DATABASE) {
-            match code {
-                KeyCode::Up | KeyCode::Down if self.db_state.selected_db.is_none() => {
-                    if code == KeyCode::Up {
-                        self.db_state.move_up();
-                    } else {
-                        self.db_state.move_down();
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Char('p') if self.db_state.selected_db.is_none() => {
-                    if let Some(db) = self.db_state.databases.get(self.db_state.selected_index).cloned() {
-                        self.db_state.confirming_pull = Some(db);
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Enter if self.db_state.selected_db.is_none() => {
-                    self.db_state.select_db();
-                    if self.db_state.selected_db.is_some() {
-                        self.input_mode = InputMode::EditingQuery;
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Char('p') if self.db_state.selected_db.is_some() => {
-                    self.db_state.confirming_pull = self.db_state.selected_db.clone();
-                    return Action::Noop;
-                }
-                KeyCode::Char('e') if self.db_state.selected_db.is_some() => {
-                    self.input_mode = InputMode::EditingQuery;
-                    return Action::Noop;
-                }
-                KeyCode::Char('c') if self.db_state.selected_db.is_some() => {
-                    if let Some(text) = self.db_state.history_text() {
-                        self.db_state.copied_at = Some(std::time::Instant::now());
-                        return Action::CopyDbResult(text);
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Char('r') => {
-                    self.db_state.reset();
-                    return Action::ResetDb;
-                }
-                KeyCode::Up if self.db_state.selected_db.is_some() => {
-                    self.db_state.move_up();
-                    return Action::Noop;
-                }
-                KeyCode::Down if self.db_state.selected_db.is_some() => {
-                    self.db_state.move_down();
-                    return Action::Noop;
-                }
-                KeyCode::Esc if self.db_state.selected_db.is_some() => {
-                    self.db_state.deselect_db();
-                    return Action::Noop;
-                }
-                KeyCode::Esc => {
+        if self.db_state.confirming_pull.is_some() || self.focused == Some(panel::DATABASE) {
+            if let Some(action) = self.db_state.handle_key(key) {
+                if matches!(action, Action::Unfocus) {
                     self.focused = None;
                     return Action::Noop;
                 }
-                _ => {}
+                return action;
             }
         }
 
@@ -449,8 +360,8 @@ impl App {
         } else {
             self.focused = Some(n);
         }
-        self.input_mode = InputMode::Normal;
         self.logcat_state.editing = None;
+        self.db_state.editing_query = false;
         self.commands_filter.clear();
         self.commands_cursor = 0;
     }
@@ -512,9 +423,7 @@ impl App {
         &mut self.logcat_state
     }
 
-    pub fn input_mode(&self) -> InputMode {
-        self.input_mode
-    }
+
 
     pub fn layout_bounds(&self) -> bool {
         self.layout_bounds
@@ -827,7 +736,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('a')));
         app.handle_key(key(KeyCode::Char('b')));
         app.handle_key(key(KeyCode::Esc));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(!app.db_state().editing_query);
         assert_eq!(app.logcat_state().filter.tag, "ab");
     }
 
@@ -839,7 +748,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('x')));
         app.handle_key(key(KeyCode::Char('y')));
         app.handle_key(key(KeyCode::Esc));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(!app.db_state().editing_query);
         assert_eq!(app.logcat_state().filter.search, "xy");
     }
 
@@ -1015,7 +924,7 @@ mod tests {
         assert_eq!(app.db_state().selected_index, 1);
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.db_state().selected_db.as_deref(), Some("b.db"));
-        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert!(app.db_state().editing_query);
     }
 
     #[test]
@@ -1025,9 +934,9 @@ mod tests {
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         assert!(app.db_state().selected_db.is_some());
-        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert!(app.db_state().editing_query);
         app.handle_key(key(KeyCode::Esc));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(!app.db_state().editing_query);
         app.handle_key(key(KeyCode::Esc));
         assert!(app.db_state().selected_db.is_none());
         assert_eq!(app.focused_panel(), Some(panel::DATABASE));
@@ -1041,7 +950,7 @@ mod tests {
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
-        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert!(app.db_state().editing_query);
     }
 
     #[test]
@@ -1051,9 +960,9 @@ mod tests {
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(!app.db_state().editing_query);
         app.handle_key(key(KeyCode::Char('e')));
-        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert!(app.db_state().editing_query);
     }
 
     #[test]
@@ -1067,7 +976,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('L')));
         let action = app.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Action::RunQuery(_, _)));
-        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert!(app.db_state().editing_query);
         assert!(app.db_state().textarea_text().is_empty());
         assert_eq!(app.db_state().history.len(), 1);
     }
@@ -1078,7 +987,7 @@ mod tests {
         app.db_state_mut().databases = vec!["a.db".into()];
         app.db_state_mut().selected_db = Some("a.db".into());
         app.handle_key(key(KeyCode::Char('e')));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(!app.db_state().editing_query);
     }
 
     #[test]
@@ -1089,7 +998,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc)); // exit EditingQuery
         app.handle_key(key(KeyCode::Char('e')));
-        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert!(app.db_state().editing_query);
         assert_eq!(app.focused_panel(), Some(panel::DATABASE));
     }
 
@@ -1202,13 +1111,13 @@ mod tests {
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
-        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert!(app.db_state().editing_query);
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('e')));
-        assert_eq!(app.input_mode(), InputMode::EditingQuery);
+        assert!(app.db_state().editing_query);
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('d')));
-        assert_eq!(app.input_mode(), InputMode::Normal);
+        assert!(!app.db_state().editing_query);
     }
 
     #[test]
