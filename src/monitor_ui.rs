@@ -22,6 +22,11 @@ fn format_mb(kb: u64) -> String {
     }
 }
 
+fn format_mb_precise(kb: u64) -> String {
+    let mb = kb as f64 / 1024.0;
+    format!("{:.2} MB", mb)
+}
+
 fn trend_symbol(trend: Trend) -> (&'static str, ratatui::style::Color) {
     match trend {
         Trend::Rising => ("▲", theme::RED),
@@ -100,6 +105,35 @@ fn mem_item(
     if min != max {
         lines.push(Line::from(Span::styled(
             format!(" {:>12}{}-{}", "", format_mb(min), format_mb(max)),
+            Style::new().fg(theme::MUTED),
+        )));
+    }
+    lines.push(Line::raw(""));
+    ListItem::new(lines)
+}
+
+fn disk_item(
+    label: &str,
+    data: &[u64],
+    trend: Trend,
+    spark_width: usize,
+) -> ListItem<'static> {
+    let current = data.last().copied().unwrap_or(0);
+    let (spark, min, max) = sparkline_str(data, spark_width);
+    let (arrow, arrow_color) = trend_symbol(trend);
+
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
+            Span::styled(spark, Style::new().fg(theme::ACCENT)),
+            Span::styled(format!("  {:>8}", format_mb_precise(current)), Style::new().fg(theme::FG)),
+            Span::raw(" "),
+            Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
+        ]),
+    ];
+    if min != max {
+        lines.push(Line::from(Span::styled(
+            format!(" {:>12}{}-{}", "", format_mb_precise(min), format_mb_precise(max)),
             Style::new().fg(theme::MUTED),
         )));
     }
@@ -206,8 +240,8 @@ pub fn render_disk_panel(frame: &mut Frame, area: Rect, focused: bool, state: &M
         let data = st.sparkline_u64(|m| m.data_kb);
         let cache = st.sparkline_u64(|m| m.cache_kb);
         vec![
-            mem_item("Data", &data, st.trend_u64(|m| m.data_kb), sw),
-            mem_item("Cache", &cache, st.trend_u64(|m| m.cache_kb), sw),
+            disk_item("Data", &data, st.trend_u64(|m| m.data_kb), sw),
+            disk_item("Cache", &cache, st.trend_u64(|m| m.cache_kb), sw),
         ]
     });
 }
