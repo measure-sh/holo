@@ -137,6 +137,8 @@ fn run_app(
             app.toolbar_mut().package = Some(pkg.clone());
             data = Some(build_data(&adb, device, &pkg, &mut app));
             title = build_title(device, &pkg, data.as_ref().unwrap());
+        } else {
+            app.toolbar_mut().open = Some(toolbar::DropdownKind::App);
         }
     }
 
