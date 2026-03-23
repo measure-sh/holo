@@ -289,24 +289,26 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
+    let commands_visible = app.commands_visible();
     let logcat_visible = vis[0];
     let trace_visible = vis[1];
     let permissions_visible = vis[5];
-    let mid_visible = true; // commands panel always visible
+    let mid_visible = trace_visible || permissions_visible;
     let bot_left_visible = vis[2] || vis[3] || vis[4];
     let bot_right_visible = vis[6] || vis[7];
     let bot_visible = bot_left_visible || bot_right_visible;
 
-    let section_count = logcat_visible as u8 + mid_visible as u8 + bot_visible as u8;
+    let top_visible = commands_visible || logcat_visible;
+    let section_count = top_visible as u8 + mid_visible as u8 + bot_visible as u8;
     if section_count == 0 { return; }
 
     let mut constraints = Vec::new();
-    if logcat_visible {
+    if top_visible {
         if section_count == 1 { constraints.push(Constraint::Min(0)); }
         else { constraints.push(Constraint::Percentage(40)); }
     }
     if mid_visible {
-        if !bot_visible { constraints.push(Constraint::Min(0)); }
+        if !bot_visible && !top_visible { constraints.push(Constraint::Min(0)); }
         else { constraints.push(Constraint::Percentage(15)); }
     }
     if bot_visible { constraints.push(Constraint::Min(0)); }
@@ -317,8 +319,8 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         .split(area);
 
     let mut idx = 0;
-    if logcat_visible {
-        logcat_ui::render_logcat_panel(frame, rows[idx], is_focused(app, panel::LOGCAT), logcat_lines, app);
+    if top_visible {
+        render_top_section(frame, rows[idx], app, logcat_lines, commands_visible, logcat_visible);
         idx += 1;
     }
     if mid_visible {
@@ -330,25 +332,35 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     }
 }
 
-fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, permissions_visible: bool) {
-    let mut panels: Vec<(&str, u8)> = Vec::new();
-    panels.push(("commands", panel::COMMANDS));
-    if trace_visible { panels.push(("trace", panel::TRACE)); }
-    if permissions_visible { panels.push(("permissions", panel::PERMISSIONS)); }
-
-    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(area);
-
-    for (i, &(_, p)) in panels.iter().enumerate() {
-        match p {
-            panel::COMMANDS => render_commands_panel(frame, cols[i], app),
-            panel::TRACE => render_trace_panel(frame, cols[i], app),
-            panel::PERMISSIONS => permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state()),
-            _ => {}
+fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String], commands_visible: bool, logcat_visible: bool) {
+    match (commands_visible, logcat_visible) {
+        (true, true) => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Length(22), Constraint::Min(0)])
+                .split(area);
+            render_commands_panel(frame, cols[0], app);
+            logcat_ui::render_logcat_panel(frame, cols[1], is_focused(app, panel::LOGCAT), logcat_lines, app);
         }
+        (true, false) => render_commands_panel(frame, area, app),
+        (false, true) => logcat_ui::render_logcat_panel(frame, area, is_focused(app, panel::LOGCAT), logcat_lines, app),
+        (false, false) => {}
+    }
+}
+
+fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, permissions_visible: bool) {
+    match (trace_visible, permissions_visible) {
+        (true, true) => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            render_trace_panel(frame, cols[0], app);
+            permissions_ui::render_permissions_panel(frame, cols[1], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+        }
+        (true, false) => render_trace_panel(frame, area, app),
+        (false, true) => permissions_ui::render_permissions_panel(frame, area, is_focused(app, panel::PERMISSIONS), app.permissions_state()),
+        (false, false) => {}
     }
 }
 

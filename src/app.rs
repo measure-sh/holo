@@ -64,6 +64,7 @@ pub enum InputMode {
 }
 
 pub struct App {
+    commands_visible: bool,
     visible: [bool; 8],
     focused: Option<u8>,
     input_mode: InputMode,
@@ -88,6 +89,7 @@ impl App {
         let mut toolbar = ToolbarState::new(device);
         toolbar.package = package.map(String::from);
         Self {
+            commands_visible: true,
             visible: [true; 8],
             focused: None,
             input_mode: InputMode::Normal,
@@ -488,6 +490,10 @@ impl App {
                 self.confirming_quit = true;
                 Action::None
             }
+            KeyCode::Char('0') => {
+                self.commands_visible = !self.commands_visible;
+                Action::None
+            }
             KeyCode::Char(c @ '1'..='8') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -613,6 +619,10 @@ impl App {
 
     pub fn commands_cursor(&self) -> usize {
         self.commands_cursor
+    }
+
+    pub fn commands_visible(&self) -> bool {
+        self.commands_visible
     }
 
     pub fn reset_for_new_app(&mut self, package: &str) {
