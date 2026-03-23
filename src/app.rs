@@ -1,17 +1,21 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
+use crate::adb::Device;
 use crate::database::DatabaseState;
 use crate::files::{FileConfirm, FilesState, ToggleResult};
 use crate::logcat_state::LogcatState;
 use crate::monitor::MonitorState;
 use crate::panel;
 use crate::permissions::PermissionsState;
+use crate::toolbar::{ToolbarAction, ToolbarState};
 use crate::trace::{self, TraceState};
 
 pub enum Action {
     Quit,
-    SelectDevice,
-    SelectApp,
+    ChangeDevice(Device),
+    ChangeApp(String),
+    FetchDevices,
+    FetchApps,
     None,
     OpenApp,
     KillApp,
@@ -41,8 +45,6 @@ pub enum Action {
 
 pub enum SettingsAction {
     Copy,
-    SelectDevice,
-    SelectApp,
 }
 
 pub struct SettingsItem {
@@ -68,6 +70,7 @@ pub struct App {
     permissions_state: PermissionsState,
     files_state: FilesState,
     monitor_state: MonitorState,
+    toolbar: ToolbarState,
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
@@ -89,7 +92,10 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(package: &str) -> Self {
+    pub fn new(device: Option<Device>, package: Option<&str>) -> Self {
+        let pkg = package.unwrap_or_default();
+        let mut toolbar = ToolbarState::new(device);
+        toolbar.package = package.map(String::from);
         Self {
             visible: [true; 8],
             focused: None,
@@ -97,9 +103,10 @@ impl App {
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
             permissions_state: PermissionsState::new(),
-            files_state: FilesState::new(package),
+            files_state: FilesState::new(pkg),
             monitor_state: MonitorState::new(),
-            package: package.to_string(),
+            toolbar,
+            package: pkg.to_string(),
             layout_bounds: false,
             airplane_mode: false,
             wifi_enabled: false,
@@ -113,7 +120,7 @@ impl App {
             command_flash: None,
             kill_flash: None,
             clear_flash: None,
-            trace_state: TraceState::new(package),
+            trace_state: TraceState::new(pkg),
             uninstall_flash: None,
             screenshot_flash: None,
             wireless_flash: None,
@@ -158,6 +165,14 @@ impl App {
                 return Action::None;
             }
             InputMode::Normal => {}
+        }
+
+        if self.toolbar.open.is_some() {
+            return match self.toolbar.handle_key(code) {
+                ToolbarAction::SelectDevice(d) => Action::ChangeDevice(d),
+                ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
+                ToolbarAction::Close | ToolbarAction::None => Action::None,
+            };
         }
 
         if self.confirming_quit {
@@ -223,8 +238,6 @@ impl App {
                     self.show_settings = false;
                     match item.action {
                         SettingsAction::Copy => Action::CopyText(item.value),
-                        SettingsAction::SelectDevice => Action::SelectDevice,
-                        SettingsAction::SelectApp => Action::SelectApp,
                     }
                 }
                 KeyCode::Up => {
@@ -517,6 +530,14 @@ impl App {
         }
 
         match code {
+            KeyCode::F(1) => {
+                self.toolbar.open_devices();
+                Action::FetchDevices
+            }
+            KeyCode::F(2) => {
+                self.toolbar.open_apps();
+                Action::FetchApps
+            }
             KeyCode::Char('\\') => {
                 self.show_settings = true;
                 self.settings_index = 0;
@@ -713,12 +734,18 @@ impl App {
         self.settings_index
     }
 
+    pub fn toolbar(&self) -> &ToolbarState {
+        &self.toolbar
+    }
+
+    pub fn toolbar_mut(&mut self) -> &mut ToolbarState {
+        &mut self.toolbar
+    }
+
     pub fn settings_items(&self) -> Vec<SettingsItem> {
         let path = std::env::temp_dir().join("msh").join(&self.package);
         vec![
             SettingsItem { label: "downloads path", value: format!("{}", path.display()), action: SettingsAction::Copy },
-            SettingsItem { label: "select device", value: String::new(), action: SettingsAction::SelectDevice },
-            SettingsItem { label: "select app", value: String::new(), action: SettingsAction::SelectApp },
         ]
     }
 }
@@ -734,19 +761,19 @@ mod tests {
 
     #[test]
     fn new_app_all_panels_visible() {
-        let app = App::new("com.test");
+        let app = App::new(None, Some("com.test"));
         assert_eq!(app.panel_visibility(), &[true; 8]);
     }
 
     #[test]
     fn new_app_has_no_focus() {
-        let app = App::new("com.test");
+        let app = App::new(None, Some("com.test"));
         assert_eq!(app.focused_panel(), None);
     }
 
     #[test]
     fn toggle_visibility_hides_panel() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.toggle_visibility(3);
         assert_eq!(
             app.panel_visibility(),
@@ -756,7 +783,7 @@ mod tests {
 
     #[test]
     fn toggle_visibility_twice_restores_panel() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.toggle_visibility(3);
         app.toggle_visibility(3);
         assert_eq!(app.panel_visibility(), &[true; 8]);
@@ -764,7 +791,7 @@ mod tests {
 
     #[test]
     fn cannot_hide_last_panel() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         for n in 2..=8 {
             app.toggle_visibility(n);
         }
@@ -781,7 +808,7 @@ mod tests {
 
     #[test]
     fn out_of_range_is_ignored() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.toggle_visibility(0);
         app.toggle_visibility(9);
         app.toggle_visibility(10);
@@ -790,7 +817,7 @@ mod tests {
 
     #[test]
     fn qq_quits() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(key(KeyCode::Char('q'))), Action::None));
         assert!(app.confirming_quit());
         assert!(matches!(app.handle_key(key(KeyCode::Char('q'))), Action::Quit));
@@ -798,7 +825,7 @@ mod tests {
 
     #[test]
     fn q_then_other_key_cancels_quit() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.confirming_quit());
         assert!(matches!(app.handle_key(key(KeyCode::Esc)), Action::None));
@@ -807,7 +834,7 @@ mod tests {
 
     #[test]
     fn handle_key_digit_toggles_visibility() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(
             app.handle_key(key(KeyCode::Char('3'))),
             Action::None
@@ -820,7 +847,7 @@ mod tests {
 
     #[test]
     fn handle_key_unknown_is_none() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(
             app.handle_key(key(KeyCode::Char('x'))),
             Action::None
@@ -830,7 +857,7 @@ mod tests {
 
     #[test]
     fn focus_toggles_on_same_key() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
         app.handle_key(key(KeyCode::Char('l')));
@@ -839,13 +866,13 @@ mod tests {
 
     #[test]
     fn o_opens_app() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(key(KeyCode::Char('o'))), Action::OpenApp));
     }
 
     #[test]
     fn kk_kills_app() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(key(KeyCode::Char('k'))), Action::None));
         assert!(app.confirming_kill());
         assert!(matches!(app.handle_key(key(KeyCode::Char('k'))), Action::KillApp));
@@ -853,7 +880,7 @@ mod tests {
 
     #[test]
     fn k_then_other_cancels_kill() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('k')));
         assert!(app.confirming_kill());
         app.handle_key(key(KeyCode::Esc));
@@ -862,7 +889,7 @@ mod tests {
 
     #[test]
     fn cc_clears_data() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::None));
         assert!(app.confirming_clear());
         assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::ClearData));
@@ -870,7 +897,7 @@ mod tests {
 
     #[test]
     fn t_enters_tag_editing_when_focused() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
@@ -879,7 +906,7 @@ mod tests {
 
     #[test]
     fn s_enters_search_editing_when_focused() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
@@ -888,14 +915,14 @@ mod tests {
 
     #[test]
     fn t_focuses_trace_panel() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('t')));
         assert_eq!(app.focused_panel(), Some(2));
     }
 
     #[test]
     fn s_starts_trace_when_focused() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('t')));
         assert!(!app.trace_state().recording);
         let action = app.handle_key(key(KeyCode::Char('s')));
@@ -905,7 +932,7 @@ mod tests {
 
     #[test]
     fn s_stops_trace_when_recording() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('t')));
         app.handle_key(key(KeyCode::Char('s')));
         assert!(app.trace_state().recording);
@@ -916,7 +943,7 @@ mod tests {
 
     #[test]
     fn esc_unfocuses_trace_panel() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('t')));
         assert_eq!(app.focused_panel(), Some(2));
         app.handle_key(key(KeyCode::Esc));
@@ -925,7 +952,7 @@ mod tests {
 
     #[test]
     fn typing_appends_to_tag() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
         app.handle_key(key(KeyCode::Char('a')));
@@ -935,7 +962,7 @@ mod tests {
 
     #[test]
     fn typing_appends_to_search() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
         app.handle_key(key(KeyCode::Char('x')));
@@ -945,7 +972,7 @@ mod tests {
 
     #[test]
     fn backspace_removes_from_tag() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
         app.handle_key(key(KeyCode::Char('a')));
@@ -956,7 +983,7 @@ mod tests {
 
     #[test]
     fn enter_exits_editing_mode() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
@@ -966,7 +993,7 @@ mod tests {
 
     #[test]
     fn esc_exits_tag_editing_preserving_input() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
         app.handle_key(key(KeyCode::Char('a')));
@@ -978,7 +1005,7 @@ mod tests {
 
     #[test]
     fn esc_exits_search_editing_preserving_input() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
         app.handle_key(key(KeyCode::Char('x')));
@@ -990,7 +1017,7 @@ mod tests {
 
     #[test]
     fn level_cycles_forward_with_right() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         assert_eq!(app.logcat_state().filter.level, None);
         app.handle_key(key(KeyCode::Right));
@@ -1001,7 +1028,7 @@ mod tests {
 
     #[test]
     fn level_cycles_backward_with_left() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Left));
         assert_eq!(app.logcat_state().filter.level, Some('F'));
@@ -1009,7 +1036,7 @@ mod tests {
 
     #[test]
     fn level_wraps_around() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         for _ in 0..7 {
             app.handle_key(key(KeyCode::Right));
@@ -1019,7 +1046,7 @@ mod tests {
 
     #[test]
     fn scroll_up_increments_offset() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.logcat_state().scroll, 1);
@@ -1029,7 +1056,7 @@ mod tests {
 
     #[test]
     fn scroll_down_decrements_offset() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Up));
@@ -1039,7 +1066,7 @@ mod tests {
 
     #[test]
     fn j_k_scroll_logcat() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.logcat_state().scroll, 1);
@@ -1051,7 +1078,7 @@ mod tests {
 
     #[test]
     fn space_scrolls_page() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char(' ')));
         assert_eq!(app.logcat_state().scroll, 20);
@@ -1059,7 +1086,7 @@ mod tests {
 
     #[test]
     fn scroll_does_not_go_below_zero() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.logcat_state().scroll, 0);
@@ -1067,7 +1094,7 @@ mod tests {
 
     #[test]
     fn esc_resets_scroll_to_zero() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Up));
@@ -1080,7 +1107,7 @@ mod tests {
 
     #[test]
     fn esc_unfocuses_logcat_when_at_bottom() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
         app.handle_key(key(KeyCode::Esc));
@@ -1089,7 +1116,7 @@ mod tests {
 
     #[test]
     fn left_right_ignored_without_focus() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert_eq!(app.focused_panel(), None);
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.logcat_state().filter.level, None);
@@ -1097,7 +1124,7 @@ mod tests {
 
     #[test]
     fn r_resets_logcat_filters_and_scroll() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
         app.handle_key(key(KeyCode::Char('a')));
@@ -1122,7 +1149,7 @@ mod tests {
 
     #[test]
     fn c_in_logcat_returns_copy_action() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         let action = app.handle_key(key(KeyCode::Char('c')));
         assert!(matches!(action, Action::CopyLogcat));
@@ -1131,13 +1158,13 @@ mod tests {
 
     #[test]
     fn r_ignored_without_focus() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::None));
     }
 
     #[test]
     fn scroll_ignored_when_logcat_not_focused() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert_eq!(app.focused_panel(), None);
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Down));
@@ -1146,14 +1173,14 @@ mod tests {
 
     #[test]
     fn d_focuses_database_panel() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('d')));
         assert_eq!(app.focused_panel(), Some(panel::DATABASE));
     }
 
     #[test]
     fn db_panel_navigate_and_select() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into(), "b.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Down));
@@ -1165,7 +1192,7 @@ mod tests {
 
     #[test]
     fn db_panel_esc_deselects_then_unfocuses() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1182,7 +1209,7 @@ mod tests {
 
     #[test]
     fn db_panel_select_auto_enters_editing() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1191,7 +1218,7 @@ mod tests {
 
     #[test]
     fn db_panel_e_enters_query_editing() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1203,7 +1230,7 @@ mod tests {
 
     #[test]
     fn query_editing_enter_returns_run_query_and_appends_history() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["test.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1219,7 +1246,7 @@ mod tests {
 
     #[test]
     fn e_ignored_without_db_focus() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.db_state_mut().selected_db = Some("a.db".into());
         app.handle_key(key(KeyCode::Char('e')));
@@ -1228,7 +1255,7 @@ mod tests {
 
     #[test]
     fn e_enters_editing_when_focused_with_selected_db() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1240,7 +1267,7 @@ mod tests {
 
     #[test]
     fn up_down_with_selected_db_scrolls_history_when_focused() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1255,7 +1282,7 @@ mod tests {
 
     #[test]
     fn up_down_ignored_without_db_focus() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().selected_db = Some("a.db".into());
         app.db_state_mut().history = vec![
             crate::database::ReplLine::Input("SELECT 1".into()),
@@ -1266,7 +1293,7 @@ mod tests {
 
     #[test]
     fn toggle_panel_5_visibility() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('5')));
         assert!(!app.panel_visibility()[4]);
         app.handle_key(key(KeyCode::Char('5')));
@@ -1275,7 +1302,7 @@ mod tests {
 
     #[test]
     fn p_sets_confirming_pull_from_list_view() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into(), "b.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Down));
@@ -1286,7 +1313,7 @@ mod tests {
 
     #[test]
     fn pp_confirms_pull() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Char('p')));
@@ -1297,7 +1324,7 @@ mod tests {
 
     #[test]
     fn any_key_cancels_pull_confirmation() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Char('p')));
@@ -1309,7 +1336,7 @@ mod tests {
 
     #[test]
     fn p_sets_confirming_pull_from_repl_view() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1321,7 +1348,7 @@ mod tests {
 
     #[test]
     fn toggle_focus_clears_tag_editing() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
         assert_eq!(app.input_mode(), InputMode::EditingTag);
@@ -1332,7 +1359,7 @@ mod tests {
 
     #[test]
     fn toggle_focus_clears_search_editing() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('s')));
         assert_eq!(app.input_mode(), InputMode::EditingSearch);
@@ -1343,7 +1370,7 @@ mod tests {
 
     #[test]
     fn switching_focus_clears_query_editing() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1358,7 +1385,7 @@ mod tests {
 
     #[test]
     fn r_resets_db_from_list_view() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::ResetDb));
@@ -1367,7 +1394,7 @@ mod tests {
 
     #[test]
     fn r_resets_db_from_repl_view() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1380,7 +1407,7 @@ mod tests {
 
     #[test]
     fn c_copies_full_history() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1393,7 +1420,7 @@ mod tests {
 
     #[test]
     fn c_noop_without_output() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
@@ -1403,7 +1430,7 @@ mod tests {
 
     #[test]
     fn cc_falls_through_to_clear_data_in_list_view() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.db_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::None));
@@ -1413,7 +1440,7 @@ mod tests {
 
     #[test]
     fn a_toggles_airplane_mode() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(!app.airplane_mode());
         assert!(matches!(app.handle_key(key(KeyCode::Char('a'))), Action::ToggleAirplaneMode));
         assert!(app.airplane_mode());
@@ -1423,7 +1450,7 @@ mod tests {
 
     #[test]
     fn backslash_opens_settings() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(!app.show_settings());
         app.handle_key(key(KeyCode::Char('\\')));
         assert!(app.show_settings());
@@ -1431,7 +1458,7 @@ mod tests {
 
     #[test]
     fn esc_closes_settings() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('\\')));
         assert!(app.show_settings());
         app.handle_key(key(KeyCode::Esc));
@@ -1440,7 +1467,7 @@ mod tests {
 
     #[test]
     fn enter_in_settings_copies_and_closes() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('\\')));
         let action = app.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Action::CopyText(_)));
@@ -1449,7 +1476,7 @@ mod tests {
 
     #[test]
     fn settings_traps_keys() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('\\')));
         let action = app.handle_key(key(KeyCode::Char('q')));
         assert!(matches!(action, Action::None));
@@ -1457,29 +1484,17 @@ mod tests {
     }
 
     #[test]
-    fn settings_select_device() {
-        let mut app = App::new("com.test");
+    fn settings_copy_path() {
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('\\')));
-        app.handle_key(key(KeyCode::Down));
         let action = app.handle_key(key(KeyCode::Enter));
-        assert!(matches!(action, Action::SelectDevice));
-        assert!(!app.show_settings());
-    }
-
-    #[test]
-    fn settings_select_app() {
-        let mut app = App::new("com.test");
-        app.handle_key(key(KeyCode::Char('\\')));
-        app.handle_key(key(KeyCode::Down));
-        app.handle_key(key(KeyCode::Down));
-        let action = app.handle_key(key(KeyCode::Enter));
-        assert!(matches!(action, Action::SelectApp));
+        assert!(matches!(action, Action::CopyText(_)));
         assert!(!app.show_settings());
     }
 
     #[test]
     fn ss_takes_screenshot() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(key(KeyCode::Char('s'))), Action::None));
         assert!(app.confirming_screenshot());
         assert!(matches!(app.handle_key(key(KeyCode::Char('s'))), Action::Screenshot));
@@ -1487,7 +1502,7 @@ mod tests {
 
     #[test]
     fn s_then_other_cancels_screenshot() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('s')));
         assert!(app.confirming_screenshot());
         app.handle_key(key(KeyCode::Esc));
@@ -1496,7 +1511,7 @@ mod tests {
 
     #[test]
     fn dollar_toggles_wifi() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(!app.wifi_enabled());
         assert!(matches!(app.handle_key(key(KeyCode::Char('$'))), Action::ToggleWifi));
         assert!(app.wifi_enabled());
@@ -1506,7 +1521,7 @@ mod tests {
 
     #[test]
     fn ampersand_triggers_wireless_adb() {
-        let mut app = App::new("com.test");
+        let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(key(KeyCode::Char('&'))), Action::WirelessAdb));
         assert!(app.wireless_flash.is_some());
     }

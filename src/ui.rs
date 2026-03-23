@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, SettingsAction};
+use crate::app::App;
 use crate::battery;
 use crate::database_ui;
 use crate::files_ui;
@@ -559,25 +559,13 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
 
     frame.render_widget(ratatui::widgets::Clear, dialog_area);
 
-    let selected_item = items.get(app.settings_index());
     let mut bottom_spans = Vec::new();
-    if let Some(item) = selected_item {
-        match item.action {
-            SettingsAction::Copy => {
-                bottom_spans.extend([
-                    Span::styled(" ↩", accent),
-                    Span::styled(" copy ", hint),
-                    Span::styled("───", Style::new().fg(theme::MUTED)),
-                ]);
-            }
-            _ => {
-                bottom_spans.extend([
-                    Span::styled(" ↩", accent),
-                    Span::styled(" select ", hint),
-                    Span::styled("───", Style::new().fg(theme::MUTED)),
-                ]);
-            }
-        }
+    if items.get(app.settings_index()).is_some() {
+        bottom_spans.extend([
+            Span::styled(" ↩", accent),
+            Span::styled(" copy ", hint),
+            Span::styled("───", Style::new().fg(theme::MUTED)),
+        ]);
     }
     bottom_spans.extend([
         Span::styled(" esc", accent),
