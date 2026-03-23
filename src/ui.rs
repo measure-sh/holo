@@ -305,8 +305,8 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let bot_visible = bot_left_visible || bot_right_visible;
 
     let mut constraints = Vec::new();
-    if logcat_visible { constraints.push(Constraint::Percentage(50)); }
-    if mid_visible { constraints.push(Constraint::Length(12)); }
+    if logcat_visible { constraints.push(Constraint::Percentage(40)); }
+    if mid_visible { constraints.push(Constraint::Length(8)); }
     if bot_visible { constraints.push(Constraint::Min(0)); }
     if constraints.is_empty() {
         if logcat_visible {
