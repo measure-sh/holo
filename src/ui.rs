@@ -317,11 +317,6 @@ fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
                 ]);
             }
         }
-        spans.extend([
-            Span::styled("───", border),
-            Span::styled(" esc", accent),
-            Span::styled(" close ", muted),
-        ]);
         block = block.title_bottom(Line::from(spans));
     }
 
