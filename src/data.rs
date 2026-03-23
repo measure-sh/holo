@@ -16,6 +16,12 @@ use crate::trace;
 
 const MAX_LOGCAT_LINES: usize = 1000;
 
+fn try_poll<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
+    let result = rx.as_ref()?.try_recv().ok()?;
+    *rx = None;
+    Some(result)
+}
+
 pub struct DataSources {
     battery_rx: mpsc::Receiver<u8>,
     pub battery_level: Option<u8>,
@@ -129,98 +135,74 @@ impl DataSources {
             }
         }
 
-        if let Some(rx) = &self.permissions_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(perms) => app.permissions_state_mut().permissions = perms,
-                    Err(e) => app.permissions_state_mut().error = Some(e),
-                }
-                self.permissions_rx = None;
+        if let Some(result) = try_poll(&mut self.permissions_rx) {
+            match result {
+                Ok(perms) => app.permissions_state_mut().permissions = perms,
+                Err(e) => app.permissions_state_mut().error = Some(e),
             }
         }
-        if let Some(rx) = &self.db_detect_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(dbs) => app.database_state_mut().databases = dbs,
-                    Err(e) => app.database_state_mut().error = Some(e),
-                }
-                self.db_detect_rx = None;
+        if let Some(result) = try_poll(&mut self.db_detect_rx) {
+            match result {
+                Ok(dbs) => app.database_state_mut().databases = dbs,
+                Err(e) => app.database_state_mut().error = Some(e),
             }
         }
-        if let Some(rx) = &self.db_query_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(output) => app.database_state_mut().push_result(&output),
-                    Err(e) => app.database_state_mut().push_error(&e),
-                }
-                self.db_query_rx = None;
+        if let Some(result) = try_poll(&mut self.db_query_rx) {
+            match result {
+                Ok(output) => app.database_state_mut().push_result(&output),
+                Err(e) => app.database_state_mut().push_error(&e),
             }
         }
-        if let Some(rx) = &self.db_pull_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok(path) => app.database_state_mut().push_result(&format!("pulled to {}", path.display())),
-                    Err(e) => app.database_state_mut().push_error(&format!("pull failed: {e}")),
-                }
-                self.db_pull_rx = None;
+        if let Some(result) = try_poll(&mut self.db_pull_rx) {
+            match result {
+                Ok(path) => app.database_state_mut().push_result(&format!("pulled to {}", path.display())),
+                Err(e) => app.database_state_mut().push_error(&format!("pull failed: {e}")),
             }
         }
-        if let Some(rx) = &self.files_list_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok((path, entries)) => {
-                        if path == "." {
-                            app.files_state_mut().set_root_children(entries);
-                        } else {
-                            app.files_state_mut().set_children(&path, entries);
-                        }
+        if let Some(result) = try_poll(&mut self.files_list_rx) {
+            match result {
+                Ok((path, entries)) => {
+                    if path == "." {
+                        app.files_state_mut().set_root_children(entries);
+                    } else {
+                        app.files_state_mut().set_children(&path, entries);
                     }
-                    Err(e) => app.files_state_mut().error = Some(e),
                 }
-                self.files_list_rx = None;
+                Err(e) => app.files_state_mut().error = Some(e),
             }
         }
-        if let Some(rx) = &self.files_pull_rx {
-            if let Ok(result) = rx.try_recv() {
-                match result {
-                    Ok((_, opened)) => {
-                        let label = if opened { "opening..." } else { "pulling..." };
-                        app.files_state_mut().action_flash =
-                            Some((label, std::time::Instant::now()));
-                    }
-                    Err(e) => app.files_state_mut().error = Some(e),
+        if let Some(result) = try_poll(&mut self.files_pull_rx) {
+            match result {
+                Ok((_, opened)) => {
+                    let label = if opened { "opening..." } else { "pulling..." };
+                    app.files_state_mut().action_flash =
+                        Some((label, std::time::Instant::now()));
                 }
-                self.files_pull_rx = None;
+                Err(e) => app.files_state_mut().error = Some(e),
             }
         }
-        if let Some(rx) = &self.trace_start_rx {
-            if let Ok(result) = rx.try_recv() {
-                if let Err(e) = result {
-                    let ts = app.trace_state_mut();
-                    ts.recording = false;
-                    ts.started_at = None;
+        if let Some(result) = try_poll(&mut self.trace_start_rx) {
+            if let Err(e) = result {
+                let ts = app.trace_state_mut();
+                ts.recording = false;
+                ts.started_at = None;
+                ts.status_message = Some(format!("failed: {e}"));
+                ts.message_at = Some(std::time::Instant::now());
+            }
+        }
+        if let Some(result) = try_poll(&mut self.trace_pull_rx) {
+            let ts = app.trace_state_mut();
+            match result {
+                Ok(path) => {
+                    ts.status_message = Some("done!".to_string());
+                    ts.message_at = Some(std::time::Instant::now());
+                    trace::open_in_perfetto_ui(&path);
+                    ts.pulled_traces.push(path);
+                }
+                Err(e) => {
                     ts.status_message = Some(format!("failed: {e}"));
                     ts.message_at = Some(std::time::Instant::now());
                 }
-                self.trace_start_rx = None;
-            }
-        }
-        if let Some(rx) = &self.trace_pull_rx {
-            if let Ok(result) = rx.try_recv() {
-                let ts = app.trace_state_mut();
-                match result {
-                    Ok(path) => {
-                        ts.status_message = Some("done!".to_string());
-                        ts.message_at = Some(std::time::Instant::now());
-                        trace::open_in_perfetto_ui(&path);
-                        ts.pulled_traces.push(path);
-                    }
-                    Err(e) => {
-                        ts.status_message = Some(format!("failed: {e}"));
-                        ts.message_at = Some(std::time::Instant::now());
-                    }
-                }
-                self.trace_pull_rx = None;
             }
         }
     }
