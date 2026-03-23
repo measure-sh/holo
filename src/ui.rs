@@ -335,6 +335,11 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     };
     items.push(screenshot_item);
 
+    items.push(ListItem::new(Line::from(vec![
+        Span::styled("\\", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("settings", Style::new().fg(theme::FG)),
+    ])));
+
     let list = List::new(items);
     frame.render_widget(list, inner);
 }
