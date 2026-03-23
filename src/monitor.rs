@@ -10,7 +10,8 @@ pub struct MonitorSample {
     pub rss_kb: u64,
     pub cpu_percent: f32,
     pub total_frames: u64,
-    pub janky_frames: u64,
+    pub slow_frames: u64,
+    pub frozen_frames: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -23,7 +24,8 @@ pub enum Trend {
 pub struct MonitorState {
     pub history: Vec<MonitorSample>,
     pub frame_count_history: Vec<u64>,
-    pub janky_percent_history: Vec<f32>,
+    pub slow_percent_history: Vec<f32>,
+    pub frozen_percent_history: Vec<f32>,
 }
 
 impl MonitorState {
@@ -31,20 +33,22 @@ impl MonitorState {
         Self {
             history: Vec::new(),
             frame_count_history: Vec::new(),
-            janky_percent_history: Vec::new(),
+            slow_percent_history: Vec::new(),
+            frozen_percent_history: Vec::new(),
         }
     }
 
     pub fn push(&mut self, sample: MonitorSample) {
         if let Some(prev) = self.history.last() {
             let frame_delta = sample.total_frames.saturating_sub(prev.total_frames);
-            let jank_delta = sample.janky_frames.saturating_sub(prev.janky_frames);
+            let slow_delta = sample.slow_frames.saturating_sub(prev.slow_frames);
+            let frozen_delta = sample.frozen_frames.saturating_sub(prev.frozen_frames);
             self.frame_count_history.push(frame_delta);
-            self.janky_percent_history.push(if frame_delta > 0 {
-                jank_delta as f32 / frame_delta as f32 * 100.0
-            } else {
-                0.0
-            });
+            let pct = |delta: u64| -> f32 {
+                if frame_delta > 0 { delta as f32 / frame_delta as f32 * 100.0 } else { 0.0 }
+            };
+            self.slow_percent_history.push(pct(slow_delta));
+            self.frozen_percent_history.push(pct(frozen_delta));
         }
         self.history.push(sample);
         if self.history.len() > MAX_SAMPLES {
@@ -53,8 +57,11 @@ impl MonitorState {
         if self.frame_count_history.len() > MAX_SAMPLES {
             self.frame_count_history.remove(0);
         }
-        if self.janky_percent_history.len() > MAX_SAMPLES {
-            self.janky_percent_history.remove(0);
+        if self.slow_percent_history.len() > MAX_SAMPLES {
+            self.slow_percent_history.remove(0);
+        }
+        if self.frozen_percent_history.len() > MAX_SAMPLES {
+            self.frozen_percent_history.remove(0);
         }
     }
 
@@ -113,7 +120,8 @@ pub fn spawn_poller(
 
             if let Ok(gfx) = adb.get_gfx_info(&serial, &package) {
                 sample.total_frames = gfx.total_frames;
-                sample.janky_frames = gfx.janky_frames;
+                sample.slow_frames = gfx.slow_frames;
+                sample.frozen_frames = gfx.frozen_frames;
             }
 
             if tx.send(sample).is_err() {
@@ -194,16 +202,19 @@ mod tests {
         let mut state = MonitorState::new();
         state.push(MonitorSample {
             total_frames: 100,
-            janky_frames: 10,
+            slow_frames: 10,
+            frozen_frames: 2,
             ..Default::default()
         });
         state.push(MonitorSample {
             total_frames: 200,
-            janky_frames: 30,
+            slow_frames: 30,
+            frozen_frames: 5,
             ..Default::default()
         });
         assert_eq!(state.frame_count_history, vec![100]);
-        assert_eq!(state.janky_percent_history, vec![20.0]);
+        assert_eq!(state.slow_percent_history, vec![20.0]);
+        assert_eq!(state.frozen_percent_history, vec![3.0]);
     }
 
     #[test]
@@ -211,16 +222,19 @@ mod tests {
         let mut state = MonitorState::new();
         state.push(MonitorSample {
             total_frames: 50,
-            janky_frames: 5,
+            slow_frames: 5,
+            frozen_frames: 1,
             ..Default::default()
         });
         state.push(MonitorSample {
             total_frames: 50,
-            janky_frames: 5,
+            slow_frames: 5,
+            frozen_frames: 1,
             ..Default::default()
         });
         assert_eq!(state.frame_count_history, vec![0]);
-        assert_eq!(state.janky_percent_history, vec![0.0]);
+        assert_eq!(state.slow_percent_history, vec![0.0]);
+        assert_eq!(state.frozen_percent_history, vec![0.0]);
     }
 
     #[test]
@@ -231,7 +245,8 @@ mod tests {
             ..Default::default()
         });
         assert!(state.frame_count_history.is_empty());
-        assert!(state.janky_percent_history.is_empty());
+        assert!(state.slow_percent_history.is_empty());
+        assert!(state.frozen_percent_history.is_empty());
     }
 
 }

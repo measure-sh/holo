@@ -594,10 +594,22 @@ fn parse_gfx_info(output: &str) -> GfxInfo {
             if let Ok(v) = rest.trim().parse::<u64>() {
                 info.total_frames = v;
             }
-        } else if let Some(rest) = trimmed.strip_prefix("Janky frames:") {
-            if let Some(num_str) = rest.trim().split_whitespace().next() {
-                if let Ok(v) = num_str.parse::<u64>() {
-                    info.janky_frames = v;
+        } else if let Some(rest) = trimmed.strip_prefix("HISTOGRAM:") {
+            for token in rest.split_whitespace() {
+                if let Some((ms_str, count_str)) = token.split_once('=') {
+                    let ms: u64 = match ms_str.strip_suffix("ms").and_then(|s| s.parse().ok()) {
+                        Some(v) => v,
+                        None => continue,
+                    };
+                    let count: u64 = match count_str.parse() {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    if ms > 700 {
+                        info.frozen_frames += count;
+                    } else if ms > 16 {
+                        info.slow_frames += count;
+                    }
                 }
             }
         }
@@ -919,34 +931,38 @@ VmSwap:\t       0 kB
     }
 
     #[test]
-    fn parses_gfx_info() {
+    fn parses_gfx_info_histogram() {
         let output = "\
 Profile data in ms:
 
-Total frames rendered: 12345
-Janky frames: 123 (1.00%)
+Total frames rendered: 1000
+Janky frames: 123 (12.30%)
 50th percentile: 5ms
+HISTOGRAM: 5ms=500 10ms=300 16ms=100 17ms=50 32ms=30 700ms=15 701ms=3 1000ms=2
 ";
         let info = parse_gfx_info(output);
-        assert_eq!(info.total_frames, 12345);
-        assert_eq!(info.janky_frames, 123);
+        assert_eq!(info.total_frames, 1000);
+        assert_eq!(info.slow_frames, 95);
+        assert_eq!(info.frozen_frames, 5);
     }
 
     #[test]
     fn gfx_info_empty_output() {
         let info = parse_gfx_info("");
         assert_eq!(info.total_frames, 0);
-        assert_eq!(info.janky_frames, 0);
+        assert_eq!(info.slow_frames, 0);
+        assert_eq!(info.frozen_frames, 0);
     }
 
     #[test]
-    fn gfx_info_zero_frames() {
+    fn gfx_info_no_histogram() {
         let output = "\
-Total frames rendered: 0
-Janky frames: 0 (0.00%)
+Total frames rendered: 500
+Janky frames: 10 (2.00%)
 ";
         let info = parse_gfx_info(output);
-        assert_eq!(info.total_frames, 0);
-        assert_eq!(info.janky_frames, 0);
+        assert_eq!(info.total_frames, 500);
+        assert_eq!(info.slow_frames, 0);
+        assert_eq!(info.frozen_frames, 0);
     }
 }

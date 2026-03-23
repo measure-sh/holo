@@ -128,14 +128,14 @@ fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     ListItem::new(lines)
 }
 
-fn jank_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
+fn percent_item(label: &str, data: &[f32], color: ratatui::style::Color, spark_width: usize) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0.0);
     let (spark, min, max) = sparkline_str_f32(data, spark_width);
 
     let mut lines = vec![
         Line::from(vec![
-            Span::styled(format!(" {:<12}", "Janky"), Style::new().fg(theme::FG)),
-            Span::styled(spark, Style::new().fg(theme::RED)),
+            Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
+            Span::styled(spark, Style::new().fg(color)),
             Span::styled(format!("  {:>7.1}%", current), Style::new().fg(theme::FG)),
         ]),
     ];
@@ -209,7 +209,8 @@ pub fn render_monitor_panel(
         section_header("── cpu", false),
         cpu_item(&cpu_data, spark_width),
         section_header("── frames", false),
-        jank_item(&state.janky_percent_history, spark_width),
+        percent_item("Slow", &state.slow_percent_history, theme::YELLOW, spark_width),
+        percent_item("Frozen", &state.frozen_percent_history, theme::RED, spark_width),
         frames_item(&state.frame_count_history, spark_width),
     ];
 

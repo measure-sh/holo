@@ -14,7 +14,8 @@ pub struct MemInfo {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GfxInfo {
     pub total_frames: u64,
-    pub janky_frames: u64,
+    pub slow_frames: u64,
+    pub frozen_frames: u64,
 }
 
 #[derive(Debug, Clone)]
