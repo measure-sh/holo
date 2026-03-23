@@ -218,7 +218,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
                 let rest = &label[1..];
                 ListItem::new(Line::from(vec![
                     Span::styled(first, Style::new().fg(theme::KEY_HINT)),
-                    Span::styled(rest, Style::new().fg(theme::MUTED)),
+                    Span::styled(rest, Style::new().fg(theme::FG)),
                 ]))
             }
         })
@@ -237,7 +237,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         ListItem::new(Line::from(vec![
             Span::styled("kk", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("ill app", Style::new().fg(theme::MUTED)),
+            Span::styled("ill app", Style::new().fg(theme::FG)),
         ]))
     };
     items.push(kill_item);
@@ -249,7 +249,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
         bounds_spans.push(Span::styled("• ", Style::new().fg(accent)));
     }
     bounds_spans.push(Span::styled("b", Style::new().fg(theme::KEY_HINT)));
-    bounds_spans.push(Span::styled("ounds", Style::new().fg(theme::MUTED)));
+    bounds_spans.push(Span::styled("ounds", Style::new().fg(theme::FG)));
     items.push(ListItem::new(Line::from(bounds_spans)));
 
     let mut airplane_spans: Vec<Span> = Vec::new();
@@ -257,7 +257,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
         airplane_spans.push(Span::styled("• ", Style::new().fg(accent)));
     }
     airplane_spans.push(Span::styled("a", Style::new().fg(theme::KEY_HINT)));
-    airplane_spans.push(Span::styled("irplane", Style::new().fg(theme::MUTED)));
+    airplane_spans.push(Span::styled("irplane", Style::new().fg(theme::FG)));
     items.push(ListItem::new(Line::from(airplane_spans)));
 
     let clear_flash = app.clear_flash
@@ -273,7 +273,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         ListItem::new(Line::from(vec![
             Span::styled("cc", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("lear data", Style::new().fg(theme::MUTED)),
+            Span::styled("lear data", Style::new().fg(theme::FG)),
         ]))
     };
     items.push(clear_item);
@@ -291,7 +291,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         ListItem::new(Line::from(vec![
             Span::styled("uu", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("ninstall app", Style::new().fg(theme::MUTED)),
+            Span::styled("ninstall app", Style::new().fg(theme::FG)),
         ]))
     };
     items.push(uninstall_item);
@@ -309,7 +309,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         ListItem::new(Line::from(vec![
             Span::styled("ss", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("creenshot", Style::new().fg(theme::MUTED)),
+            Span::styled("creenshot", Style::new().fg(theme::FG)),
         ]))
     };
     items.push(screenshot_item);
