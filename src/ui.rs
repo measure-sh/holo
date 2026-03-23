@@ -98,18 +98,9 @@ pub fn render_app(
     };
     let hint_line = Line::from(quit_spans);
 
-    let beat = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() % 2 == 0)
-        .unwrap_or(false);
-    let (heart, heart_style) = if beat {
-        ("\u{2665}", Style::new().fg(theme::RED))
-    } else {
-        ("\u{2661}", Style::new().fg(theme::MUTED))
-    };
     let branding_line = Line::from(vec![
         Span::styled("made with ", Style::new().fg(theme::MUTED)),
-        Span::styled(heart, heart_style),
+        Span::styled("\u{2665}", Style::new().fg(theme::RED)),
         Span::styled(" by ", Style::new().fg(theme::MUTED)),
         Span::styled("measure.sh ", Style::new().fg(theme::ACCENT)),
     ]).alignment(Alignment::Center);
