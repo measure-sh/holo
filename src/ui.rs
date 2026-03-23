@@ -286,7 +286,7 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let commands_visible = app.commands_visible();
+    let commands_visible = app.commands().visible;
     let logcat_visible = vis[0];
     let trace_visible = vis[1];
     let permissions_visible = vis[5];
@@ -368,7 +368,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     let mut block = panel_block(panel::COMMANDS, focused);
     if focused {
-        let filter = app.commands_filter();
+        let filter = &app.commands().filter;
         let filter_span = if filter.is_empty() {
             Span::styled(" /", Style::new().fg(accent))
         } else {
@@ -386,7 +386,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let filtered = app.filtered_commands();
+    let filtered = app.commands().filtered_commands();
 
     let items: Vec<ListItem> = filtered
         .iter()
@@ -418,7 +418,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
         .highlight_symbol("▸ ");
 
     if focused {
-        let cursor = app.commands_cursor().min(filtered.len().saturating_sub(1));
+        let cursor = app.commands().cursor.min(filtered.len().saturating_sub(1));
         let mut state = ListState::default().with_selected(Some(cursor));
         frame.render_stateful_widget(list, inner, &mut state);
     } else {

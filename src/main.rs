@@ -2,6 +2,7 @@ mod adb;
 mod app;
 mod apps;
 mod battery;
+mod commands;
 mod data;
 mod database;
 mod database_ui;

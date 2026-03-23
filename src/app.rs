@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::adb::Device;
-use crate::apps;
+use crate::commands::CommandsState;
 use crate::database::DatabaseState;
 use crate::files::FilesState;
 use crate::logcat_state::LogcatState;
@@ -10,19 +10,6 @@ use crate::panel;
 use crate::permissions::PermissionsState;
 use crate::toolbar::{ToolbarAction, ToolbarState};
 use crate::trace::TraceState;
-
-pub const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
-    ("open app", || Action::OpenApp),
-    ("kill app", || Action::KillApp),
-    ("wakeup device", || Action::WakeScreen),
-    ("clear data", || Action::ClearData),
-    ("take screenshot", || Action::Screenshot),
-    ("layout bounds", || Action::ToggleLayoutBounds),
-    ("wifi", || Action::ToggleWifi),
-    ("airplane mode", || Action::ToggleAirplaneMode),
-    ("connect wireless adb", || Action::WirelessAdb),
-    ("uninstall app", || Action::UninstallApp),
-];
 
 pub enum Action {
     Quit,
@@ -58,17 +45,15 @@ pub enum Action {
 }
 
 pub struct App {
-    commands_visible: bool,
     visible: [bool; 8],
     focused: Option<u8>,
+    commands: CommandsState,
     logcat_state: LogcatState,
     db_state: DatabaseState,
     permissions_state: PermissionsState,
     files_state: FilesState,
     monitor_state: MonitorState,
     toolbar: ToolbarState,
-    commands_cursor: usize,
-    commands_filter: String,
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
@@ -83,17 +68,15 @@ impl App {
         let mut toolbar = ToolbarState::new(device);
         toolbar.package = package.map(String::from);
         Self {
-            commands_visible: true,
             visible: [true; 8],
             focused: None,
+            commands: CommandsState::new(),
             logcat_state: LogcatState::new(),
             db_state: DatabaseState::new(),
             permissions_state: PermissionsState::new(),
             files_state: FilesState::new(pkg),
             monitor_state: MonitorState::new(),
             toolbar,
-            commands_cursor: 0,
-            commands_filter: String::new(),
             package: pkg.to_string(),
             layout_bounds: false,
             airplane_mode: false,
@@ -142,40 +125,12 @@ impl App {
         }
 
         if self.focused == Some(panel::COMMANDS) {
-            match code {
-                KeyCode::Up => {
-                    self.commands_cursor = self.commands_cursor.saturating_sub(1);
-                    return Action::Noop;
-                }
-                KeyCode::Down => {
-                    let count = self.filtered_commands().len();
-                    self.commands_cursor = (self.commands_cursor + 1).min(count.saturating_sub(1));
-                    return Action::Noop;
-                }
-                KeyCode::Enter => {
-                    let filtered = self.filtered_commands();
-                    if let Some((_, action_fn)) = filtered.get(self.commands_cursor) {
-                        return action_fn();
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Esc => {
-                    self.commands_filter.clear();
-                    self.commands_cursor = 0;
+            if let Some(action) = self.commands.handle_key(code) {
+                if matches!(action, Action::Unfocus) {
                     self.focused = None;
                     return Action::Noop;
                 }
-                KeyCode::Backspace => {
-                    self.commands_filter.pop();
-                    self.commands_cursor = 0;
-                    return Action::Noop;
-                }
-                KeyCode::Char(ch) => {
-                    self.commands_filter.push(ch);
-                    self.commands_cursor = 0;
-                    return Action::Noop;
-                }
-                _ => { return Action::Noop; }
+                return action;
             }
         }
 
@@ -245,7 +200,7 @@ impl App {
                 Action::Noop
             }
             KeyCode::Char('0') => {
-                self.commands_visible = !self.commands_visible;
+                self.commands.visible = !self.commands.visible;
                 Action::Noop
             }
             KeyCode::Char(c @ '1'..='8') => {
@@ -281,8 +236,8 @@ impl App {
         }
         self.logcat_state.editing = None;
         self.db_state.editing_query = false;
-        self.commands_filter.clear();
-        self.commands_cursor = 0;
+        self.commands.filter.clear();
+        self.commands.cursor = 0;
     }
 
     pub fn panel_visibility(&self) -> &[bool; 8] {
@@ -372,24 +327,8 @@ impl App {
         self.confirming_quit
     }
 
-    pub fn commands_cursor(&self) -> usize {
-        self.commands_cursor
-    }
-
-    pub fn commands_filter(&self) -> &str {
-        &self.commands_filter
-    }
-
-    pub fn filtered_commands(&self) -> Vec<(&'static str, fn() -> Action)> {
-        COMMAND_LIST
-            .iter()
-            .filter(|(name, _)| apps::fuzzy_matches(name, &self.commands_filter))
-            .copied()
-            .collect()
-    }
-
-    pub fn commands_visible(&self) -> bool {
-        self.commands_visible
+    pub fn commands(&self) -> &CommandsState {
+        &self.commands
     }
 
     pub fn reset_for_new_app(&mut self, package: &str) {
