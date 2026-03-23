@@ -1,8 +1,8 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::Style,
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem},
+    widgets::{List, ListItem},
     Frame,
 };
 
@@ -171,25 +171,15 @@ fn frames_item(data: &[u64], spark_width: usize) -> ListItem<'static> {
 }
 
 
-fn sub_block(title: &str) -> Block<'static> {
-    let color = panel::by_number(panel::MONITOR).dim_color;
-    Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .title(Line::from(Span::styled(
-            format!(" {title} "),
-            Style::new().fg(color),
-        )))
-        .border_style(Style::new().fg(color))
-}
-
-pub fn render_monitor_panel(
+fn render_monitor(
     frame: &mut Frame,
     area: Rect,
+    panel_number: u8,
     focused: bool,
     state: &MonitorState,
+    items_fn: impl FnOnce(usize, &MonitorState) -> Vec<ListItem<'static>>,
 ) {
-    let block = panel_block(panel::MONITOR, focused);
+    let block = panel_block(panel_number, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -199,53 +189,38 @@ pub fn render_monitor_panel(
         return;
     }
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Ratio(1, 4),
-            Constraint::Ratio(1, 4),
-            Constraint::Ratio(1, 4),
-            Constraint::Ratio(1, 4),
-        ])
-        .split(inner);
-
     let spark_width = (inner.width as usize).saturating_sub(27).max(5);
+    frame.render_widget(List::new(items_fn(spark_width, state)), inner);
+}
 
-    let rss_data = state.sparkline_u64(|m| m.rss_kb);
-    let cpu_data = state.sparkline_f32(|m| m.cpu_percent);
-    let data_kb_data = state.sparkline_u64(|m| m.data_kb);
-    let cache_kb_data = state.sparkline_u64(|m| m.cache_kb);
+pub fn render_frames_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
+    render_monitor(frame, area, panel::FRAMES, focused, state, |sw, st| vec![
+        percent_item("Slow", &st.slow_percent_history, theme::YELLOW, sw),
+        percent_item("Frozen", &st.frozen_percent_history, theme::RED, sw),
+        frames_item(&st.frame_count_history, sw),
+    ]);
+}
 
-    let frames_block = sub_block("frames");
-    let frames_inner = frames_block.inner(chunks[0]);
-    frame.render_widget(frames_block, chunks[0]);
-    frame.render_widget(List::new(vec![
-        percent_item("Slow", &state.slow_percent_history, theme::YELLOW, spark_width),
-        percent_item("Frozen", &state.frozen_percent_history, theme::RED, spark_width),
-        frames_item(&state.frame_count_history, spark_width),
-    ]), frames_inner);
+pub fn render_disk_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
+    render_monitor(frame, area, panel::DISK, focused, state, |sw, st| {
+        let data = st.sparkline_u64(|m| m.data_kb);
+        let cache = st.sparkline_u64(|m| m.cache_kb);
+        vec![
+            mem_item("Data", &data, st.trend_u64(|m| m.data_kb), sw),
+            mem_item("Cache", &cache, st.trend_u64(|m| m.cache_kb), sw),
+        ]
+    });
+}
 
-    let disk_block = sub_block("disk");
-    let disk_inner = disk_block.inner(chunks[1]);
-    frame.render_widget(disk_block, chunks[1]);
-    frame.render_widget(List::new(vec![
-        mem_item("Data", &data_kb_data, state.trend_u64(|m| m.data_kb), spark_width),
-        mem_item("Cache", &cache_kb_data, state.trend_u64(|m| m.cache_kb), spark_width),
-    ]), disk_inner);
-
-    let cpu_block = sub_block("cpu");
-    let cpu_inner = cpu_block.inner(chunks[2]);
-    frame.render_widget(cpu_block, chunks[2]);
-    frame.render_widget(List::new(vec![
-        cpu_item(&cpu_data, spark_width),
-    ]), cpu_inner);
-
-    let mem_block = sub_block("memory");
-    let mem_inner = mem_block.inner(chunks[3]);
-    frame.render_widget(mem_block, chunks[3]);
-    frame.render_widget(List::new(vec![
-        mem_item("RSS", &rss_data, state.trend_u64(|m| m.rss_kb), spark_width),
-    ]), mem_inner);
+pub fn render_system_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
+    render_monitor(frame, area, panel::SYSTEM, focused, state, |sw, st| {
+        let cpu = st.sparkline_f32(|m| m.cpu_percent);
+        let rss = st.sparkline_u64(|m| m.rss_kb);
+        vec![
+            cpu_item(&cpu, sw),
+            mem_item("RSS", &rss, st.trend_u64(|m| m.rss_kb), sw),
+        ]
+    });
 }
 
 #[cfg(test)]

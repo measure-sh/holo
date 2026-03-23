@@ -21,20 +21,26 @@ const COMMAND_LABELS: [&str; 2] = [
     "wake screen",
 ];
 
-pub const SUPERSCRIPT_DIGITS: [char; 7] = [
-    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}',
+pub const SUPERSCRIPT_DIGITS: [char; 8] = [
+    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}',
 ];
 
 pub fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
     let def = panel::by_number(panel_number);
     let color = def.border_color(focused);
-    let superscript = SUPERSCRIPT_DIGITS[(panel_number - 1) as usize];
 
-    let digit_color = if focused { color } else { theme::MUTED };
-    let mut spans = vec![Span::styled(
-        format!(" {}", superscript),
-        Style::new().fg(digit_color).add_modifier(Modifier::BOLD),
-    )];
+    let mut spans = Vec::new();
+
+    if panel_number >= 1 {
+        let superscript = SUPERSCRIPT_DIGITS[(panel_number - 1) as usize];
+        let digit_color = if focused { color } else { theme::MUTED };
+        spans.push(Span::styled(
+            format!(" {}", superscript),
+            Style::new().fg(digit_color).add_modifier(Modifier::BOLD),
+        ));
+    } else {
+        spans.push(Span::styled(" ", Style::new()));
+    }
 
     if def.is_focusable() {
         let mut chars = def.name.chars();
@@ -95,12 +101,11 @@ pub fn render_app(
             Span::styled("uit ", Style::new().fg(theme::MUTED)),
         ]
     };
-    let mut hint_spans = vec![
-        Span::styled(" \\", Style::new().fg(theme::KEY_HINT)),
-        Span::styled("settings ", Style::new().fg(theme::MUTED)),
-        Span::styled("───", Style::new().fg(theme::SURFACE)),
-    ];
+    let mut hint_spans = Vec::new();
     hint_spans.extend(quit_spans);
+    hint_spans.push(Span::styled("───", Style::new().fg(theme::SURFACE)));
+    hint_spans.push(Span::styled(" \\", Style::new().fg(theme::KEY_HINT)));
+    hint_spans.push(Span::styled("settings ", Style::new().fg(theme::MUTED)));
     let hint_line = Line::from(hint_spans);
 
     let mut block = Block::default()
@@ -140,58 +145,45 @@ fn is_focused(app: &App, panel_number: u8) -> bool {
 
 fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let vis = app.panel_visibility();
-    let left_visible = vis[0] || vis[1];
-    let right_visible = vis[2];
-    let bot_visible = vis[3] || vis[4] || vis[5] || vis[6];
+    let logcat_visible = vis[0];
+    let left_visible = vis[1] || vis[2] || vis[3] || vis[4];
+    let right_visible = vis[5] || vis[6] || vis[7];
+    let bot_visible = left_visible || right_visible;
 
-    let top_visible = left_visible || right_visible;
+    let top_visible = logcat_visible;
 
+    let mut constraints = Vec::new();
+    let mut sections = Vec::new();
+
+    // commands is always shown as a narrow left column
+    constraints.push(Constraint::Length(22));
+    sections.push("commands");
+
+    // main area takes the rest
+    constraints.push(Constraint::Min(0));
+    sections.push("main");
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(area);
+
+    render_commands_panel(frame, cols[0], app);
+
+    let main_area = cols[1];
     match (top_visible, bot_visible) {
         (true, true) => {
             let rows = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            render_top_row(frame, rows[0], app, logcat_lines);
+                .split(main_area);
+            logcat_ui::render_logcat_panel(frame, rows[0], is_focused(app, panel::LOGCAT), logcat_lines, app);
             render_bottom_section(frame, rows[1], app);
         }
-        (true, false) => render_top_row(frame, area, app, logcat_lines),
-        (false, true) => render_bottom_section(frame, area, app),
-        (false, false) => {}
-    }
-}
-
-fn render_left_column(frame: &mut Frame, area: Rect, app: &mut App) {
-    let vis = app.panel_visibility();
-    match (vis[0], vis[1]) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            render_commands_panel(frame, rows[0], app);
-            render_trace_panel(frame, rows[1], app);
+        (true, false) => {
+            logcat_ui::render_logcat_panel(frame, main_area, is_focused(app, panel::LOGCAT), logcat_lines, app);
         }
-        (true, false) => render_commands_panel(frame, area, app),
-        (false, true) => render_trace_panel(frame, area, app),
-        (false, false) => {}
-    }
-}
-
-fn render_top_row(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
-    let vis = app.panel_visibility();
-    let left_visible = vis[0] || vis[1];
-    match (left_visible, vis[2]) {
-        (true, true) => {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
-                .split(area);
-            render_left_column(frame, cols[0], app);
-            logcat_ui::render_logcat_panel(frame, cols[1], is_focused(app, panel::LOGCAT), logcat_lines, app);
-        }
-        (true, false) => render_left_column(frame, area, app),
-        (false, true) => logcat_ui::render_logcat_panel(frame, area, is_focused(app, panel::LOGCAT), logcat_lines, app),
+        (false, true) => render_bottom_section(frame, main_area, app),
         (false, false) => {}
     }
 }
@@ -440,8 +432,8 @@ fn render_trace_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let left_visible = vis[3] || vis[4];
-    let right_visible = vis[5] || vis[6];
+    let left_visible = vis[1] || vis[2] || vis[3] || vis[4];
+    let right_visible = vis[5] || vis[6] || vis[7];
 
     match (left_visible, right_visible) {
         (true, true) => {
@@ -460,45 +452,74 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
 
 fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    match (vis[4], vis[3]) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(80), Constraint::Percentage(20)])
-                .split(area);
-            monitor_ui::render_monitor_panel(frame, rows[0], is_focused(app, panel::MONITOR), app.monitor_state());
-            permissions_ui::render_permissions_panel(frame, rows[1], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+    let panels: Vec<u8> = [
+        (vis[1], panel::TRACE),
+        (vis[2], panel::FRAMES),
+        (vis[3], panel::DISK),
+        (vis[4], panel::SYSTEM),
+    ]
+    .iter()
+    .filter(|(v, _)| *v)
+    .map(|(_, p)| *p)
+    .collect();
+
+    if panels.is_empty() {
+        return;
+    }
+
+    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, &p) in panels.iter().enumerate() {
+        match p {
+            panel::TRACE => render_trace_panel(frame, rows[i], app),
+            panel::FRAMES => monitor_ui::render_frames_panel(frame, rows[i], false, app.monitor_state()),
+            panel::DISK => monitor_ui::render_disk_panel(frame, rows[i], false, app.monitor_state()),
+            panel::SYSTEM => monitor_ui::render_system_panel(frame, rows[i], false, app.monitor_state()),
+            _ => {}
         }
-        (true, false) => {
-            monitor_ui::render_monitor_panel(frame, area, is_focused(app, panel::MONITOR), app.monitor_state());
-        }
-        (false, true) => {
-            permissions_ui::render_permissions_panel(frame, area, is_focused(app, panel::PERMISSIONS), app.permissions_state());
-        }
-        (false, false) => {}
     }
 }
 
 fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    match (vis[5], vis[6]) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            files_ui::render_files_panel(frame, rows[0], is_focused(app, panel::FILES), app.files_state());
-            let im = app.input_mode();
-            database_ui::render_database_panel(frame, rows[1], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
+    let panels: Vec<u8> = [
+        (vis[5], panel::PERMISSIONS),
+        (vis[6], panel::FILES),
+        (vis[7], panel::DATABASE),
+    ]
+    .iter()
+    .filter(|(v, _)| *v)
+    .map(|(_, p)| *p)
+    .collect();
+
+    if panels.is_empty() {
+        return;
+    }
+
+    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, &p) in panels.iter().enumerate() {
+        match p {
+            panel::PERMISSIONS => {
+                permissions_ui::render_permissions_panel(frame, rows[i], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+            }
+            panel::FILES => {
+                files_ui::render_files_panel(frame, rows[i], is_focused(app, panel::FILES), app.files_state());
+            }
+            panel::DATABASE => {
+                let im = app.input_mode();
+                database_ui::render_database_panel(frame, rows[i], is_focused(app, panel::DATABASE), app.db_state_mut(), im);
+            }
+            _ => {}
         }
-        (true, false) => {
-            files_ui::render_files_panel(frame, area, is_focused(app, panel::FILES), app.files_state());
-        }
-        (false, true) => {
-            let im = app.input_mode();
-            database_ui::render_database_panel(frame, area, is_focused(app, panel::DATABASE), app.db_state_mut(), im);
-        }
-        (false, false) => {}
     }
 }
 

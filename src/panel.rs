@@ -20,22 +20,26 @@ impl PanelDef {
     }
 }
 
-pub const COMMANDS: u8 = 1;
+pub const COMMANDS: u8 = 0;
+pub const LOGCAT: u8 = 1;
 pub const TRACE: u8 = 2;
-pub const LOGCAT: u8 = 3;
-pub const PERMISSIONS: u8 = 4;
-pub const MONITOR: u8 = 5;
-pub const FILES: u8 = 6;
-pub const DATABASE: u8 = 7;
+pub const FRAMES: u8 = 3;
+pub const DISK: u8 = 4;
+pub const SYSTEM: u8 = 5;
+pub const PERMISSIONS: u8 = 6;
+pub const FILES: u8 = 7;
+pub const DATABASE: u8 = 8;
 
-pub const PANELS: [PanelDef; 7] = [
-    PanelDef { number: 1, name: "commands",    dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: None },
+pub const PANELS: [PanelDef; 9] = [
+    PanelDef { number: 0, name: "commands",    dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: None },
+    PanelDef { number: 1, name: "logcat",      dim_color: theme::DIM_GREEN,   bright_color: theme::GREEN,   focus_key: Some('l') },
     PanelDef { number: 2, name: "trace",       dim_color: theme::DIM_BLUE,    bright_color: theme::ACCENT,  focus_key: Some('t') },
-    PanelDef { number: 3, name: "logcat",      dim_color: theme::DIM_GREEN,   bright_color: theme::GREEN,   focus_key: Some('l') },
-    PanelDef { number: 4, name: "permissions", dim_color: theme::DIM_CYAN,    bright_color: theme::CYAN,    focus_key: Some('p') },
-    PanelDef { number: 5, name: "monitor",     dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
-    PanelDef { number: 6, name: "files",       dim_color: theme::DIM_MAGENTA, bright_color: theme::MAGENTA, focus_key: Some('f') },
-    PanelDef { number: 7, name: "database",    dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: Some('d') },
+    PanelDef { number: 3, name: "frames",      dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
+    PanelDef { number: 4, name: "disk",        dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
+    PanelDef { number: 5, name: "system",      dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: None },
+    PanelDef { number: 6, name: "permissions", dim_color: theme::DIM_CYAN,    bright_color: theme::CYAN,    focus_key: Some('p') },
+    PanelDef { number: 7, name: "files",       dim_color: theme::DIM_MAGENTA, bright_color: theme::MAGENTA, focus_key: Some('f') },
+    PanelDef { number: 8, name: "database",    dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: Some('d') },
 ];
 
 pub fn by_number(n: u8) -> &'static PanelDef {
