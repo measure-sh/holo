@@ -77,7 +77,7 @@ pub fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
 pub fn render_app(
     frame: &mut Frame,
     title: &str,
-    time: &str,
+    _time: &str,
     battery_level: Option<u8>,
     app: &mut App,
     logcat_lines: &[String],
@@ -89,9 +89,9 @@ pub fn render_app(
             .fg(theme::ACCENT)
             .add_modifier(Modifier::BOLD),
     );
-    let time_line = Line::from(time)
-        .style(Style::new().fg(theme::FG))
-        .alignment(Alignment::Center);
+
+    let toolbar_line = build_toolbar_title(app).alignment(Alignment::Center);
+
     let quit_spans = if app.confirming_quit() {
         vec![
             Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
@@ -114,7 +114,7 @@ pub fn render_app(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(title_line)
-        .title(time_line);
+        .title(toolbar_line);
 
     if let Some(level) = battery_level {
         block = block.title(battery::battery_bar(level));
@@ -135,22 +135,17 @@ pub fn render_app(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(inner);
-
-    render_toolbar(frame, chunks[0], app);
-    render_panels(frame, chunks[1], app, logcat_lines);
+    render_panels(frame, inner, app, logcat_lines);
 
     if app.toolbar().open.is_some() {
-        render_dropdown_overlay(frame, chunks[0], app);
+        let toolbar_y = area.y;
+        render_dropdown_overlay(frame, area, toolbar_y, app);
     } else if app.show_settings() {
         render_settings_dialog(frame, area, app);
     }
 }
 
-fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
+fn build_toolbar_title(app: &App) -> Line<'_> {
     let tb = app.toolbar();
     let has_device = tb.device.is_some();
     let has_app = tb.package.is_some();
@@ -158,78 +153,30 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let device_label = tb.device_label();
     let app_label = tb.app_label();
 
-    let device_width = (device_label.len() as u16 + 8).max(20);
-    let app_width = (app_label.len() as u16 + 8).max(20);
-
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(device_width),
-            Constraint::Length(1),
-            Constraint::Length(app_width),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let dot = if has_device { "●" } else { "○" };
     let dot_color = if has_device { theme::GREEN } else { theme::MUTED };
     let device_fg = if has_device { theme::FG } else { theme::MUTED };
-    let device_border = if has_device { theme::MUTED } else { theme::SURFACE };
-
-    let device_title = Line::from(vec![
-        Span::styled(" F1", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" device ", Style::new().fg(theme::MUTED)),
-    ]);
-    let device_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .title(device_title)
-        .border_style(Style::new().fg(device_border));
-    let device_inner = device_block.inner(cols[0]);
-    frame.render_widget(device_block, cols[0]);
-
-    let device_line = Line::from(vec![
-        Span::styled(format!("{dot} "), Style::new().fg(dot_color)),
-        Span::styled(device_label, Style::new().fg(device_fg).add_modifier(Modifier::BOLD)),
-        Span::styled(" \u{25BE}", Style::new().fg(theme::MUTED)),
-    ]);
-    frame.render_widget(ratatui::widgets::Paragraph::new(device_line), device_inner);
-
-    let app_fg = if has_app { theme::FG } else { theme::MUTED };
-    let app_border = if has_app { theme::MUTED } else { theme::SURFACE };
-
-    let app_title = Line::from(vec![
-        Span::styled(" F2", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" app ", Style::new().fg(theme::MUTED)),
-    ]);
-    let app_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .title(app_title)
-        .border_style(Style::new().fg(app_border));
-    let app_inner = app_block.inner(cols[2]);
-    frame.render_widget(app_block, cols[2]);
-
-    let app_dot = if has_app { "●" } else { "○" };
     let app_dot_color = if has_app { theme::GREEN } else { theme::MUTED };
-    let app_line = Line::from(vec![
-        Span::styled(format!("{app_dot} "), Style::new().fg(app_dot_color)),
-        Span::styled(app_label, Style::new().fg(app_fg).add_modifier(Modifier::BOLD)),
-        Span::styled(" \u{25BE}", Style::new().fg(theme::MUTED)),
-    ]);
-    frame.render_widget(ratatui::widgets::Paragraph::new(app_line), app_inner);
+    let app_fg = if has_app { theme::FG } else { theme::MUTED };
+
+    Line::from(vec![
+        Span::styled(" F1", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" ", Style::new()),
+        Span::styled(if has_device { "●" } else { "○" }, Style::new().fg(dot_color)),
+        Span::styled(format!(" {device_label} \u{25BE}"), Style::new().fg(device_fg)),
+        Span::styled("  \u{2502}  ", Style::new().fg(theme::SURFACE)),
+        Span::styled("F2", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" ", Style::new()),
+        Span::styled(if has_app { "●" } else { "○" }, Style::new().fg(app_dot_color)),
+        Span::styled(format!(" {app_label} \u{25BE} "), Style::new().fg(app_fg)),
+    ])
 }
 
-fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
+fn render_dropdown_overlay(frame: &mut Frame, outer_area: Rect, toolbar_y: u16, app: &App) {
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
-    let device_width = (tb.device_label().len() as u16 + 8).max(20);
-    let anchor_x = match kind {
-        DropdownKind::Device => toolbar_area.x,
-        DropdownKind::App => toolbar_area.x + device_width + 1,
-    };
-    let anchor_y = toolbar_area.y + toolbar_area.height;
+    let anchor_x = outer_area.x + 2;
+    let anchor_y = toolbar_y + 1;
 
     let screen = frame.area();
     let width = 50.min(screen.width.saturating_sub(2));
