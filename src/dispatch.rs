@@ -5,7 +5,6 @@ use color_eyre::Result;
 use crate::adb::{Adb, Device};
 use crate::app::{Action, App};
 use crate::data::DataSources;
-use crate::selector;
 use crate::toolbar;
 
 pub struct DispatchContext {
@@ -30,7 +29,7 @@ impl DispatchContext {
                     app.toolbar_mut().package = Some(auto_pkg.clone());
                     if let Some(device) = app.toolbar().device.clone() {
                         self.data = Some(build_data(&self.adb, &device, &auto_pkg, app));
-                        self.title = build_title(&device, &auto_pkg, self.data.as_ref().unwrap());
+                        self.title = build_title(self.data.as_ref().unwrap());
                     }
                 }
                 self.packages_rx = None;
@@ -68,7 +67,7 @@ impl DispatchContext {
                 if let Some(pkg) = auto {
                     app.toolbar_mut().package = Some(pkg.clone());
                     self.data = Some(build_data(&self.adb, &d, &pkg, app));
-                    self.title = build_title(&d, &pkg, self.data.as_ref().unwrap());
+                    self.title = build_title(self.data.as_ref().unwrap());
                 }
             }
             Action::ChangeApp(p) => {
@@ -78,7 +77,7 @@ impl DispatchContext {
                 app.reset_for_new_app(&p);
                 if let Some(device) = app.toolbar().device.clone() {
                     self.data = Some(build_data(&self.adb, &device, &p, app));
-                    self.title = build_title(&device, &p, self.data.as_ref().unwrap());
+                    self.title = build_title(self.data.as_ref().unwrap());
                 }
             }
             Action::OpenApp => {
@@ -287,12 +286,12 @@ pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut 
     data
 }
 
-pub fn build_title(device: &Device, package: &str, data: &DataSources) -> String {
+pub fn build_title(data: &DataSources) -> String {
     match &data.app_version {
         Some((name, code)) if !name.is_empty() => {
-            format!(" {} — {} ({} / {}) ", selector::selector_label(device), package, name, code)
+            format!(" {} / {} ", name, code)
         }
-        _ => format!(" {} — {} ", selector::selector_label(device), package),
+        _ => String::new(),
     }
 }
 

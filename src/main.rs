@@ -69,7 +69,7 @@ fn run_app(
         if let Some(pkg) = auto {
             app.toolbar_mut().package = Some(pkg.clone());
             ctx.data = Some(dispatch::build_data(&adb, device, &pkg, &mut app));
-            ctx.title = dispatch::build_title(device, &pkg, ctx.data.as_ref().unwrap());
+            ctx.title = dispatch::build_title(ctx.data.as_ref().unwrap());
         } else {
             app.toolbar_mut().open = Some(toolbar::DropdownKind::App);
         }
