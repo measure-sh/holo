@@ -552,17 +552,18 @@ fn render_command_palette(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(dim, area);
     frame.render_widget(Clear, dialog_area);
 
-    let filter_title = if palette.filter.is_empty() {
-        Line::from(Span::styled(" / commands ", Style::new().fg(theme::ACCENT)))
+    let title = Line::from(Span::styled(" commands ", Style::new().fg(theme::ACCENT)));
+
+    let filter_span = if palette.filter.is_empty() {
+        Span::styled(" /", Style::new().fg(theme::ACCENT))
     } else {
-        Line::from(vec![
-            Span::styled(" / ", Style::new().fg(theme::ACCENT)),
-            Span::styled(&palette.filter, Style::new().fg(theme::YELLOW)),
-            Span::styled(" ", Style::new()),
-        ])
+        Span::styled(format!(" /{}", palette.filter), Style::new().fg(theme::YELLOW))
     };
 
     let bottom_spans = vec![
+        filter_span,
+        Span::styled(" ", Style::new()),
+        Span::styled("───", Style::new().fg(theme::MUTED)),
         Span::styled(" ↩", Style::new().fg(theme::ACCENT)),
         Span::styled(" run ", Style::new().fg(theme::FG)),
         Span::styled("───", Style::new().fg(theme::MUTED)),
@@ -573,7 +574,7 @@ fn render_command_palette(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(filter_title)
+        .title(title)
         .title_bottom(Line::from(bottom_spans))
         .border_style(Style::new().fg(theme::MUTED))
         .style(Style::new().bg(theme::SURFACE));
