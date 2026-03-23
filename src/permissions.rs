@@ -29,10 +29,6 @@ impl PermissionsState {
         }
     }
 
-    pub fn selected_permission(&self) -> Option<&(String, bool)> {
-        self.permissions.get(self.selected_index)
-    }
-
     pub fn toggle_selected(&mut self) -> Option<(String, bool)> {
         if let Some(perm) = self.permissions.get_mut(self.selected_index) {
             perm.1 = !perm.1;
@@ -124,7 +120,7 @@ mod tests {
         ];
         state.selected_index = 1;
         assert_eq!(
-            state.selected_permission(),
+            state.permissions.get(state.selected_index),
             Some(&("android.permission.LOCATION".into(), false))
         );
     }

@@ -67,10 +67,6 @@ impl MonitorState {
         }
     }
 
-    pub fn latest(&self) -> Option<&MonitorSample> {
-        self.history.last()
-    }
-
     pub fn trend_u64(&self, extract: fn(&MonitorSample) -> u64) -> Trend {
         if self.history.len() < 3 {
             return Trend::Stable;
@@ -162,7 +158,7 @@ mod tests {
             state.push(sample(i));
         }
         assert_eq!(state.history.len(), MAX_SAMPLES);
-        assert_eq!(state.latest().unwrap().rss_kb, 69);
+        assert_eq!(state.history.last().unwrap().rss_kb, 69);
     }
 
     #[test]
