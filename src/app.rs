@@ -508,10 +508,10 @@ mod tests {
     }
 
     #[test]
-    fn s_enters_search_editing_when_focused() {
+    fn slash_enters_search_editing_when_focused() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('/')));
         assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
         assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
     }
@@ -567,7 +567,7 @@ mod tests {
     fn typing_appends_to_search() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('/')));
         app.handle_key(key(KeyCode::Char('x')));
         app.handle_key(key(KeyCode::Char('y')));
         assert_eq!(app.logcat_state().filter.search, "xy");
@@ -588,7 +588,7 @@ mod tests {
     fn enter_exits_editing_mode() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('/')));
         assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.logcat_state().editing, None);
@@ -610,7 +610,7 @@ mod tests {
     fn esc_exits_search_editing_preserving_input() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('/')));
         app.handle_key(key(KeyCode::Char('x')));
         app.handle_key(key(KeyCode::Char('y')));
         app.handle_key(key(KeyCode::Esc));
@@ -732,7 +732,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('t')));
         app.handle_key(key(KeyCode::Char('a')));
         app.handle_key(key(KeyCode::Enter));
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('/')));
         app.handle_key(key(KeyCode::Char('b')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Right));
@@ -964,7 +964,7 @@ mod tests {
     fn toggle_focus_clears_search_editing() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('/')));
         assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('l')));

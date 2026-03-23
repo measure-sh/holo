@@ -102,7 +102,7 @@ impl LogcatState {
                 self.editing = Some(LogcatEditTarget::Tag);
                 Some(Action::Noop)
             }
-            KeyCode::Char('s') => {
+            KeyCode::Char('/') => {
                 self.editing = Some(LogcatEditTarget::Search);
                 Some(Action::Noop)
             }

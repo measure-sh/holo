@@ -99,6 +99,20 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
 
     let mut spans = Vec::new();
 
+    spans.push(Span::styled(" /", accent));
+    if matches!(editing, Some(LogcatEditTarget::Search)) {
+        let search_text = if filter.search.is_empty() { String::new() } else { filter.search.clone() };
+        spans.push(Span::styled(search_text, Style::new().fg(theme::YELLOW)));
+        spans.push(Span::styled("_", Style::new().fg(theme::FG)));
+        spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
+    } else if filter.search.is_empty() {
+        spans.push(Span::styled("search ", muted));
+    } else {
+        spans.push(Span::styled(format!("{} ", filter.search), Style::new().fg(theme::YELLOW)));
+    }
+
+    spans.push(Span::styled("───", border));
+
     let tag_value = if filter.tag.is_empty() {
         "*".to_string()
     } else {
@@ -112,33 +126,6 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
     spans.push(Span::styled("ag:", muted));
     spans.push(Span::styled(format!("{}", tag_display), Style::new().fg(theme::FG)));
     if matches!(editing, Some(LogcatEditTarget::Tag)) {
-        spans.push(Span::styled("_", Style::new().fg(theme::FG)));
-        spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
-    } else {
-        spans.push(Span::styled(" ", muted));
-    }
-
-    spans.push(Span::styled("───", border));
-
-    let search_value = if filter.search.is_empty() {
-        String::new()
-    } else {
-        filter.search.clone()
-    };
-    let search_display = match editing {
-        Some(LogcatEditTarget::Search) => search_value.clone(),
-        _ => {
-            if search_value.is_empty() {
-                "*".to_string()
-            } else {
-                search_value
-            }
-        }
-    };
-    spans.push(Span::styled(" s", accent));
-    spans.push(Span::styled("earch:", muted));
-    spans.push(Span::styled(format!("{}", search_display), Style::new().fg(theme::FG)));
-    if matches!(editing, Some(LogcatEditTarget::Search)) {
         spans.push(Span::styled("_", Style::new().fg(theme::FG)));
         spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
     } else {
