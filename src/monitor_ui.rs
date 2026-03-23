@@ -1,8 +1,8 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{List, ListItem},
+    widgets::{Block, BorderType, Borders, List, ListItem},
     Frame,
 };
 
@@ -170,16 +170,17 @@ fn frames_item(data: &[u64], spark_width: usize) -> ListItem<'static> {
     ListItem::new(lines)
 }
 
-fn section_header(label: &str, first: bool) -> ListItem<'static> {
-    let label_line = Line::from(Span::styled(
-        format!(" {}", label),
-        Style::new().fg(theme::MUTED),
-    ));
-    if first {
-        ListItem::new(vec![label_line])
-    } else {
-        ListItem::new(vec![Line::raw(""), label_line])
-    }
+
+fn sub_block(title: &str) -> Block<'static> {
+    let color = panel::by_number(panel::MONITOR).dim_color;
+    Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(Line::from(Span::styled(
+            format!(" {title} "),
+            Style::new().fg(color),
+        )))
+        .border_style(Style::new().fg(color))
 }
 
 pub fn render_monitor_panel(
@@ -198,29 +199,53 @@ pub fn render_monitor_panel(
         return;
     }
 
-    let spark_width = (inner.width as usize).saturating_sub(25).max(5);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Ratio(1, 4),
+            Constraint::Ratio(1, 4),
+            Constraint::Ratio(1, 4),
+            Constraint::Ratio(1, 4),
+        ])
+        .split(inner);
+
+    let spark_width = (inner.width as usize).saturating_sub(27).max(5);
 
     let rss_data = state.sparkline_u64(|m| m.rss_kb);
     let cpu_data = state.sparkline_f32(|m| m.cpu_percent);
-
     let data_kb_data = state.sparkline_u64(|m| m.data_kb);
     let cache_kb_data = state.sparkline_u64(|m| m.cache_kb);
 
-    let items: Vec<ListItem> = vec![
-        section_header("── frames", true),
+    let frames_block = sub_block("frames");
+    let frames_inner = frames_block.inner(chunks[0]);
+    frame.render_widget(frames_block, chunks[0]);
+    frame.render_widget(List::new(vec![
         percent_item("Slow", &state.slow_percent_history, theme::YELLOW, spark_width),
         percent_item("Frozen", &state.frozen_percent_history, theme::RED, spark_width),
         frames_item(&state.frame_count_history, spark_width),
-        section_header("── disk", false),
+    ]), frames_inner);
+
+    let disk_block = sub_block("disk");
+    let disk_inner = disk_block.inner(chunks[1]);
+    frame.render_widget(disk_block, chunks[1]);
+    frame.render_widget(List::new(vec![
         mem_item("Data", &data_kb_data, state.trend_u64(|m| m.data_kb), spark_width),
         mem_item("Cache", &cache_kb_data, state.trend_u64(|m| m.cache_kb), spark_width),
-        section_header("── cpu", false),
-        cpu_item(&cpu_data, spark_width),
-        section_header("── memory", false),
-        mem_item("RSS", &rss_data, state.trend_u64(|m| m.rss_kb), spark_width),
-    ];
+    ]), disk_inner);
 
-    frame.render_widget(List::new(items), inner);
+    let cpu_block = sub_block("cpu");
+    let cpu_inner = cpu_block.inner(chunks[2]);
+    frame.render_widget(cpu_block, chunks[2]);
+    frame.render_widget(List::new(vec![
+        cpu_item(&cpu_data, spark_width),
+    ]), cpu_inner);
+
+    let mem_block = sub_block("memory");
+    let mem_inner = mem_block.inner(chunks[3]);
+    frame.render_widget(mem_block, chunks[3]);
+    frame.render_widget(List::new(vec![
+        mem_item("RSS", &rss_data, state.trend_u64(|m| m.rss_kb), spark_width),
+    ]), mem_inner);
 }
 
 #[cfg(test)]
