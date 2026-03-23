@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, COMMAND_LIST};
+use crate::app::App;
 use crate::selector;
 use crate::toolbar::DropdownKind;
 use crate::battery;
@@ -366,13 +366,32 @@ fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visibl
 
 fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     let focused = is_focused(app, panel::COMMANDS);
-    let block = panel_block(panel::COMMANDS, focused);
+    let accent = panel::by_number(panel::COMMANDS).bright_color;
+    let border_color = panel::by_number(panel::COMMANDS).border_color(focused);
+
+    let mut block = panel_block(panel::COMMANDS, focused);
+    if focused {
+        let filter = app.commands_filter();
+        let filter_span = if filter.is_empty() {
+            Span::styled(" /", Style::new().fg(accent))
+        } else {
+            Span::styled(format!(" /{filter}"), Style::new().fg(theme::YELLOW))
+        };
+        block = block.title_bottom(Line::from(vec![
+            filter_span,
+            Span::styled(" ", Style::new()),
+            Span::styled("───", Style::new().fg(border_color)),
+            Span::styled(" ↩", Style::new().fg(accent)),
+            Span::styled(" run ", Style::new().fg(theme::FG)),
+        ]));
+    }
+
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let accent = panel::by_number(panel::COMMANDS).bright_color;
+    let filtered = app.filtered_commands();
 
-    let items: Vec<ListItem> = COMMAND_LIST
+    let items: Vec<ListItem> = filtered
         .iter()
         .map(|(name, _)| {
             let is_toggle_on = (*name == "toggle layout bounds" && app.layout_bounds())
@@ -400,7 +419,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
         .highlight_symbol("▸ ");
 
     if focused {
-        let cursor = app.commands_cursor().min(COMMAND_LIST.len().saturating_sub(1));
+        let cursor = app.commands_cursor().min(filtered.len().saturating_sub(1));
         let mut state = ListState::default().with_selected(Some(cursor));
         frame.render_stateful_widget(list, inner, &mut state);
     } else {

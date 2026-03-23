@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::adb::Device;
+use crate::apps;
 use crate::database::DatabaseState;
 use crate::files::{FileConfirm, FilesState, ToggleResult};
 use crate::logcat_state::LogcatState;
@@ -75,6 +76,7 @@ pub struct App {
     monitor_state: MonitorState,
     toolbar: ToolbarState,
     commands_cursor: usize,
+    commands_filter: String,
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
@@ -100,6 +102,7 @@ impl App {
             monitor_state: MonitorState::new(),
             toolbar,
             commands_cursor: 0,
+            commands_filter: String::new(),
             package: pkg.to_string(),
             layout_bounds: false,
             airplane_mode: false,
@@ -184,20 +187,34 @@ impl App {
                     return Action::None;
                 }
                 KeyCode::Down => {
-                    self.commands_cursor = (self.commands_cursor + 1).min(COMMAND_LIST.len().saturating_sub(1));
+                    let count = self.filtered_commands().len();
+                    self.commands_cursor = (self.commands_cursor + 1).min(count.saturating_sub(1));
                     return Action::None;
                 }
                 KeyCode::Enter => {
-                    if let Some((_, action_fn)) = COMMAND_LIST.get(self.commands_cursor) {
+                    let filtered = self.filtered_commands();
+                    if let Some((_, action_fn)) = filtered.get(self.commands_cursor) {
                         return action_fn();
                     }
                     return Action::None;
                 }
                 KeyCode::Esc => {
+                    self.commands_filter.clear();
+                    self.commands_cursor = 0;
                     self.focused = None;
                     return Action::None;
                 }
-                _ => {}
+                KeyCode::Backspace => {
+                    self.commands_filter.pop();
+                    self.commands_cursor = 0;
+                    return Action::None;
+                }
+                KeyCode::Char(ch) => {
+                    self.commands_filter.push(ch);
+                    self.commands_cursor = 0;
+                    return Action::None;
+                }
+                _ => { return Action::None; }
             }
         }
 
@@ -526,6 +543,8 @@ impl App {
             self.focused = Some(n);
         }
         self.input_mode = InputMode::Normal;
+        self.commands_filter.clear();
+        self.commands_cursor = 0;
     }
 
     pub fn panel_visibility(&self) -> &[bool; 8] {
@@ -619,6 +638,18 @@ impl App {
 
     pub fn commands_cursor(&self) -> usize {
         self.commands_cursor
+    }
+
+    pub fn commands_filter(&self) -> &str {
+        &self.commands_filter
+    }
+
+    pub fn filtered_commands(&self) -> Vec<(&'static str, fn() -> Action)> {
+        COMMAND_LIST
+            .iter()
+            .filter(|(name, _)| apps::fuzzy_matches(name, &self.commands_filter))
+            .copied()
+            .collect()
     }
 
     pub fn commands_visible(&self) -> bool {
