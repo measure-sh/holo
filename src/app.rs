@@ -73,12 +73,14 @@ pub struct App {
     confirming_kill: bool,
     confirming_clear: bool,
     confirming_uninstall: bool,
+    confirming_screenshot: bool,
     show_settings: bool,
     settings_index: usize,
     pub command_flash: Option<(usize, std::time::Instant)>,
     pub kill_flash: Option<std::time::Instant>,
     pub clear_flash: Option<std::time::Instant>,
     pub uninstall_flash: Option<std::time::Instant>,
+    pub screenshot_flash: Option<std::time::Instant>,
     trace_state: TraceState,
 }
 
@@ -100,6 +102,7 @@ impl App {
             confirming_kill: false,
             confirming_clear: false,
             confirming_uninstall: false,
+            confirming_screenshot: false,
             show_settings: false,
             settings_index: 0,
             command_flash: None,
@@ -107,6 +110,7 @@ impl App {
             clear_flash: None,
             trace_state: TraceState::new(package),
             uninstall_flash: None,
+            screenshot_flash: None,
         }
     }
 
@@ -186,6 +190,17 @@ impl App {
                 KeyCode::Char('u') => {
                     self.uninstall_flash = Some(std::time::Instant::now());
                     Action::UninstallApp
+                }
+                _ => Action::None,
+            };
+        }
+
+        if self.confirming_screenshot {
+            self.confirming_screenshot = false;
+            return match code {
+                KeyCode::Char('s') => {
+                    self.screenshot_flash = Some(std::time::Instant::now());
+                    Action::Screenshot
                 }
                 _ => Action::None,
             };
@@ -496,9 +511,13 @@ impl App {
         }
 
         match code {
-            KeyCode::Char('s') => {
+            KeyCode::Char('\\') => {
                 self.show_settings = true;
                 self.settings_index = 0;
+                Action::None
+            }
+            KeyCode::Char('s') => {
+                self.confirming_screenshot = true;
                 Action::None
             }
             KeyCode::Char('q') => {
@@ -532,10 +551,6 @@ impl App {
             KeyCode::Char('a') => {
                 self.airplane_mode = !self.airplane_mode;
                 Action::ToggleAirplaneMode
-            }
-            KeyCode::Char('x') => {
-                self.command_flash = Some((2, std::time::Instant::now()));
-                Action::Screenshot
             }
             KeyCode::Char(c @ '1'..='7') => {
                 self.toggle_visibility(c as u8 - b'0');
@@ -662,6 +677,10 @@ impl App {
 
     pub fn confirming_uninstall(&self) -> bool {
         self.confirming_uninstall
+    }
+
+    pub fn confirming_screenshot(&self) -> bool {
+        self.confirming_screenshot
     }
 
     pub fn show_settings(&self) -> bool {
@@ -1381,17 +1400,17 @@ mod tests {
     }
 
     #[test]
-    fn s_opens_settings() {
+    fn backslash_opens_settings() {
         let mut app = App::new("com.test");
         assert!(!app.show_settings());
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('\\')));
         assert!(app.show_settings());
     }
 
     #[test]
     fn esc_closes_settings() {
         let mut app = App::new("com.test");
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('\\')));
         assert!(app.show_settings());
         app.handle_key(key(KeyCode::Esc));
         assert!(!app.show_settings());
@@ -1400,7 +1419,7 @@ mod tests {
     #[test]
     fn enter_in_settings_copies_and_closes() {
         let mut app = App::new("com.test");
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('\\')));
         let action = app.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Action::CopyText(_)));
         assert!(!app.show_settings());
@@ -1409,7 +1428,7 @@ mod tests {
     #[test]
     fn settings_traps_keys() {
         let mut app = App::new("com.test");
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('\\')));
         let action = app.handle_key(key(KeyCode::Char('q')));
         assert!(matches!(action, Action::None));
         assert!(app.show_settings());
@@ -1418,7 +1437,7 @@ mod tests {
     #[test]
     fn settings_select_device() {
         let mut app = App::new("com.test");
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('\\')));
         app.handle_key(key(KeyCode::Down));
         let action = app.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Action::SelectDevice));
@@ -1428,12 +1447,29 @@ mod tests {
     #[test]
     fn settings_select_app() {
         let mut app = App::new("com.test");
-        app.handle_key(key(KeyCode::Char('s')));
+        app.handle_key(key(KeyCode::Char('\\')));
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Down));
         let action = app.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Action::SelectApp));
         assert!(!app.show_settings());
+    }
+
+    #[test]
+    fn ss_takes_screenshot() {
+        let mut app = App::new("com.test");
+        assert!(matches!(app.handle_key(key(KeyCode::Char('s'))), Action::None));
+        assert!(app.confirming_screenshot());
+        assert!(matches!(app.handle_key(key(KeyCode::Char('s'))), Action::Screenshot));
+    }
+
+    #[test]
+    fn s_then_other_cancels_screenshot() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('s')));
+        assert!(app.confirming_screenshot());
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.confirming_screenshot());
     }
 
 }

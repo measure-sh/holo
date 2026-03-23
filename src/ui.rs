@@ -16,10 +16,9 @@ use crate::panel;
 use crate::permissions_ui;
 use crate::theme;
 
-const COMMAND_LABELS: [&str; 3] = [
+const COMMAND_LABELS: [&str; 2] = [
     "open app",
     "wake screen",
-    "x screenshot",
 ];
 
 pub const SUPERSCRIPT_DIGITS: [char; 7] = [
@@ -296,6 +295,24 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
         ]))
     };
     items.push(uninstall_item);
+
+    let screenshot_flash = app.screenshot_flash
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+    if !screenshot_flash { app.screenshot_flash = None; }
+    let screenshot_item = if screenshot_flash {
+        ListItem::new(Line::from(Span::styled("done!", Style::new().fg(theme::GREEN))))
+    } else if app.confirming_screenshot() {
+        ListItem::new(Line::from(vec![
+            Span::styled("s", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+        ]))
+    } else {
+        ListItem::new(Line::from(vec![
+            Span::styled("ss", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("creenshot", Style::new().fg(theme::MUTED)),
+        ]))
+    };
+    items.push(screenshot_item);
 
     let list = List::new(items);
     frame.render_widget(list, inner);
