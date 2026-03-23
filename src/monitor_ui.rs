@@ -30,9 +30,9 @@ fn trend_symbol(trend: Trend) -> (&'static str, ratatui::style::Color) {
     }
 }
 
-fn sparkline_str(data: &[u64], width: usize) -> String {
+fn sparkline_str(data: &[u64], width: usize) -> (String, u64, u64) {
     if data.is_empty() {
-        return String::new();
+        return (String::new(), 0, 0);
     }
     let start = data.len().saturating_sub(width);
     let slice = &data[start..];
@@ -40,7 +40,7 @@ fn sparkline_str(data: &[u64], width: usize) -> String {
     let max = *slice.iter().max().unwrap();
     let range = max.saturating_sub(min);
 
-    slice
+    let s = slice
         .iter()
         .map(|&v| {
             if range == 0 {
@@ -50,12 +50,13 @@ fn sparkline_str(data: &[u64], width: usize) -> String {
                 SPARK_CHARS[idx]
             }
         })
-        .collect()
+        .collect();
+    (s, min, max)
 }
 
-fn sparkline_str_f32(data: &[f32], width: usize) -> String {
+fn sparkline_str_f32(data: &[f32], width: usize) -> (String, f32, f32) {
     if data.is_empty() {
-        return String::new();
+        return (String::new(), 0.0, 0.0);
     }
     let start = data.len().saturating_sub(width);
     let slice = &data[start..];
@@ -63,7 +64,7 @@ fn sparkline_str_f32(data: &[f32], width: usize) -> String {
     let max = slice.iter().copied().reduce(f32::max).unwrap();
     let range = max - min;
 
-    slice
+    let s = slice
         .iter()
         .map(|&v| {
             if range < 0.01 {
@@ -73,7 +74,8 @@ fn sparkline_str_f32(data: &[f32], width: usize) -> String {
                 SPARK_CHARS[idx]
             }
         })
-        .collect()
+        .collect();
+    (s, min, max)
 }
 
 fn mem_item(
@@ -83,10 +85,10 @@ fn mem_item(
     spark_width: usize,
 ) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0);
-    let spark = sparkline_str(data, spark_width);
+    let (spark, min, max) = sparkline_str(data, spark_width);
     let (arrow, arrow_color) = trend_symbol(trend);
 
-    ListItem::new(vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
             Span::styled(spark, Style::new().fg(theme::ACCENT)),
@@ -94,50 +96,78 @@ fn mem_item(
             Span::raw(" "),
             Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
         ]),
-        Line::raw(""),
-    ])
+    ];
+    if min != max {
+        lines.push(Line::from(Span::styled(
+            format!(" {:>12}{}-{}", "", format_mb(min), format_mb(max)),
+            Style::new().fg(theme::MUTED),
+        )));
+    }
+    lines.push(Line::raw(""));
+    ListItem::new(lines)
 }
 
 fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0.0);
-    let spark = sparkline_str_f32(data, spark_width);
+    let (spark, min, max) = sparkline_str_f32(data, spark_width);
 
-    ListItem::new(vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(theme::FG)),
             Span::styled(spark, Style::new().fg(theme::GREEN)),
             Span::styled(format!("  {:>7.1}%", current), Style::new().fg(theme::FG)),
         ]),
-        Line::raw(""),
-    ])
+    ];
+    if (max - min) >= 0.01 {
+        lines.push(Line::from(Span::styled(
+            format!(" {:>12}{:.1}-{:.1}%", "", min, max),
+            Style::new().fg(theme::MUTED),
+        )));
+    }
+    lines.push(Line::raw(""));
+    ListItem::new(lines)
 }
 
 fn jank_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0.0);
-    let spark = sparkline_str_f32(data, spark_width);
+    let (spark, min, max) = sparkline_str_f32(data, spark_width);
 
-    ListItem::new(vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {:<12}", "Janky"), Style::new().fg(theme::FG)),
             Span::styled(spark, Style::new().fg(theme::RED)),
             Span::styled(format!("  {:>7.1}%", current), Style::new().fg(theme::FG)),
         ]),
-        Line::raw(""),
-    ])
+    ];
+    if (max - min) >= 0.01 {
+        lines.push(Line::from(Span::styled(
+            format!(" {:>12}{:.1}-{:.1}%", "", min, max),
+            Style::new().fg(theme::MUTED),
+        )));
+    }
+    lines.push(Line::raw(""));
+    ListItem::new(lines)
 }
 
 fn frames_item(data: &[u64], spark_width: usize) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0);
-    let spark = sparkline_str(data, spark_width);
+    let (spark, min, max) = sparkline_str(data, spark_width);
 
-    ListItem::new(vec![
+    let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {:<12}", "Rendered"), Style::new().fg(theme::FG)),
             Span::styled(spark, Style::new().fg(theme::MAGENTA)),
             Span::styled(format!("  {:>8}", current), Style::new().fg(theme::FG)),
         ]),
-        Line::raw(""),
-    ])
+    ];
+    if min != max {
+        lines.push(Line::from(Span::styled(
+            format!(" {:>12}{}-{}", "", min, max),
+            Style::new().fg(theme::MUTED),
+        )));
+    }
+    lines.push(Line::raw(""));
+    ListItem::new(lines)
 }
 
 fn section_header(label: &str, first: bool) -> ListItem<'static> {
@@ -196,37 +226,44 @@ mod tests {
 
     #[test]
     fn sparkline_single_value() {
-        let s = sparkline_str(&[100], 10);
+        let (s, _, _) = sparkline_str(&[100], 10);
         assert_eq!(s.chars().count(), 1);
     }
 
     #[test]
     fn sparkline_constant_values() {
-        let s = sparkline_str(&[50, 50, 50], 10);
+        let (s, min, max) = sparkline_str(&[50, 50, 50], 10);
         assert!(s.chars().all(|c| c == SPARK_CHARS[3]));
+        assert_eq!(min, max);
     }
 
     #[test]
     fn sparkline_range_values() {
-        let s = sparkline_str(&[0, 100], 10);
+        let (s, min, max) = sparkline_str(&[0, 100], 10);
         let chars: Vec<char> = s.chars().collect();
         assert_eq!(chars[0], SPARK_CHARS[0]);
         assert_eq!(chars[1], SPARK_CHARS[7]);
+        assert_eq!(min, 0);
+        assert_eq!(max, 100);
     }
 
     #[test]
     fn sparkline_caps_to_width() {
         let data: Vec<u64> = (0..20).collect();
-        let s = sparkline_str(&data, 5);
+        let (s, min, max) = sparkline_str(&data, 5);
         assert_eq!(s.chars().count(), 5);
+        assert_eq!(min, 15);
+        assert_eq!(max, 19);
     }
 
     #[test]
     fn sparkline_f32_range() {
-        let s = sparkline_str_f32(&[0.0, 50.0, 100.0], 10);
+        let (s, min, max) = sparkline_str_f32(&[0.0, 50.0, 100.0], 10);
         let chars: Vec<char> = s.chars().collect();
         assert_eq!(chars[0], SPARK_CHARS[0]);
         assert_eq!(chars[2], SPARK_CHARS[7]);
+        assert_eq!(min, 0.0);
+        assert_eq!(max, 100.0);
     }
 
     #[test]
