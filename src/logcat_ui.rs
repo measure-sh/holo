@@ -41,6 +41,7 @@ pub fn render_logcat_panel(
     let inner = block.inner(area);
 
     let filter = &app.logcat_state().filter;
+    let search = filter.search.clone();
     let filtered: Vec<&String> = logcat_lines
         .iter()
         .filter(|line| filter.matches(line))
@@ -73,7 +74,7 @@ pub fn render_logcat_panel(
 
     let items: Vec<ListItem> = filtered[start..end]
         .iter()
-        .map(|l| ListItem::new(style_logcat_line(l)))
+        .map(|l| ListItem::new(style_logcat_line(l, &search)))
         .collect();
 
     let list = List::new(items);
@@ -169,7 +170,108 @@ fn logcat_filter_bar(filter: &LogcatFilter, input_mode: InputMode, focused: bool
     Line::from(spans)
 }
 
-fn style_logcat_line<'a>(raw: &'a str) -> Line<'a> {
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn base() -> Style {
+        Style::new().fg(theme::FG)
+    }
+
+    #[test]
+    fn highlight_empty_search_returns_single_span() {
+        let spans = highlight_spans("hello world", "", base());
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "hello world");
+    }
+
+    #[test]
+    fn highlight_no_match_returns_single_span() {
+        let spans = highlight_spans("hello world", "xyz", base());
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content, "hello world");
+    }
+
+    #[test]
+    fn highlight_match_at_start() {
+        let spans = highlight_spans("hello world", "hel", base());
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content, "hel");
+        assert_eq!(spans[1].content, "lo world");
+    }
+
+    #[test]
+    fn highlight_match_at_end() {
+        let spans = highlight_spans("hello world", "rld", base());
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content, "hello wo");
+        assert_eq!(spans[1].content, "rld");
+    }
+
+    #[test]
+    fn highlight_match_in_middle() {
+        let spans = highlight_spans("hello world", "lo wo", base());
+        assert_eq!(spans.len(), 3);
+        assert_eq!(spans[0].content, "hel");
+        assert_eq!(spans[1].content, "lo wo");
+        assert_eq!(spans[2].content, "rld");
+    }
+
+    #[test]
+    fn highlight_multiple_matches() {
+        let spans = highlight_spans("abcabc", "abc", base());
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content, "abc");
+        assert_eq!(spans[1].content, "abc");
+    }
+
+    #[test]
+    fn highlight_case_insensitive() {
+        let spans = highlight_spans("Hello World", "hello", base());
+        assert_eq!(spans.len(), 2);
+        assert_eq!(spans[0].content, "Hello");
+        assert_eq!(spans[1].content, " World");
+    }
+}
+
+fn highlight_spans<'a>(text: &'a str, search: &str, base_style: Style) -> Vec<Span<'a>> {
+    if search.is_empty() {
+        return vec![Span::styled(text, base_style)];
+    }
+
+    let highlight_style = Style::new()
+        .fg(theme::BG)
+        .bg(theme::YELLOW)
+        .add_modifier(Modifier::UNDERLINED);
+
+    let lower_text = text.to_lowercase();
+    let lower_search = search.to_lowercase();
+    let mut spans = Vec::new();
+    let mut last_end = 0;
+
+    for (start, _) in lower_text.match_indices(&lower_search) {
+        if start > last_end {
+            spans.push(Span::styled(&text[last_end..start], base_style));
+        }
+        spans.push(Span::styled(
+            &text[start..start + search.len()],
+            highlight_style,
+        ));
+        last_end = start + search.len();
+    }
+
+    if last_end < text.len() {
+        spans.push(Span::styled(&text[last_end..], base_style));
+    }
+
+    if spans.is_empty() {
+        vec![Span::styled(text, base_style)]
+    } else {
+        spans
+    }
+}
+
+fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
     let Some(parsed) = logcat::parse(raw) else {
         return Line::from(raw.replace('\t', "  "));
     };
@@ -184,10 +286,44 @@ fn style_logcat_line<'a>(raw: &'a str) -> Line<'a> {
 
     let timestamp = Span::styled(parsed.timestamp, Style::new().fg(theme::MUTED));
 
-    let tag = Span::styled(parsed.tag, Style::new().fg(level_fg).add_modifier(Modifier::BOLD));
+    let tag_style = Style::new().fg(level_fg).add_modifier(Modifier::BOLD);
+    let tag_spans = highlight_spans(parsed.tag, search, tag_style);
 
     let msg_text = parsed.message.replace('\t', "  ");
-    let message = Span::styled(format!(": {msg_text}"), Style::new().fg(theme::FG));
+    let msg_prefix = Span::styled(": ", Style::new().fg(theme::FG));
 
-    Line::from(vec![label, sep.clone(), timestamp, sep, tag, message])
+    let mut spans = vec![label, sep.clone(), timestamp, sep];
+    spans.extend(tag_spans);
+    spans.push(msg_prefix);
+    // msg_text is owned, so we need to handle it separately
+    let msg_style = Style::new().fg(theme::FG);
+    if search.is_empty() {
+        spans.push(Span::styled(msg_text, msg_style));
+    } else {
+        let highlight_style = Style::new()
+            .fg(theme::BG)
+            .bg(theme::YELLOW)
+            .add_modifier(Modifier::UNDERLINED);
+        let lower_msg = msg_text.to_lowercase();
+        let lower_search = search.to_lowercase();
+        let mut last_end = 0;
+        for (start, _) in lower_msg.match_indices(&lower_search) {
+            if start > last_end {
+                spans.push(Span::styled(msg_text[last_end..start].to_string(), msg_style));
+            }
+            spans.push(Span::styled(
+                msg_text[start..start + search.len()].to_string(),
+                highlight_style,
+            ));
+            last_end = start + search.len();
+        }
+        if last_end < msg_text.len() {
+            spans.push(Span::styled(msg_text[last_end..].to_string(), msg_style));
+        }
+        if last_end == 0 {
+            spans.push(Span::styled(msg_text, msg_style));
+        }
+    }
+
+    Line::from(spans)
 }
