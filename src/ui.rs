@@ -214,7 +214,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     if tb.filter.is_empty() {
         bottom_spans.push(Span::styled("search ", Style::new().fg(theme::MUTED)));
     } else {
-        bottom_spans.push(Span::styled(format!("{} ", tb.filter), Style::new().fg(theme::YELLOW)));
+        bottom_spans.push(Span::styled(format!("{} ", tb.filter), Style::new().fg(theme::FG)));
     }
     bottom_spans.extend([
         Span::styled("↩", Style::new().fg(accent_color)),
@@ -373,7 +373,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
         let filter_span = if filter.is_empty() {
             Span::styled(" /", Style::new().fg(accent))
         } else {
-            Span::styled(format!(" /{filter}"), Style::new().fg(theme::YELLOW))
+            Span::styled(format!(" /{filter}"), Style::new().fg(theme::FG))
         };
         block = block.title_bottom(Line::from(vec![
             filter_span,
