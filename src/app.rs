@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::adb::Device;
 use crate::apps;
 use crate::database::DatabaseState;
-use crate::files::{FileConfirm, FilesState, ToggleResult};
+use crate::files::FilesState;
 use crate::logcat_state::LogcatState;
 use crate::monitor::MonitorState;
 use crate::panel;
@@ -189,80 +189,13 @@ impl App {
             }
         }
 
-        if self.files_state.confirming.is_some() {
-            return match code {
-                KeyCode::Char('p') if matches!(self.files_state.confirming, Some(FileConfirm::Pull(_))) => {
-                    let confirm = self.files_state.confirming.take().unwrap();
-                    match confirm {
-                        FileConfirm::Pull(path) => Action::PullFile(path),
-                        _ => unreachable!(),
-                    }
-                }
-                KeyCode::Char('o') if matches!(self.files_state.confirming, Some(FileConfirm::Open(_))) => {
-                    let confirm = self.files_state.confirming.take().unwrap();
-                    match confirm {
-                        FileConfirm::Open(path) => Action::OpenFile(path),
-                        _ => unreachable!(),
-                    }
-                }
-                _ => {
-                    self.files_state.confirming = None;
-                    Action::Noop
-                }
-            };
-        }
-
-        if self.focused == Some(panel::FILES) {
-            match code {
-                KeyCode::Up => {
-                    self.files_state.move_up();
-                    return Action::Noop;
-                }
-                KeyCode::Down => {
-                    let count = self.files_state.flatten_visible().len();
-                    self.files_state.move_down(count);
-                    return Action::Noop;
-                }
-                KeyCode::Enter | KeyCode::Right => {
-                    if let Some(result) = self.files_state.toggle_selected() {
-                        return match result {
-                            ToggleResult::Expand(path) => Action::ExpandDir(path),
-                            ToggleResult::ExpandCached | ToggleResult::Collapse => Action::Noop,
-                        };
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Left => {
-                    self.files_state.collapse_selected();
-                    return Action::Noop;
-                }
-                KeyCode::Char('p') => {
-                    if !self.files_state.selected_is_dir() {
-                        if let Some(path) = self.files_state.selected_path() {
-                            self.files_state.confirming = Some(FileConfirm::Pull(path));
-                        }
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Char('o') => {
-                    if !self.files_state.selected_is_dir() {
-                        if let Some(path) = self.files_state.selected_path() {
-                            self.files_state.confirming = Some(FileConfirm::Open(path));
-                        }
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Char('r') => {
-                    self.files_state.error = None;
-                    self.files_state.root_children = None;
-                    self.files_state.selected_index = 0;
-                    return Action::RefreshFiles;
-                }
-                KeyCode::Esc => {
+        if self.files_state.confirming.is_some() || self.focused == Some(panel::FILES) {
+            if let Some(action) = self.files_state.handle_key(code) {
+                if matches!(action, Action::Unfocus) {
                     self.focused = None;
                     return Action::Noop;
                 }
-                _ => {}
+                return action;
             }
         }
 

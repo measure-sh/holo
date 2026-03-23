@@ -1,6 +1,9 @@
 use std::sync::{mpsc, Arc};
 
+use crossterm::event::KeyCode;
+
 use crate::adb::Adb;
+use crate::app::Action;
 
 pub struct FileNode {
     pub name: String,
@@ -52,6 +55,81 @@ impl FilesState {
             error: None,
             confirming: None,
             action_flash: None,
+        }
+    }
+
+    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+        if self.confirming.is_some() {
+            return Some(match code {
+                KeyCode::Char('p') if matches!(self.confirming, Some(FileConfirm::Pull(_))) => {
+                    let confirm = self.confirming.take().unwrap();
+                    match confirm {
+                        FileConfirm::Pull(path) => Action::PullFile(path),
+                        _ => unreachable!(),
+                    }
+                }
+                KeyCode::Char('o') if matches!(self.confirming, Some(FileConfirm::Open(_))) => {
+                    let confirm = self.confirming.take().unwrap();
+                    match confirm {
+                        FileConfirm::Open(path) => Action::OpenFile(path),
+                        _ => unreachable!(),
+                    }
+                }
+                _ => {
+                    self.confirming = None;
+                    Action::Noop
+                }
+            });
+        }
+
+        match code {
+            KeyCode::Up => {
+                self.move_up();
+                Some(Action::Noop)
+            }
+            KeyCode::Down => {
+                let count = self.flatten_visible().len();
+                self.move_down(count);
+                Some(Action::Noop)
+            }
+            KeyCode::Enter | KeyCode::Right => {
+                if let Some(result) = self.toggle_selected() {
+                    Some(match result {
+                        ToggleResult::Expand(path) => Action::ExpandDir(path),
+                        ToggleResult::ExpandCached | ToggleResult::Collapse => Action::Noop,
+                    })
+                } else {
+                    Some(Action::Noop)
+                }
+            }
+            KeyCode::Left => {
+                self.collapse_selected();
+                Some(Action::Noop)
+            }
+            KeyCode::Char('p') => {
+                if !self.selected_is_dir() {
+                    if let Some(path) = self.selected_path() {
+                        self.confirming = Some(FileConfirm::Pull(path));
+                    }
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Char('o') => {
+                if !self.selected_is_dir() {
+                    if let Some(path) = self.selected_path() {
+                        self.confirming = Some(FileConfirm::Open(path));
+                    }
+                }
+                Some(Action::Noop)
+            }
+            KeyCode::Char('r') => {
+                self.error = None;
+                self.root_children = None;
+                self.selected_index = 0;
+                Some(Action::RefreshFiles)
+            }
+            KeyCode::Esc => Some(Action::Unfocus),
+            _ => None,
         }
     }
 
