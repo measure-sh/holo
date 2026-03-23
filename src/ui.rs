@@ -337,7 +337,7 @@ fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Length(22), Constraint::Min(0)])
+                .constraints([Constraint::Length(28), Constraint::Min(0)])
                 .split(area);
             render_commands_panel(frame, cols[0], app);
             logcat_ui::render_logcat_panel(frame, cols[1], is_focused(app, panel::LOGCAT), logcat_lines, app);
