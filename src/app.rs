@@ -378,12 +378,16 @@ impl App {
 
         if self.focused == Some(panel::LOGCAT) {
             match code {
-                KeyCode::Up => {
+                KeyCode::Up | KeyCode::Char('k') => {
                     self.logcat_state.scroll += 1;
                     return Action::None;
                 }
-                KeyCode::Down => {
+                KeyCode::Down | KeyCode::Char('j') => {
                     self.logcat_state.scroll = self.logcat_state.scroll.saturating_sub(1);
+                    return Action::None;
+                }
+                KeyCode::Char(' ') => {
+                    self.logcat_state.scroll += 20;
                     return Action::None;
                 }
                 KeyCode::Esc if self.logcat_state.scroll > 0 => {
@@ -865,6 +869,26 @@ mod tests {
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.logcat_state().scroll, 1);
+    }
+
+    #[test]
+    fn j_k_scroll_logcat() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('l')));
+        app.handle_key(key(KeyCode::Char('k')));
+        assert_eq!(app.logcat_state().scroll, 1);
+        app.handle_key(key(KeyCode::Char('k')));
+        assert_eq!(app.logcat_state().scroll, 2);
+        app.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(app.logcat_state().scroll, 1);
+    }
+
+    #[test]
+    fn space_scrolls_page() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('l')));
+        app.handle_key(key(KeyCode::Char(' ')));
+        assert_eq!(app.logcat_state().scroll, 20);
     }
 
     #[test]
