@@ -163,13 +163,13 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let app_bg = if has_app { theme::DIM_GREEN } else { theme::SURFACE };
 
     let line = Line::from(vec![
-        Span::styled(" F1 ", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("F1 ", Style::new().fg(theme::KEY_HINT)),
         Span::styled(" ● ", Style::new().fg(device_dot).bg(device_bg)),
         Span::styled(
             format!("{device_label} \u{25BE} "),
             Style::new().fg(device_fg).bg(device_bg),
         ),
-        Span::styled("  ", Style::new()),
+        Span::styled("      ", Style::new()),
         Span::styled("F2 ", Style::new().fg(theme::KEY_HINT)),
         Span::styled(" ● ", Style::new().fg(app_dot).bg(app_bg)),
         Span::styled(
@@ -178,20 +178,27 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
         ),
     ]);
 
-    frame.render_widget(ratatui::widgets::Paragraph::new(line), area);
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new(line).alignment(Alignment::Center),
+        area,
+    );
 }
 
 fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
-    // " F1 " = 4, " ● " = 3, "{label} ▾ " = label.len() + 3, "  " = 2
+    // "F1 " = 3, " ● " = 3, "{label} ▾ " = len+3, "      " = 6, "F2 " = 3, " ● " = 3, "{label} ▾ " = len+3
     let device_label = tb.device_label();
-    let device_section_width = 4 + 3 + device_label.len() as u16 + 3 + 2;
+    let app_label = tb.app_label();
+    let device_pill_width: u16 = 3 + device_label.len() as u16 + 3;
+    let app_pill_width: u16 = 3 + app_label.len() as u16 + 3;
+    let total_width: u16 = 3 + device_pill_width + 6 + 3 + app_pill_width;
+    let left_pad = toolbar_area.x + (toolbar_area.width.saturating_sub(total_width)) / 2;
 
     let anchor_x = match kind {
-        DropdownKind::Device => toolbar_area.x + 4,
-        DropdownKind::App => toolbar_area.x + device_section_width + 3,
+        DropdownKind::Device => left_pad + 3,
+        DropdownKind::App => left_pad + 3 + device_pill_width + 6 + 3,
     };
     let anchor_y = toolbar_area.y + 1;
 
