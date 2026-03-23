@@ -182,17 +182,6 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
-    let device_label = tb.device_label();
-    let app_label = tb.app_label();
-    let device_pill_width: u16 = 3 + device_label.len() as u16 + 3;
-    let app_pill_width: u16 = 3 + app_label.len() as u16 + 3;
-    let total_width: u16 = 3 + device_pill_width + 6 + 3 + app_pill_width;
-    let left_pad = toolbar_area.x + (toolbar_area.width.saturating_sub(total_width)) / 2;
-
-    let anchor_x = match kind {
-        DropdownKind::Device => left_pad + 3,
-        DropdownKind::App => left_pad + 3 + device_pill_width + 6 + 3,
-    };
     let anchor_y = toolbar_area.y + 1;
 
     let screen = frame.area();
@@ -203,13 +192,9 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let width = width.min(screen.width.saturating_sub(2));
     let available = screen.height.saturating_sub(anchor_y);
     let height = (max_items + 2).min(available).max(5);
+    let x = toolbar_area.x + (toolbar_area.width.saturating_sub(width)) / 2;
 
-    let dropdown_area = Rect::new(
-        anchor_x.min(screen.width.saturating_sub(width)),
-        anchor_y,
-        width,
-        height,
-    );
+    let dropdown_area = Rect::new(x, anchor_y, width, height);
 
     frame.render_widget(Clear, dropdown_area);
 
