@@ -228,7 +228,7 @@ impl DispatchContext {
                     d.stop_and_pull_trace(self.adb.clone(), s.clone(), p.clone());
                 }
             }
-            Action::None => {}
+            Action::Noop => {}
         }
         false
     }

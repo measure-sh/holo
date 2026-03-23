@@ -13,15 +13,15 @@ use crate::trace::{self, TraceState};
 
 pub const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
     ("open app", || Action::OpenApp),
-    ("wake screen", || Action::WakeScreen),
     ("kill app", || Action::KillApp),
+    ("wakeup device", || Action::WakeScreen),
     ("clear data", || Action::ClearData),
+    ("take screenshot", || Action::Screenshot),
+    ("layout bounds", || Action::ToggleLayoutBounds),
+    ("wifi", || Action::ToggleWifi),
+    ("airplane mode", || Action::ToggleAirplaneMode),
+    ("connect wireless adb", || Action::WirelessAdb),
     ("uninstall app", || Action::UninstallApp),
-    ("screenshot", || Action::Screenshot),
-    ("toggle layout bounds", || Action::ToggleLayoutBounds),
-    ("toggle airplane mode", || Action::ToggleAirplaneMode),
-    ("toggle wifi", || Action::ToggleWifi),
-    ("wireless adb", || Action::WirelessAdb),
 ];
 
 pub enum Action {
@@ -30,7 +30,7 @@ pub enum Action {
     ChangeApp(String),
     FetchDevices,
     FetchApps,
-    None,
+    Noop,
     OpenApp,
     KillApp,
     ClearData,
@@ -122,7 +122,7 @@ impl App {
                     KeyCode::Enter | KeyCode::Esc => self.input_mode = InputMode::Normal,
                     _ => {}
                 }
-                return Action::None;
+                return Action::Noop;
             }
             InputMode::EditingSearch => {
                 match code {
@@ -131,7 +131,7 @@ impl App {
                     KeyCode::Enter | KeyCode::Esc => self.input_mode = InputMode::Normal,
                     _ => {}
                 }
-                return Action::None;
+                return Action::Noop;
             }
             InputMode::EditingQuery => {
                 match code {
@@ -147,7 +147,7 @@ impl App {
                     KeyCode::Down => self.db_state.history_down(),
                     _ => { self.db_state.textarea.input(key); }
                 }
-                return Action::None;
+                return Action::Noop;
             }
             InputMode::Normal => {}
         }
@@ -166,7 +166,7 @@ impl App {
                     return match self.toolbar.handle_key(code) {
                         ToolbarAction::SelectDevice(d) => Action::ChangeDevice(d),
                         ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
-                        ToolbarAction::Close | ToolbarAction::None => Action::None,
+                        ToolbarAction::Close | ToolbarAction::None => Action::Noop,
                     };
                 }
             }
@@ -176,7 +176,7 @@ impl App {
             self.confirming_quit = false;
             return match code {
                 KeyCode::Char('q') => Action::Quit,
-                _ => Action::None,
+                _ => Action::Noop,
             };
         }
 
@@ -184,37 +184,37 @@ impl App {
             match code {
                 KeyCode::Up => {
                     self.commands_cursor = self.commands_cursor.saturating_sub(1);
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Down => {
                     let count = self.filtered_commands().len();
                     self.commands_cursor = (self.commands_cursor + 1).min(count.saturating_sub(1));
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Enter => {
                     let filtered = self.filtered_commands();
                     if let Some((_, action_fn)) = filtered.get(self.commands_cursor) {
                         return action_fn();
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Esc => {
                     self.commands_filter.clear();
                     self.commands_cursor = 0;
                     self.focused = None;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Backspace => {
                     self.commands_filter.pop();
                     self.commands_cursor = 0;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char(ch) => {
                     self.commands_filter.push(ch);
                     self.commands_cursor = 0;
-                    return Action::None;
+                    return Action::Noop;
                 }
-                _ => { return Action::None; }
+                _ => { return Action::Noop; }
             }
         }
 
@@ -226,7 +226,7 @@ impl App {
                 }
                 _ => {
                     self.db_state.confirming_pull = None;
-                    Action::None
+                    Action::Noop
                 }
             };
         }
@@ -239,35 +239,35 @@ impl App {
                     } else {
                         self.db_state.move_down();
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('p') if self.db_state.selected_db.is_none() => {
                     if let Some(db) = self.db_state.databases.get(self.db_state.selected_index).cloned() {
                         self.db_state.confirming_pull = Some(db);
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Enter if self.db_state.selected_db.is_none() => {
                     self.db_state.select_db();
                     if self.db_state.selected_db.is_some() {
                         self.input_mode = InputMode::EditingQuery;
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('p') if self.db_state.selected_db.is_some() => {
                     self.db_state.confirming_pull = self.db_state.selected_db.clone();
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('e') if self.db_state.selected_db.is_some() => {
                     self.input_mode = InputMode::EditingQuery;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('c') if self.db_state.selected_db.is_some() => {
                     if let Some(text) = self.db_state.history_text() {
                         self.db_state.copied_at = Some(std::time::Instant::now());
                         return Action::CopyDbResult(text);
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('r') => {
                     self.db_state.reset();
@@ -275,19 +275,19 @@ impl App {
                 }
                 KeyCode::Up if self.db_state.selected_db.is_some() => {
                     self.db_state.move_up();
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Down if self.db_state.selected_db.is_some() => {
                     self.db_state.move_down();
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Esc if self.db_state.selected_db.is_some() => {
                     self.db_state.deselect_db();
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Esc => {
                     self.focused = None;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 _ => {}
             }
@@ -311,7 +311,7 @@ impl App {
                 }
                 _ => {
                     self.files_state.confirming = None;
-                    Action::None
+                    Action::Noop
                 }
             };
         }
@@ -320,25 +320,25 @@ impl App {
             match code {
                 KeyCode::Up => {
                     self.files_state.move_up();
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Down => {
                     let count = self.files_state.flatten_visible().len();
                     self.files_state.move_down(count);
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Enter | KeyCode::Right => {
                     if let Some(result) = self.files_state.toggle_selected() {
                         return match result {
                             ToggleResult::Expand(path) => Action::ExpandDir(path),
-                            ToggleResult::ExpandCached | ToggleResult::Collapse => Action::None,
+                            ToggleResult::ExpandCached | ToggleResult::Collapse => Action::Noop,
                         };
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Left => {
                     self.files_state.collapse_selected();
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('p') => {
                     if !self.files_state.selected_is_dir() {
@@ -346,7 +346,7 @@ impl App {
                             self.files_state.confirming = Some(FileConfirm::Pull(path));
                         }
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('o') => {
                     if !self.files_state.selected_is_dir() {
@@ -354,7 +354,7 @@ impl App {
                             self.files_state.confirming = Some(FileConfirm::Open(path));
                         }
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('r') => {
                     self.files_state.error = None;
@@ -364,7 +364,7 @@ impl App {
                 }
                 KeyCode::Esc => {
                     self.focused = None;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 _ => {}
             }
@@ -374,21 +374,21 @@ impl App {
             match code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.permissions_state.move_up();
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.permissions_state.move_down();
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Enter => {
                     if let Some((perm, granted)) = self.permissions_state.toggle_selected() {
                         return Action::TogglePermission(perm, granted);
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Esc => {
                     self.focused = None;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 _ => {}
             }
@@ -398,39 +398,39 @@ impl App {
             match code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.logcat_state.scroll += 1;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.logcat_state.scroll = self.logcat_state.scroll.saturating_sub(1);
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char(' ') => {
                     self.logcat_state.scroll += 20;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Esc if self.logcat_state.scroll > 0 => {
                     self.logcat_state.scroll = 0;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Esc => {
                     self.focused = None;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('t') => {
                     self.input_mode = InputMode::EditingTag;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('s') => {
                     self.input_mode = InputMode::EditingSearch;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Right => {
                     self.logcat_state.cycle_level(true);
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Left => {
                     self.logcat_state.cycle_level(false);
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('c') => {
                     self.logcat_state.copied_at = Some(std::time::Instant::now());
@@ -463,30 +463,30 @@ impl App {
                     if self.trace_state.selected_index > 0 {
                         self.trace_state.selected_index -= 1;
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Down | KeyCode::Char('j') if !self.trace_state.recording => {
                     let max = self.trace_state.pulled_traces.len().saturating_sub(1);
                     if self.trace_state.selected_index < max {
                         self.trace_state.selected_index += 1;
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Enter if !self.trace_state.recording => {
                     if let Some(path) = self.trace_state.selected_path() {
                         trace::open_in_perfetto_ui(path);
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Char('d') if !self.trace_state.recording => {
                     if let Some(path) = self.trace_state.delete_selected() {
                         let _ = std::fs::remove_file(&path);
                     }
-                    return Action::None;
+                    return Action::Noop;
                 }
                 KeyCode::Esc => {
                     self.focused = None;
-                    return Action::None;
+                    return Action::Noop;
                 }
                 _ => {}
             }
@@ -505,23 +505,23 @@ impl App {
             KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('q') => {
                 self.confirming_quit = true;
-                Action::None
+                Action::Noop
             }
             KeyCode::Char('0') => {
                 self.commands_visible = !self.commands_visible;
-                Action::None
+                Action::Noop
             }
             KeyCode::Char(c @ '1'..='8') => {
                 self.toggle_visibility(c as u8 - b'0');
-                Action::None
+                Action::Noop
             }
             KeyCode::Char(c) => {
                 if let Some(panel) = panel::by_focus_key(c) {
                     self.toggle_focus(panel.number);
                 }
-                Action::None
+                Action::Noop
             }
-            _ => Action::None,
+            _ => Action::Noop,
         }
     }
 
@@ -741,7 +741,7 @@ mod tests {
     #[test]
     fn qq_quits() {
         let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('q'))), Action::None));
+        assert!(matches!(app.handle_key(key(KeyCode::Char('q'))), Action::Noop));
         assert!(app.confirming_quit());
         assert!(matches!(app.handle_key(key(KeyCode::Char('q'))), Action::Quit));
     }
@@ -751,7 +751,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.confirming_quit());
-        assert!(matches!(app.handle_key(key(KeyCode::Esc)), Action::None));
+        assert!(matches!(app.handle_key(key(KeyCode::Esc)), Action::Noop));
         assert!(!app.confirming_quit());
     }
 
@@ -760,7 +760,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         assert!(matches!(
             app.handle_key(key(KeyCode::Char('3'))),
-            Action::None
+            Action::Noop
         ));
         assert_eq!(
             app.panel_visibility(),
@@ -773,7 +773,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         assert!(matches!(
             app.handle_key(key(KeyCode::Char('x'))),
-            Action::None
+            Action::Noop
         ));
         assert_eq!(app.panel_visibility(), &[true; 8]);
     }
@@ -1078,7 +1078,7 @@ mod tests {
     #[test]
     fn r_ignored_without_focus() {
         let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::None));
+        assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::Noop));
     }
 
     #[test]
@@ -1226,7 +1226,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Down));
         let action = app.handle_key(key(KeyCode::Char('p')));
-        assert!(matches!(action, Action::None));
+        assert!(matches!(action, Action::Noop));
         assert_eq!(app.db_state().confirming_pull.as_deref(), Some("b.db"));
     }
 
@@ -1249,7 +1249,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('p')));
         assert!(app.db_state().confirming_pull.is_some());
         let action = app.handle_key(key(KeyCode::Esc));
-        assert!(matches!(action, Action::None));
+        assert!(matches!(action, Action::Noop));
         assert!(app.db_state().confirming_pull.is_none());
     }
 
@@ -1261,7 +1261,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));
         let action = app.handle_key(key(KeyCode::Char('p')));
-        assert!(matches!(action, Action::None));
+        assert!(matches!(action, Action::Noop));
         assert_eq!(app.db_state().confirming_pull.as_deref(), Some("a.db"));
     }
 
@@ -1344,7 +1344,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::None));
+        assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::Noop));
     }
 
 
