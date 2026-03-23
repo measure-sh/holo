@@ -35,6 +35,8 @@ pub enum Action {
     StartTrace,
     StopTrace,
     Screenshot,
+    ToggleWifi,
+    WirelessAdb,
 }
 
 pub enum SettingsAction {
@@ -69,6 +71,7 @@ pub struct App {
     package: String,
     layout_bounds: bool,
     airplane_mode: bool,
+    wifi_enabled: bool,
     confirming_quit: bool,
     confirming_kill: bool,
     confirming_clear: bool,
@@ -81,6 +84,7 @@ pub struct App {
     pub clear_flash: Option<std::time::Instant>,
     pub uninstall_flash: Option<std::time::Instant>,
     pub screenshot_flash: Option<std::time::Instant>,
+    pub wireless_flash: Option<std::time::Instant>,
     trace_state: TraceState,
 }
 
@@ -98,6 +102,7 @@ impl App {
             package: package.to_string(),
             layout_bounds: false,
             airplane_mode: false,
+            wifi_enabled: false,
             confirming_quit: false,
             confirming_kill: false,
             confirming_clear: false,
@@ -111,6 +116,7 @@ impl App {
             trace_state: TraceState::new(package),
             uninstall_flash: None,
             screenshot_flash: None,
+            wireless_flash: None,
         }
     }
 
@@ -552,6 +558,14 @@ impl App {
                 self.airplane_mode = !self.airplane_mode;
                 Action::ToggleAirplaneMode
             }
+            KeyCode::Char('$') => {
+                self.wifi_enabled = !self.wifi_enabled;
+                Action::ToggleWifi
+            }
+            KeyCode::Char('&') => {
+                self.wireless_flash = Some(std::time::Instant::now());
+                Action::WirelessAdb
+            }
             KeyCode::Char(c @ '1'..='7') => {
                 self.toggle_visibility(c as u8 - b'0');
                 Action::None
@@ -661,6 +675,14 @@ impl App {
 
     pub fn set_airplane_mode(&mut self, v: bool) {
         self.airplane_mode = v;
+    }
+
+    pub fn wifi_enabled(&self) -> bool {
+        self.wifi_enabled
+    }
+
+    pub fn set_wifi_enabled(&mut self, v: bool) {
+        self.wifi_enabled = v;
     }
 
     pub fn confirming_quit(&self) -> bool {
@@ -1470,6 +1492,23 @@ mod tests {
         assert!(app.confirming_screenshot());
         app.handle_key(key(KeyCode::Esc));
         assert!(!app.confirming_screenshot());
+    }
+
+    #[test]
+    fn dollar_toggles_wifi() {
+        let mut app = App::new("com.test");
+        assert!(!app.wifi_enabled());
+        assert!(matches!(app.handle_key(key(KeyCode::Char('$'))), Action::ToggleWifi));
+        assert!(app.wifi_enabled());
+        assert!(matches!(app.handle_key(key(KeyCode::Char('$'))), Action::ToggleWifi));
+        assert!(!app.wifi_enabled());
+    }
+
+    #[test]
+    fn ampersand_triggers_wireless_adb() {
+        let mut app = App::new("com.test");
+        assert!(matches!(app.handle_key(key(KeyCode::Char('&'))), Action::WirelessAdb));
+        assert!(app.wireless_flash.is_some());
     }
 
 }

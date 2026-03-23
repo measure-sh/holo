@@ -434,6 +434,69 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn get_wifi_enabled(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "get", "global", "wifi_on"])
+            .output()?;
+        let value = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_wifi_enabled(&value))
+    }
+
+    fn set_wifi_enabled(&self, serial: &str, enabled: bool) -> Result<()> {
+        let state = if enabled { "enable" } else { "disable" };
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "svc", "wifi", state])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("svc wifi {state} failed: {stderr}");
+        }
+        Ok(())
+    }
+
+    fn enable_wireless_adb(&self, serial: &str) -> Result<String> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "tcpip", "5555"])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb tcpip failed: {stderr}");
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "ip", "route"])
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let ip = parse_device_ip(&stdout)
+            .ok_or_else(|| color_eyre::eyre::eyre!("could not detect device IP"))?;
+
+        let addr = format!("{ip}:5555");
+        let output = Command::new("adb")
+            .args(["connect", &addr])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb connect failed: {stderr}");
+        }
+        Ok(addr)
+    }
+
+}
+
+fn parse_device_ip(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 9 && parts[..2] == ["default", "via"] {
+            return Some(parts[8].to_string());
+        }
+    }
+    None
+}
+
+fn parse_wifi_enabled(output: &str) -> bool {
+    output.trim() == "1"
 }
 
 fn parse_app_version(output: &str) -> (String, String) {
@@ -964,5 +1027,27 @@ Janky frames: 10 (2.00%)
         assert_eq!(info.total_frames, 500);
         assert_eq!(info.slow_frames, 0);
         assert_eq!(info.frozen_frames, 0);
+    }
+
+    #[test]
+    fn parses_wifi_enabled() {
+        assert!(parse_wifi_enabled("1\n"));
+        assert!(parse_wifi_enabled("1"));
+        assert!(!parse_wifi_enabled("0\n"));
+        assert!(!parse_wifi_enabled(""));
+        assert!(!parse_wifi_enabled("null\n"));
+    }
+
+    #[test]
+    fn parses_device_ip_from_route() {
+        let output = "default via 192.168.1.1 dev wlan0 proto dhcp src 192.168.1.42 metric 600\n\
+            192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.42\n";
+        assert_eq!(parse_device_ip(output), Some("192.168.1.42".to_string()));
+    }
+
+    #[test]
+    fn device_ip_none_when_no_default_route() {
+        let output = "192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.42\n";
+        assert_eq!(parse_device_ip(output), None);
     }
 }

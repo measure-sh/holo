@@ -260,6 +260,27 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
     airplane_spans.push(Span::styled("irplane", Style::new().fg(theme::FG)));
     items.push(ListItem::new(Line::from(airplane_spans)));
 
+    let mut wifi_spans: Vec<Span> = Vec::new();
+    if app.wifi_enabled() {
+        wifi_spans.push(Span::styled("• ", Style::new().fg(accent)));
+    }
+    wifi_spans.push(Span::styled("$", Style::new().fg(theme::KEY_HINT)));
+    wifi_spans.push(Span::styled("wifi", Style::new().fg(theme::FG)));
+    items.push(ListItem::new(Line::from(wifi_spans)));
+
+    let wireless_flash = app.wireless_flash
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+    if !wireless_flash { app.wireless_flash = None; }
+    let wireless_item = if wireless_flash {
+        ListItem::new(Line::from(Span::styled("done!", Style::new().fg(theme::GREEN))))
+    } else {
+        ListItem::new(Line::from(vec![
+            Span::styled("&", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("wireless", Style::new().fg(theme::FG)),
+        ]))
+    };
+    items.push(wireless_item);
+
     let clear_flash = app.clear_flash
         .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
     if !clear_flash { app.clear_flash = None; }
@@ -525,7 +546,7 @@ fn render_settings_dialog(frame: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(Line::from(Span::styled(" settings ", accent)))
+        .title(Line::from(Span::styled(" \\settings ", accent)))
         .title_bottom(Line::from(bottom_spans))
         .border_style(Style::new().fg(theme::MUTED))
         .style(Style::new().bg(theme::SURFACE));

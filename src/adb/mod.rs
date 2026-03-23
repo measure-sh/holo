@@ -54,4 +54,7 @@ pub trait Adb: Send + Sync {
     fn start_trace(&self, serial: &str, config: &str) -> Result<()>;
     fn stop_and_pull_trace(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
     fn take_screenshot(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
+    fn get_wifi_enabled(&self, serial: &str) -> Result<bool>;
+    fn set_wifi_enabled(&self, serial: &str, enabled: bool) -> Result<()>;
+    fn enable_wireless_adb(&self, serial: &str) -> Result<String>;
 }
