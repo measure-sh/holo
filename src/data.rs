@@ -141,8 +141,8 @@ impl DataSources {
         if let Some(rx) = &self.db_detect_rx {
             if let Ok(result) = rx.try_recv() {
                 match result {
-                    Ok(dbs) => app.db_state_mut().databases = dbs,
-                    Err(e) => app.db_state_mut().error = Some(e),
+                    Ok(dbs) => app.database_state_mut().databases = dbs,
+                    Err(e) => app.database_state_mut().error = Some(e),
                 }
                 self.db_detect_rx = None;
             }
@@ -150,8 +150,8 @@ impl DataSources {
         if let Some(rx) = &self.db_query_rx {
             if let Ok(result) = rx.try_recv() {
                 match result {
-                    Ok(output) => app.db_state_mut().push_result(&output),
-                    Err(e) => app.db_state_mut().push_error(&e),
+                    Ok(output) => app.database_state_mut().push_result(&output),
+                    Err(e) => app.database_state_mut().push_error(&e),
                 }
                 self.db_query_rx = None;
             }
@@ -159,8 +159,8 @@ impl DataSources {
         if let Some(rx) = &self.db_pull_rx {
             if let Ok(result) = rx.try_recv() {
                 match result {
-                    Ok(path) => app.db_state_mut().push_result(&format!("pulled to {}", path.display())),
-                    Err(e) => app.db_state_mut().push_error(&format!("pull failed: {e}")),
+                    Ok(path) => app.database_state_mut().push_result(&format!("pulled to {}", path.display())),
+                    Err(e) => app.database_state_mut().push_error(&format!("pull failed: {e}")),
                 }
                 self.db_pull_rx = None;
             }

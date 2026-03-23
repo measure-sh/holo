@@ -45,16 +45,15 @@ pub enum Action {
 }
 
 pub struct App {
-    visible: [bool; 8],
+    panel_visible: [bool; 8],
     focused: Option<u8>,
     commands: CommandsState,
     logcat_state: LogcatState,
-    db_state: DatabaseState,
+    database_state: DatabaseState,
     permissions_state: PermissionsState,
     files_state: FilesState,
     monitor_state: MonitorState,
     toolbar: ToolbarState,
-    package: String,
     layout_bounds: bool,
     airplane_mode: bool,
     wifi_enabled: bool,
@@ -68,16 +67,15 @@ impl App {
         let mut toolbar = ToolbarState::new(device);
         toolbar.package = package.map(String::from);
         Self {
-            visible: [true; 8],
+            panel_visible: [true; 8],
             focused: None,
             commands: CommandsState::new(),
             logcat_state: LogcatState::new(),
-            db_state: DatabaseState::new(),
+            database_state: DatabaseState::new(),
             permissions_state: PermissionsState::new(),
             files_state: FilesState::new(pkg),
             monitor_state: MonitorState::new(),
             toolbar,
-            package: pkg.to_string(),
             layout_bounds: false,
             airplane_mode: false,
             wifi_enabled: false,
@@ -92,8 +90,8 @@ impl App {
             return self.logcat_state.handle_key(code).unwrap_or(Action::Noop);
         }
 
-        if self.db_state.editing_query {
-            return self.db_state.handle_key(key).unwrap_or(Action::Noop);
+        if self.database_state.editing_query {
+            return self.database_state.handle_key(key).unwrap_or(Action::Noop);
         }
 
         if self.toolbar.open.is_some() {
@@ -134,8 +132,8 @@ impl App {
             }
         }
 
-        if self.db_state.confirming_pull.is_some() || self.focused == Some(panel::DATABASE) {
-            if let Some(action) = self.db_state.handle_key(key) {
+        if self.database_state.confirming_pull.is_some() || self.focused == Some(panel::DATABASE) {
+            if let Some(action) = self.database_state.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
                     self.focused = None;
                     return Action::Noop;
@@ -222,10 +220,10 @@ impl App {
             return;
         }
         let idx = (n - 1) as usize;
-        if self.visible[idx] && self.visible.iter().filter(|&&v| v).count() == 1 {
+        if self.panel_visible[idx] && self.panel_visible.iter().filter(|&&v| v).count() == 1 {
             return;
         }
-        self.visible[idx] = !self.visible[idx];
+        self.panel_visible[idx] = !self.panel_visible[idx];
     }
 
     fn toggle_focus(&mut self, n: u8) {
@@ -235,13 +233,13 @@ impl App {
             self.focused = Some(n);
         }
         self.logcat_state.editing = None;
-        self.db_state.editing_query = false;
+        self.database_state.editing_query = false;
         self.commands.filter.clear();
         self.commands.cursor = 0;
     }
 
     pub fn panel_visibility(&self) -> &[bool; 8] {
-        &self.visible
+        &self.panel_visible
     }
 
     pub fn monitor_state(&self) -> &MonitorState {
@@ -261,12 +259,12 @@ impl App {
     }
 
     #[cfg(test)]
-    pub fn db_state(&self) -> &DatabaseState {
-        &self.db_state
+    pub fn database_state(&self) -> &DatabaseState {
+        &self.database_state
     }
 
-    pub fn db_state_mut(&mut self) -> &mut DatabaseState {
-        &mut self.db_state
+    pub fn database_state_mut(&mut self) -> &mut DatabaseState {
+        &mut self.database_state
     }
 
     pub fn permissions_state(&self) -> &PermissionsState {
@@ -332,8 +330,7 @@ impl App {
     }
 
     pub fn reset_for_new_app(&mut self, package: &str) {
-        self.package = package.to_string();
-        self.db_state = DatabaseState::new();
+        self.database_state = DatabaseState::new();
         self.files_state = FilesState::new(package);
         self.permissions_state = PermissionsState::new();
     }
@@ -594,7 +591,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('a')));
         app.handle_key(key(KeyCode::Char('b')));
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.db_state().editing_query);
+        assert!(!app.database_state().editing_query);
         assert_eq!(app.logcat_state().filter.tag, "ab");
     }
 
@@ -606,7 +603,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('x')));
         app.handle_key(key(KeyCode::Char('y')));
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.db_state().editing_query);
+        assert!(!app.database_state().editing_query);
         assert_eq!(app.logcat_state().filter.search, "xy");
     }
 
@@ -776,27 +773,27 @@ mod tests {
     #[test]
     fn db_panel_navigate_and_select() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into(), "b.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into(), "b.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.db_state().selected_index, 1);
+        assert_eq!(app.database_state().selected_index, 1);
         app.handle_key(key(KeyCode::Enter));
-        assert_eq!(app.db_state().selected_db.as_deref(), Some("b.db"));
-        assert!(app.db_state().editing_query);
+        assert_eq!(app.database_state().selected_db.as_deref(), Some("b.db"));
+        assert!(app.database_state().editing_query);
     }
 
     #[test]
     fn db_panel_esc_deselects_then_unfocuses() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.db_state().selected_db.is_some());
-        assert!(app.db_state().editing_query);
+        assert!(app.database_state().selected_db.is_some());
+        assert!(app.database_state().editing_query);
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.db_state().editing_query);
+        assert!(!app.database_state().editing_query);
         app.handle_key(key(KeyCode::Esc));
-        assert!(app.db_state().selected_db.is_none());
+        assert!(app.database_state().selected_db.is_none());
         assert_eq!(app.focused_panel(), Some(panel::DATABASE));
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.focused_panel(), None);
@@ -805,28 +802,28 @@ mod tests {
     #[test]
     fn db_panel_select_auto_enters_editing() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.db_state().editing_query);
+        assert!(app.database_state().editing_query);
     }
 
     #[test]
     fn db_panel_e_enters_query_editing() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.db_state().editing_query);
+        assert!(!app.database_state().editing_query);
         app.handle_key(key(KeyCode::Char('e')));
-        assert!(app.db_state().editing_query);
+        assert!(app.database_state().editing_query);
     }
 
     #[test]
     fn query_editing_enter_returns_run_query_and_appends_history() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["test.db".into()];
+        app.database_state_mut().databases = vec!["test.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Char('S')));
@@ -834,56 +831,56 @@ mod tests {
         app.handle_key(key(KeyCode::Char('L')));
         let action = app.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Action::RunQuery(_, _)));
-        assert!(app.db_state().editing_query);
-        assert!(app.db_state().textarea_text().is_empty());
-        assert_eq!(app.db_state().history.len(), 1);
+        assert!(app.database_state().editing_query);
+        assert!(app.database_state().textarea_text().is_empty());
+        assert_eq!(app.database_state().history.len(), 1);
     }
 
     #[test]
     fn e_ignored_without_db_focus() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
-        app.db_state_mut().selected_db = Some("a.db".into());
+        app.database_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().selected_db = Some("a.db".into());
         app.handle_key(key(KeyCode::Char('e')));
-        assert!(!app.db_state().editing_query);
+        assert!(!app.database_state().editing_query);
     }
 
     #[test]
     fn e_enters_editing_when_focused_with_selected_db() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc)); // exit EditingQuery
         app.handle_key(key(KeyCode::Char('e')));
-        assert!(app.db_state().editing_query);
+        assert!(app.database_state().editing_query);
         assert_eq!(app.focused_panel(), Some(panel::DATABASE));
     }
 
     #[test]
     fn up_down_with_selected_db_scrolls_history_when_focused() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc)); // exit EditingQuery
-        app.db_state_mut().history = vec![
+        app.database_state_mut().history = vec![
             crate::database::ReplLine::Input("SELECT 1".into()),
             crate::database::ReplLine::Output("1".into()),
         ];
         app.handle_key(key(KeyCode::Up));
-        assert_eq!(app.db_state().scroll, 1);
+        assert_eq!(app.database_state().scroll, 1);
     }
 
     #[test]
     fn up_down_ignored_without_db_focus() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().selected_db = Some("a.db".into());
-        app.db_state_mut().history = vec![
+        app.database_state_mut().selected_db = Some("a.db".into());
+        app.database_state_mut().history = vec![
             crate::database::ReplLine::Input("SELECT 1".into()),
         ];
         app.handle_key(key(KeyCode::Up));
-        assert_eq!(app.db_state().scroll, 0);
+        assert_eq!(app.database_state().scroll, 0);
     }
 
     #[test]
@@ -898,47 +895,47 @@ mod tests {
     #[test]
     fn p_sets_confirming_pull_from_list_view() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into(), "b.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into(), "b.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Down));
         let action = app.handle_key(key(KeyCode::Char('p')));
         assert!(matches!(action, Action::Noop));
-        assert_eq!(app.db_state().confirming_pull.as_deref(), Some("b.db"));
+        assert_eq!(app.database_state().confirming_pull.as_deref(), Some("b.db"));
     }
 
     #[test]
     fn pp_confirms_pull() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Char('p')));
         let action = app.handle_key(key(KeyCode::Char('p')));
         assert!(matches!(action, Action::PullDb(db) if db == "a.db"));
-        assert!(app.db_state().confirming_pull.is_none());
+        assert!(app.database_state().confirming_pull.is_none());
     }
 
     #[test]
     fn any_key_cancels_pull_confirmation() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Char('p')));
-        assert!(app.db_state().confirming_pull.is_some());
+        assert!(app.database_state().confirming_pull.is_some());
         let action = app.handle_key(key(KeyCode::Esc));
         assert!(matches!(action, Action::Noop));
-        assert!(app.db_state().confirming_pull.is_none());
+        assert!(app.database_state().confirming_pull.is_none());
     }
 
     #[test]
     fn p_sets_confirming_pull_from_repl_view() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));
         let action = app.handle_key(key(KeyCode::Char('p')));
         assert!(matches!(action, Action::Noop));
-        assert_eq!(app.db_state().confirming_pull.as_deref(), Some("a.db"));
+        assert_eq!(app.database_state().confirming_pull.as_deref(), Some("a.db"));
     }
 
     #[test]
@@ -966,49 +963,49 @@ mod tests {
     #[test]
     fn switching_focus_clears_query_editing() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.db_state().editing_query);
+        assert!(app.database_state().editing_query);
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('e')));
-        assert!(app.db_state().editing_query);
+        assert!(app.database_state().editing_query);
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('d')));
-        assert!(!app.db_state().editing_query);
+        assert!(!app.database_state().editing_query);
     }
 
     #[test]
     fn r_resets_db_from_list_view() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::ResetDb));
-        assert!(app.db_state().databases.is_empty());
+        assert!(app.database_state().databases.is_empty());
     }
 
     #[test]
     fn r_resets_db_from_repl_view() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));
-        assert!(app.db_state().selected_db.is_some());
+        assert!(app.database_state().selected_db.is_some());
         assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::ResetDb));
-        assert!(app.db_state().selected_db.is_none());
-        assert!(app.db_state().databases.is_empty());
+        assert!(app.database_state().selected_db.is_none());
+        assert!(app.database_state().databases.is_empty());
     }
 
     #[test]
     fn c_copies_full_history() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));
-        app.db_state_mut().push_query("SELECT 1");
-        app.db_state_mut().push_result("1");
+        app.database_state_mut().push_query("SELECT 1");
+        app.database_state_mut().push_result("1");
         let action = app.handle_key(key(KeyCode::Char('c')));
         assert!(matches!(action, Action::CopyDbResult(ref s) if s == "> SELECT 1\n1"));
     }
@@ -1016,7 +1013,7 @@ mod tests {
     #[test]
     fn c_noop_without_output() {
         let mut app = App::new(None, Some("com.test"));
-        app.db_state_mut().databases = vec!["a.db".into()];
+        app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Esc));

@@ -73,7 +73,6 @@ pub fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
 pub fn render_app(
     frame: &mut Frame,
     title: &str,
-    _time: &str,
     battery_level: Option<u8>,
     app: &mut App,
     logcat_lines: &[String],
@@ -506,7 +505,7 @@ fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
                 files_ui::render_files_panel(frame, rows[i], is_focused(app, panel::FILES), app.files_state());
             }
             panel::DATABASE => {
-                database_ui::render_database_panel(frame, rows[i], is_focused(app, panel::DATABASE), app.db_state_mut());
+                database_ui::render_database_panel(frame, rows[i], is_focused(app, panel::DATABASE), app.database_state_mut());
             }
             _ => {}
         }

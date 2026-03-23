@@ -91,13 +91,11 @@ fn run_app(
             }
         }
 
-        let now = chrono::Local::now();
-        let time_str = format!(" {} ", now.format("%H:%M:%S"));
         let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);
         let logcat_lines: &[String] = ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines);
 
         terminal.draw(|frame| {
-            ui::render_app(frame, &ctx.title, &time_str, battery_level, &mut app, logcat_lines)
+            ui::render_app(frame, &ctx.title, battery_level, &mut app, logcat_lines)
         })?;
 
         if event::poll(Duration::from_secs(1))? {
