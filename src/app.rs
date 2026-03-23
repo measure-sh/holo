@@ -104,7 +104,7 @@ impl App {
             command_flash: None,
             kill_flash: None,
             clear_flash: None,
-            trace_state: TraceState::new(),
+            trace_state: TraceState::new(package),
             uninstall_flash: None,
         }
     }

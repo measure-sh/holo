@@ -15,13 +15,25 @@ pub struct TraceState {
 }
 
 impl TraceState {
-    pub fn new() -> Self {
+    pub fn new(package: &str) -> Self {
+        let traces_dir = std::env::temp_dir()
+            .join("msh")
+            .join(package)
+            .join("traces");
+        let mut pulled_traces: Vec<PathBuf> = std::fs::read_dir(&traces_dir)
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("perfetto-trace"))
+            .collect();
+        pulled_traces.sort();
         Self {
             recording: false,
             started_at: None,
             status_message: None,
             message_at: None,
-            pulled_traces: Vec::new(),
+            pulled_traces,
             selected_index: 0,
         }
     }
