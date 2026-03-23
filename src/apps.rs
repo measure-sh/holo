@@ -1,24 +1,3 @@
-use std::sync::{mpsc, Arc};
-use std::time::Duration;
-
-use crate::adb::Adb;
-
-pub fn spawn_poller(adb: Arc<dyn Adb>, serial: String) -> mpsc::Receiver<Vec<String>> {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let interval = Duration::from_secs(60);
-        loop {
-            if let Ok(packages) = adb.list_packages(&serial) {
-                if tx.send(packages).is_err() {
-                    return;
-                }
-            }
-            std::thread::sleep(interval);
-        }
-    });
-    rx
-}
-
 pub fn fuzzy_matches(name: &str, query: &str) -> bool {
     if query.is_empty() {
         return true;

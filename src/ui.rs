@@ -2,11 +2,13 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState},
     Frame,
 };
 
 use crate::app::App;
+use crate::selector;
+use crate::toolbar::DropdownKind;
 use crate::battery;
 use crate::database_ui;
 use crate::files_ui;
@@ -132,10 +134,150 @@ pub fn render_app(
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
-    render_panels(frame, inner, app, logcat_lines);
 
-    if app.show_settings() {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner);
+
+    render_toolbar(frame, chunks[0], app);
+    render_panels(frame, chunks[1], app, logcat_lines);
+
+    if app.toolbar().open.is_some() {
+        render_dropdown_overlay(frame, chunks[0], app);
+    } else if app.show_settings() {
         render_settings_dialog(frame, area, app);
+    }
+}
+
+fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
+    let tb = app.toolbar();
+    let has_device = tb.device.is_some();
+    let has_app = tb.package.is_some();
+
+    let device_label = tb.device_label();
+    let app_label = tb.app_label();
+
+    let dot_color = if has_device { theme::GREEN } else { theme::MUTED };
+    let device_fg = if has_device { theme::FG } else { theme::MUTED };
+    let app_fg = if has_app { theme::FG } else { theme::MUTED };
+
+    let spans = vec![
+        Span::styled(" ", Style::new()),
+        Span::styled("F1", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" □ ", Style::new().fg(theme::MUTED)),
+        Span::styled(&device_label, Style::new().fg(device_fg)),
+        Span::styled(" ", Style::new()),
+        Span::styled("•", Style::new().fg(dot_color)),
+        Span::styled("  ", Style::new()),
+        Span::styled("F2", Style::new().fg(theme::KEY_HINT)),
+        Span::styled(" ■ ", Style::new().fg(theme::MUTED)),
+        Span::styled(&app_label, Style::new().fg(app_fg)),
+        Span::styled(" ", Style::new()),
+    ];
+
+    let line = Line::from(spans);
+    frame.render_widget(ratatui::widgets::Paragraph::new(line), area);
+}
+
+fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
+    let tb = app.toolbar();
+    let Some(kind) = tb.open else { return };
+
+    let anchor_x = match kind {
+        DropdownKind::Device => toolbar_area.x + 1,
+        DropdownKind::App => toolbar_area.x + 1,
+    };
+    let anchor_y = toolbar_area.y + 1;
+
+    let screen = frame.area();
+    let width = 50.min(screen.width.saturating_sub(2));
+    let max_height = screen.height.saturating_sub(anchor_y).min(20);
+    let height = max_height.max(5);
+
+    let dropdown_area = Rect::new(
+        anchor_x.min(screen.width.saturating_sub(width)),
+        anchor_y,
+        width,
+        height,
+    );
+
+    frame.render_widget(Clear, dropdown_area);
+
+    let title = match kind {
+        DropdownKind::Device => " devices ",
+        DropdownKind::App => " apps ",
+    };
+
+    let mut bottom_spans = vec![
+        Span::styled(" ↩", Style::new().fg(theme::ACCENT)),
+        Span::styled(" select ", Style::new().fg(theme::FG)),
+        Span::styled("───", Style::new().fg(theme::MUTED)),
+        Span::styled(" esc", Style::new().fg(theme::ACCENT)),
+        Span::styled(" close ", Style::new().fg(theme::FG)),
+    ];
+    if !tb.filter.is_empty() {
+        bottom_spans.insert(0, Span::styled(
+            format!(" /{} ", tb.filter),
+            Style::new().fg(theme::YELLOW),
+        ));
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(Line::from(Span::styled(title, Style::new().fg(theme::ACCENT))))
+        .title_bottom(Line::from(bottom_spans))
+        .border_style(Style::new().fg(theme::MUTED))
+        .style(Style::new().bg(theme::SURFACE));
+
+    let inner = block.inner(dropdown_area);
+    frame.render_widget(block, dropdown_area);
+
+    if tb.loading {
+        let loading = ratatui::widgets::Paragraph::new("  Loading...")
+            .style(Style::new().fg(theme::MUTED));
+        frame.render_widget(loading, inner);
+        return;
+    }
+
+    match kind {
+        DropdownKind::Device => {
+            let filtered = tb.filtered_devices();
+            let items: Vec<ListItem> = filtered
+                .iter()
+                .map(|d| {
+                    ListItem::new(Line::from(vec![
+                        Span::styled("  □ ", Style::new().fg(theme::MUTED)),
+                        Span::styled(selector::device_label(d), Style::new().fg(theme::FG)),
+                    ]))
+                })
+                .collect();
+            let list = List::new(items)
+                .highlight_style(Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD))
+                .highlight_symbol(" ▸");
+            let clamped = tb.cursor.min(filtered.len().saturating_sub(1));
+            let mut state = ListState::default().with_selected(Some(clamped));
+            frame.render_stateful_widget(list, inner, &mut state);
+        }
+        DropdownKind::App => {
+            let filtered = tb.filtered_packages();
+            let items: Vec<ListItem> = filtered
+                .iter()
+                .map(|&name| {
+                    ListItem::new(Span::styled(
+                        format!("  {name}"),
+                        Style::new().fg(theme::FG),
+                    ))
+                })
+                .collect();
+            let list = List::new(items)
+                .highlight_style(Style::new().fg(theme::ACCENT).add_modifier(Modifier::BOLD))
+                .highlight_symbol(" ▸");
+            let clamped = tb.cursor.min(filtered.len().saturating_sub(1));
+            let mut state = ListState::default().with_selected(Some(clamped));
+            frame.render_stateful_widget(list, inner, &mut state);
+        }
     }
 }
 
