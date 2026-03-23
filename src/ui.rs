@@ -96,8 +96,8 @@ pub fn render_app(
         ]
     };
     let mut hint_spans = vec![
-        Span::styled(" s", Style::new().fg(theme::KEY_HINT)),
-        Span::styled("ettings ", Style::new().fg(theme::MUTED)),
+        Span::styled(" \\", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("settings ", Style::new().fg(theme::MUTED)),
         Span::styled("───", Style::new().fg(theme::SURFACE)),
     ];
     hint_spans.extend(quit_spans);
