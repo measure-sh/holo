@@ -29,16 +29,16 @@ pub fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
 
     let mut spans = Vec::new();
 
-    if panel_number >= 1 {
-        let superscript = SUPERSCRIPT_DIGITS[(panel_number - 1) as usize];
-        let digit_color = if focused { color } else { theme::MUTED };
-        spans.push(Span::styled(
-            format!(" {}", superscript),
-            Style::new().fg(digit_color).add_modifier(Modifier::BOLD),
-        ));
+    let superscript = if panel_number == 0 {
+        '\u{2070}'
     } else {
-        spans.push(Span::styled(" ", Style::new()));
-    }
+        SUPERSCRIPT_DIGITS[(panel_number - 1) as usize]
+    };
+    let digit_color = if focused { color } else { theme::MUTED };
+    spans.push(Span::styled(
+        format!(" {}", superscript),
+        Style::new().fg(digit_color).add_modifier(Modifier::BOLD),
+    ));
 
     if def.is_focusable() {
         let mut chars = def.name.chars();
