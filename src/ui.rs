@@ -16,9 +16,8 @@ use crate::panel;
 use crate::permissions_ui;
 use crate::theme;
 
-const COMMAND_LABELS: [&str; 3] = [
+const COMMAND_LABELS: [&str; 2] = [
     "open app",
-    "kill app",
     "wake screen",
 ];
 
@@ -224,6 +223,24 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &mut App) {
             }
         })
         .collect();
+
+    let kill_flash = app.kill_flash
+        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+    if !kill_flash { app.kill_flash = None; }
+    let kill_item = if kill_flash {
+        ListItem::new(Line::from(Span::styled("done!", Style::new().fg(theme::GREEN))))
+    } else if app.confirming_kill() {
+        ListItem::new(Line::from(vec![
+            Span::styled("k", Style::new().fg(theme::KEY_HINT)),
+            Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+        ]))
+    } else {
+        ListItem::new(Line::from(vec![
+            Span::styled("kk", Style::new().fg(theme::KEY_HINT)),
+            Span::styled("ill app", Style::new().fg(theme::MUTED)),
+        ]))
+    };
+    items.push(kill_item);
 
     let accent = panel::by_number(panel::COMMANDS).bright_color;
 

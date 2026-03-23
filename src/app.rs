@@ -69,11 +69,13 @@ pub struct App {
     layout_bounds: bool,
     airplane_mode: bool,
     confirming_quit: bool,
+    confirming_kill: bool,
     confirming_clear: bool,
     confirming_uninstall: bool,
     show_settings: bool,
     settings_index: usize,
     pub command_flash: Option<(usize, std::time::Instant)>,
+    pub kill_flash: Option<std::time::Instant>,
     pub clear_flash: Option<std::time::Instant>,
     pub uninstall_flash: Option<std::time::Instant>,
     trace_state: TraceState,
@@ -94,11 +96,13 @@ impl App {
             layout_bounds: false,
             airplane_mode: false,
             confirming_quit: false,
+            confirming_kill: false,
             confirming_clear: false,
             confirming_uninstall: false,
             show_settings: false,
             settings_index: 0,
             command_flash: None,
+            kill_flash: None,
             clear_flash: None,
             trace_state: TraceState::new(),
             uninstall_flash: None,
@@ -149,6 +153,17 @@ impl App {
             self.confirming_quit = false;
             return match code {
                 KeyCode::Char('q') => Action::Quit,
+                _ => Action::None,
+            };
+        }
+
+        if self.confirming_kill {
+            self.confirming_kill = false;
+            return match code {
+                KeyCode::Char('k') => {
+                    self.kill_flash = Some(std::time::Instant::now());
+                    Action::KillApp
+                }
                 _ => Action::None,
             };
         }
@@ -494,8 +509,8 @@ impl App {
                 Action::OpenApp
             }
             KeyCode::Char('k') => {
-                self.command_flash = Some((1, std::time::Instant::now()));
-                Action::KillApp
+                self.confirming_kill = true;
+                Action::None
             }
             KeyCode::Char('c') => {
                 self.confirming_clear = true;
@@ -506,7 +521,7 @@ impl App {
                 Action::None
             }
             KeyCode::Char('w') => {
-                self.command_flash = Some((2, std::time::Instant::now()));
+                self.command_flash = Some((1, std::time::Instant::now()));
                 Action::WakeScreen
             }
             KeyCode::Char('b') => {
@@ -630,6 +645,10 @@ impl App {
 
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
+    }
+
+    pub fn confirming_kill(&self) -> bool {
+        self.confirming_kill
     }
 
     pub fn confirming_clear(&self) -> bool {
@@ -779,9 +798,20 @@ mod tests {
     }
 
     #[test]
-    fn k_kills_app() {
+    fn kk_kills_app() {
         let mut app = App::new("com.test");
+        assert!(matches!(app.handle_key(key(KeyCode::Char('k'))), Action::None));
+        assert!(app.confirming_kill());
         assert!(matches!(app.handle_key(key(KeyCode::Char('k'))), Action::KillApp));
+    }
+
+    #[test]
+    fn k_then_other_cancels_kill() {
+        let mut app = App::new("com.test");
+        app.handle_key(key(KeyCode::Char('k')));
+        assert!(app.confirming_kill());
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.confirming_kill());
     }
 
     #[test]
