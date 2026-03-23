@@ -147,33 +147,33 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let vis = app.panel_visibility();
     let top_right_visible = vis[0] || vis[1];
     let bot_left_visible = vis[2] || vis[3] || vis[4];
-    let bot_right_visible = vis[5] || vis[6] || vis[7];
+    let bot_right_visible = vis[6] || vis[7];
     let bot_visible = bot_left_visible || bot_right_visible;
 
-    let top_visible = top_right_visible;
+    let top_visible = true; // commands always visible
+    match (top_visible, bot_visible) {
+        (true, true) => {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            render_top_section(frame, rows[0], app, logcat_lines);
+            render_bottom_section(frame, rows[1], app);
+        }
+        (true, false) => render_top_section(frame, area, app, logcat_lines),
+        (false, true) => render_bottom_section(frame, area, app),
+        (false, false) => {}
+    }
+}
 
-    // left sidebar: commands + permissions
+fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[String]) {
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(22), Constraint::Min(0)])
         .split(area);
 
     render_left_sidebar(frame, cols[0], app);
-
-    let main_area = cols[1];
-    match (top_visible, bot_visible) {
-        (true, true) => {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(main_area);
-            render_top_right(frame, rows[0], app, logcat_lines);
-            render_bottom_section(frame, rows[1], app);
-        }
-        (true, false) => render_top_right(frame, main_area, app, logcat_lines),
-        (false, true) => render_bottom_section(frame, main_area, app),
-        (false, false) => {}
-    }
+    render_top_right(frame, cols[1], app, logcat_lines);
 }
 
 fn render_left_sidebar(frame: &mut Frame, area: Rect, app: &mut App) {
