@@ -267,26 +267,12 @@ impl App {
         }
 
         if self.focused == Some(panel::PERMISSIONS) {
-            match code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.permissions_state.move_up();
-                    return Action::Noop;
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.permissions_state.move_down();
-                    return Action::Noop;
-                }
-                KeyCode::Enter => {
-                    if let Some((perm, granted)) = self.permissions_state.toggle_selected() {
-                        return Action::TogglePermission(perm, granted);
-                    }
-                    return Action::Noop;
-                }
-                KeyCode::Esc => {
+            if let Some(action) = self.permissions_state.handle_key(code) {
+                if matches!(action, Action::Unfocus) {
                     self.focused = None;
                     return Action::Noop;
                 }
-                _ => {}
+                return action;
             }
         }
 

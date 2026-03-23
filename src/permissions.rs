@@ -1,6 +1,9 @@
 use std::sync::{mpsc, Arc};
 
+use crossterm::event::KeyCode;
+
 use crate::adb::Adb;
+use crate::app::Action;
 
 pub struct PermissionsState {
     pub permissions: Vec<(String, bool)>,
@@ -14,6 +17,28 @@ impl PermissionsState {
             permissions: Vec::new(),
             selected_index: 0,
             error: None,
+        }
+    }
+
+    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.move_up();
+                Some(Action::Noop)
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.move_down();
+                Some(Action::Noop)
+            }
+            KeyCode::Enter => {
+                if let Some((perm, granted)) = self.toggle_selected() {
+                    Some(Action::TogglePermission(perm, granted))
+                } else {
+                    Some(Action::Noop)
+                }
+            }
+            KeyCode::Esc => Some(Action::Unfocus),
+            _ => None,
         }
     }
 
