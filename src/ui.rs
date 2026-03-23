@@ -585,17 +585,15 @@ fn render_command_palette(frame: &mut Frame, area: Rect, app: &App) {
     let items: Vec<ListItem> = filtered
         .iter()
         .map(|(name, _)| {
-            let mut spans = vec![
-                Span::styled(format!("  {name}"), Style::new().fg(theme::FG)),
-            ];
-            if *name == "toggle layout bounds" && app.layout_bounds() {
-                spans.insert(0, Span::styled("• ", Style::new().fg(theme::CYAN)));
-            } else if *name == "toggle airplane mode" && app.airplane_mode() {
-                spans.insert(0, Span::styled("• ", Style::new().fg(theme::CYAN)));
-            } else if *name == "toggle wifi" && app.wifi_enabled() {
-                spans.insert(0, Span::styled("• ", Style::new().fg(theme::CYAN)));
-            }
-            ListItem::new(Line::from(spans))
+            let is_toggle_on = (*name == "toggle layout bounds" && app.layout_bounds())
+                || (*name == "toggle airplane mode" && app.airplane_mode())
+                || (*name == "toggle wifi" && app.wifi_enabled());
+            let prefix = if is_toggle_on { "• " } else { "  " };
+            let prefix_color = if is_toggle_on { theme::CYAN } else { theme::FG };
+            ListItem::new(Line::from(vec![
+                Span::styled(prefix, Style::new().fg(prefix_color)),
+                Span::styled(*name, Style::new().fg(theme::FG)),
+            ]))
         })
         .collect();
 
