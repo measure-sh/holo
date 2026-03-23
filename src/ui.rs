@@ -132,7 +132,7 @@ pub fn render_app(
 
     if app.toolbar().open.is_some() {
         render_dim_overlay(frame, area);
-        render_dropdown_overlay(frame, app);
+        render_dropdown_overlay(frame, chunks[0], app);
     }
 }
 
@@ -178,17 +178,34 @@ fn render_dim_overlay(frame: &mut Frame, area: Rect) {
     frame.render_widget(dim, area);
 }
 
-fn render_dropdown_overlay(frame: &mut Frame, app: &App) {
+fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
-    let screen = frame.area();
-    let width = 60.min(screen.width.saturating_sub(4));
-    let height = 20.min(screen.height.saturating_sub(4)).max(5);
-    let x = (screen.width.saturating_sub(width)) / 2;
-    let y = (screen.height.saturating_sub(height)) / 2;
+    let device_label = tb.device_label();
+    let app_label = tb.app_label();
+    let device_pill_width: u16 = 3 + device_label.len() as u16 + 3;
+    let app_pill_width: u16 = 3 + app_label.len() as u16 + 3;
+    let total_width: u16 = 3 + device_pill_width + 6 + 3 + app_pill_width;
+    let left_pad = toolbar_area.x + (toolbar_area.width.saturating_sub(total_width)) / 2;
 
-    let dropdown_area = Rect::new(x, y, width, height);
+    let anchor_x = match kind {
+        DropdownKind::Device => left_pad + 3,
+        DropdownKind::App => left_pad + 3 + device_pill_width + 6 + 3,
+    };
+    let anchor_y = toolbar_area.y + 1;
+
+    let screen = frame.area();
+    let width = 50.min(screen.width.saturating_sub(2));
+    let max_height = screen.height.saturating_sub(anchor_y).min(20);
+    let height = max_height.max(5);
+
+    let dropdown_area = Rect::new(
+        anchor_x.min(screen.width.saturating_sub(width)),
+        anchor_y,
+        width,
+        height,
+    );
 
     frame.render_widget(Clear, dropdown_area);
 
