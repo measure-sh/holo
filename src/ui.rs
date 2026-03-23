@@ -261,7 +261,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
                 .iter()
                 .map(|d| {
                     ListItem::new(Line::from(Span::styled(
-                        format!("  {}", selector::device_label(d)),
+                        format!("  {}", selector::selector_label(d)),
                         Style::new().fg(theme::FG),
                     )))
                 })
