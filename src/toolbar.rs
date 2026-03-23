@@ -7,7 +7,10 @@ use crate::apps;
 use crate::selector;
 
 fn cache_path() -> PathBuf {
-    std::env::temp_dir().join("msh").join("last_package")
+    dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("msh")
+        .join("last_package")
 }
 
 pub fn load_last_package() -> Option<String> {

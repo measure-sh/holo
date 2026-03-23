@@ -10,3 +10,4 @@ color-eyre = "0.6"
 chrono = "0.4.44"
 tui-textarea = { version = "0.7", features = ["crossterm"] }
 open = "5.3.3"
+dirs = "6"
