@@ -164,14 +164,14 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
 
     let line = Line::from(vec![
         Span::styled("F1 ", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" ● ", Style::new().fg(device_dot).bg(device_bg)),
+        Span::styled(" \u{2022} ", Style::new().fg(device_dot).bg(device_bg)),
         Span::styled(
             format!("{device_label} \u{25BE} "),
             Style::new().fg(device_fg).bg(device_bg),
         ),
         Span::styled("      ", Style::new()),
         Span::styled("F2 ", Style::new().fg(theme::KEY_HINT)),
-        Span::styled(" ● ", Style::new().fg(app_dot).bg(app_bg)),
+        Span::styled(" \u{2022} ", Style::new().fg(app_dot).bg(app_bg)),
         Span::styled(
             format!("{app_label} \u{25BE} "),
             Style::new().fg(app_fg).bg(app_bg),
