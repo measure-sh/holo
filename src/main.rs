@@ -131,8 +131,13 @@ fn run_app(
     let mut title = String::new();
 
     if let Some(device) = &initial_device {
-        let (packages, _) = try_auto_select_package(&adb, device, app.toolbar().last_package.as_deref());
+        let (packages, auto) = try_auto_select_package(&adb, device, app.toolbar().last_package.as_deref());
         app.toolbar_mut().receive_packages(packages);
+        if let Some(pkg) = auto {
+            app.toolbar_mut().package = Some(pkg.clone());
+            data = Some(build_data(&adb, device, &pkg, &mut app));
+            title = build_title(device, &pkg, data.as_ref().unwrap());
+        }
     }
 
     let mut devices_rx: Option<mpsc::Receiver<Vec<Device>>> = None;
@@ -213,6 +218,7 @@ fn run_app(
                     Action::ChangeApp(p) => {
                         app.toolbar_mut().package = Some(p.clone());
                         app.toolbar_mut().last_package = Some(p.clone());
+                        toolbar::save_last_package(&p);
                         if let Some(device) = app.toolbar().device.clone() {
                             data = Some(build_data(&adb, &device, &p, &mut app));
                             title = build_title(&device, &p, data.as_ref().unwrap());

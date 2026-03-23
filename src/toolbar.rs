@@ -1,8 +1,27 @@
+use std::path::PathBuf;
+
 use crossterm::event::KeyCode;
 
 use crate::adb::Device;
 use crate::apps;
 use crate::selector;
+
+fn cache_path() -> PathBuf {
+    std::env::temp_dir().join("msh").join("last_package")
+}
+
+pub fn load_last_package() -> Option<String> {
+    std::fs::read_to_string(cache_path())
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+pub fn save_last_package(package: &str) {
+    let path = cache_path();
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    let _ = std::fs::write(path, package);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DropdownKind {
@@ -34,7 +53,7 @@ impl ToolbarState {
         Self {
             device,
             package: None,
-            last_package: None,
+            last_package: load_last_package(),
             devices: Vec::new(),
             packages: Vec::new(),
             open: None,
