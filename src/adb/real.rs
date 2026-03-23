@@ -487,10 +487,11 @@ impl Adb for RealAdb {
 
 fn parse_device_ip(output: &str) -> Option<String> {
     for line in output.lines() {
-        if !line.contains("wlan0") {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        let has_cellular = parts.iter().any(|p| p.starts_with("rmnet"));
+        if has_cellular {
             continue;
         }
-        let parts: Vec<&str> = line.split_whitespace().collect();
         for (i, &part) in parts.iter().enumerate() {
             if part == "src" {
                 return parts.get(i + 1).map(|s| s.to_string());
@@ -1044,10 +1045,16 @@ Janky frames: 10 (2.00%)
     }
 
     #[test]
-    fn parses_device_ip_from_wlan0_route() {
+    fn parses_device_ip_skipping_cellular() {
         let output = "100.109.184.96/27 dev rmnet_data1 proto kernel scope link src 100.109.184.112\n\
             192.168.1.0/24 dev wlan0 proto kernel scope link src 192.168.1.66\n";
         assert_eq!(parse_device_ip(output), Some("192.168.1.66".to_string()));
+    }
+
+    #[test]
+    fn parses_device_ip_from_eth0() {
+        let output = "10.0.0.0/24 dev eth0 proto kernel scope link src 10.0.0.42\n";
+        assert_eq!(parse_device_ip(output), Some("10.0.0.42".to_string()));
     }
 
     #[test]
@@ -1058,7 +1065,7 @@ Janky frames: 10 (2.00%)
     }
 
     #[test]
-    fn device_ip_none_when_no_wlan0() {
+    fn device_ip_none_when_only_cellular() {
         let output = "100.109.184.96/27 dev rmnet_data1 proto kernel scope link src 100.109.184.112\n";
         assert_eq!(parse_device_ip(output), None);
     }
