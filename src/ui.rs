@@ -131,7 +131,8 @@ pub fn render_app(
     render_panels(frame, chunks[1], app, logcat_lines);
 
     if app.toolbar().open.is_some() {
-        render_dropdown_overlay(frame, chunks[0], app);
+        render_dim_overlay(frame, area);
+        render_dropdown_overlay(frame, app);
     }
 }
 
@@ -172,62 +173,54 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
+fn render_dim_overlay(frame: &mut Frame, area: Rect) {
+    let dim = Block::default().style(Style::new().bg(theme::BG).add_modifier(Modifier::DIM));
+    frame.render_widget(dim, area);
+}
+
+fn render_dropdown_overlay(frame: &mut Frame, app: &App) {
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
-    // "F1 " = 3, " ● " = 3, "{label} ▾ " = len+3, "      " = 6, "F2 " = 3, " ● " = 3, "{label} ▾ " = len+3
-    let device_label = tb.device_label();
-    let app_label = tb.app_label();
-    let device_pill_width: u16 = 3 + device_label.len() as u16 + 3;
-    let app_pill_width: u16 = 3 + app_label.len() as u16 + 3;
-    let total_width: u16 = 3 + device_pill_width + 6 + 3 + app_pill_width;
-    let left_pad = toolbar_area.x + (toolbar_area.width.saturating_sub(total_width)) / 2;
-
-    let anchor_x = match kind {
-        DropdownKind::Device => left_pad + 3,
-        DropdownKind::App => left_pad + 3 + device_pill_width + 6 + 3,
-    };
-    let anchor_y = toolbar_area.y + 1;
-
     let screen = frame.area();
-    let width = 50.min(screen.width.saturating_sub(2));
-    let max_height = screen.height.saturating_sub(anchor_y).min(20);
-    let height = max_height.max(5);
+    let width = 60.min(screen.width.saturating_sub(4));
+    let height = 20.min(screen.height.saturating_sub(4)).max(5);
+    let x = (screen.width.saturating_sub(width)) / 2;
+    let y = (screen.height.saturating_sub(height)) / 2;
 
-    let dropdown_area = Rect::new(
-        anchor_x.min(screen.width.saturating_sub(width)),
-        anchor_y,
-        width,
-        height,
-    );
+    let dropdown_area = Rect::new(x, y, width, height);
 
     frame.render_widget(Clear, dropdown_area);
 
-    let (title, accent_color, border_color) = match kind {
-        DropdownKind::Device => (" devices ", theme::CYAN, theme::DIM_CYAN),
-        DropdownKind::App => (" apps ", theme::GREEN, theme::DIM_GREEN),
+    let accent_color = match kind {
+        DropdownKind::Device => theme::CYAN,
+        DropdownKind::App => theme::GREEN,
     };
 
-    let filter_span = if !tb.filter.is_empty() {
-        format!(" /{}", tb.filter)
-    } else {
-        String::new()
+    let title = match kind {
+        DropdownKind::Device => " select device ",
+        DropdownKind::App => " select app ",
     };
 
-    let bottom_spans = vec![
-        Span::styled(&filter_span, Style::new().fg(theme::YELLOW)),
+    let mut bottom_spans = Vec::new();
+    if !tb.filter.is_empty() {
+        bottom_spans.push(Span::styled(format!(" /{}", tb.filter), Style::new().fg(theme::YELLOW)));
+        bottom_spans.push(Span::styled(" ", Style::new()));
+    }
+    bottom_spans.extend([
         Span::styled(" ↩", Style::new().fg(accent_color)),
-        Span::styled(" select ", Style::new().fg(theme::FG)),
-    ];
+        Span::styled(" select ", Style::new().fg(theme::MUTED)),
+        Span::styled("esc", Style::new().fg(accent_color)),
+        Span::styled(" close ", Style::new().fg(theme::MUTED)),
+    ]);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(Line::from(Span::styled(title, Style::new().fg(accent_color))))
+        .title(Line::from(Span::styled(title, Style::new().fg(accent_color).add_modifier(Modifier::BOLD))))
         .title_bottom(Line::from(bottom_spans))
-        .border_style(Style::new().fg(border_color))
-        .style(Style::new().bg(theme::SURFACE));
+        .border_style(Style::new().fg(accent_color))
+        .style(Style::new().bg(theme::POPUP_BG));
 
     let inner = block.inner(dropdown_area);
     frame.render_widget(block, dropdown_area);
@@ -252,7 +245,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
                 })
                 .collect();
             let list = List::new(items)
-                .highlight_style(Style::new().fg(theme::CYAN).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::new().fg(accent_color).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▸");
             let clamped = tb.cursor.min(filtered.len().saturating_sub(1));
             let mut state = ListState::default().with_selected(Some(clamped));
@@ -270,7 +263,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
                 })
                 .collect();
             let list = List::new(items)
-                .highlight_style(Style::new().fg(theme::GREEN).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::new().fg(accent_color).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▸");
             let clamped = tb.cursor.min(filtered.len().saturating_sub(1));
             let mut state = ListState::default().with_selected(Some(clamped));

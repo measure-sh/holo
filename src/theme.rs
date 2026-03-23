@@ -10,6 +10,7 @@ pub const YELLOW: Color = Color::Rgb(0xe0, 0xaf, 0x68);
 pub const MAGENTA: Color = Color::Rgb(0xbb, 0x9a, 0xf7);
 pub const CYAN: Color = Color::Rgb(0x0d, 0xb9, 0xd7);
 pub const SURFACE: Color = Color::Rgb(0x32, 0x34, 0x4a);
+pub const POPUP_BG: Color = Color::Rgb(0x1a, 0x1b, 0x26);
 pub const MUTED: Color = Color::Rgb(0x56, 0x5f, 0x89);
 pub const KEY_HINT: Color = Color::Rgb(0xf7, 0x76, 0x8e);
 
