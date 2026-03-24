@@ -1,81 +1,42 @@
 graph TD
-    %% === STARTUP ===
-    START([Start]) --> INIT["Init device + auto-select package"] --> DATA["Start pollers"] --> LOOP
+    START([Start]) --> DETECT["Detect device via adb devices"]
+    DETECT --> HAS{Device?}
+    HAS -->|no| WAIT_F1["Show empty UI, wait for F1"]
+    HAS -->|yes| CACHE["Load cached package from ~/.cache/msh"]
+    WAIT_F1 -->|F1 → select device| CACHE
 
-    %% === EVENT LOOP ===
-    subgraph LOOP["Event Loop"]
-        POLL["Poll channels"] --> DRAW["Render"] --> WAIT["Wait key (1s)"]
-        WAIT -->|key| DISPATCH["Dispatch action"] --> POLL
-        WAIT -->|timeout| POLL
+    CACHE --> MATCH{Cached pkg on device?}
+    MATCH -->|yes| CONNECT
+    MATCH -->|no| WAIT_F2["Open app selector"]
+    WAIT_F2 -->|F2 → select package| CONNECT
+
+    CONNECT["Connect to device + package"] --> START_POLLERS
+
+    subgraph START_POLLERS["Start Background Threads"]
+        direction LR
+        P1["pidof 1s"]
+        P2["battery 30s"]
+        P3["connectivity 5s"]
+        P4["monitor 1s\n(mem, cpu, gfx, disk)"]
     end
 
-    %% === POLLERS ===
-    subgraph BG["Pollers"]
-        BAT["Battery 30s"]
-        PID["PID 1s"]
-        CONN["Connectivity 5s"]
-        subgraph MON["Monitor 1s (gated by visibility)"]
-            direction LR
-            MEM["meminfo + cpu"]
-            GFX["gfxinfo"]
-            DISK["du (every 5th tick)"]
-        end
-        LOG["Logcat stream"]
+    START_POLLERS --> PID_READY{PID found?}
+    PID_READY -->|yes| LOGCAT["Start logcat --pid=PID"]
+    PID_READY -->|no| POLL_PID["Keep polling pidof"]
+    POLL_PID --> PID_READY
+
+    LOGCAT --> RUNNING["App Running"]
+
+    subgraph RUNNING["Main Loop"]
+        direction TB
+        RECV["Receive poller data"] --> RENDER["Render all visible panels"]
+        RENDER --> KEY["Wait for input (1s timeout)"]
+        KEY -->|timeout| RECV
+        KEY -->|panel key| FOCUS["Focus/zoom/toggle panel"]
+        KEY -->|action key| ACTION["Execute adb command"]
+        KEY -->|F1/F2| SWITCH["Switch device or app → reconnect"]
+        FOCUS --> RECV
+        ACTION --> RECV
     end
 
-    BG -->|mpsc| POLL
-    PID -.->|PID change| LOG
-    DISPATCH -.->|AtomicU8 mask| MON
-    DISPATCH -->|spawn| OPS["One-off adb threads"] -->|mpsc| POLL
-
-    %% === TOOLBAR ===
-    subgraph TOOLBAR["Toolbar"]
-        F1["F1: Devices"] -->|thread| DROP_D["Dropdown + filter"]
-        DROP_D -->|device| CHANGE["ChangeDevice → reset"]
-        DROP_D -->|offline AVD| EMU["Launch emulator → poll boot"] --> CHANGE
-        F2["F2: Apps"] -->|thread| DROP_P["Dropdown + filter"] --> APP["ChangeApp"]
-        CHANGE -->|auto-select pkg| APP --> DATA
-    end
-
-    %% === MONITOR ===
-    subgraph MONITOR["Monitor Panels"]
-        HIST["History (60 samples)"]
-        HIST --> FRAMES["4 Frames"]
-        HIST --> DISKP["5 Disk"]
-        HIST --> SYS["6 CPU & Memory"]
-    end
-    MON -->|mpsc| HIST
-
-    %% === LOGCAT ===
-    subgraph LOGCAT["1 Logcat"]
-        BUF["Buffer (1000 lines)"] --> FILTER["Filter: tag + search + level"] --> RENDER_L["Render + scroll"]
-    end
-    LOG -->|mpsc| BUF
-
-    %% === COMMANDS ===
-    subgraph CMD["0 Commands"]
-        FUZZY["Type → fuzzy match → execute"]
-    end
-    FUZZY --> DISPATCH
-
-    %% === DATABASE ===
-    subgraph DB["8 Database"]
-        DB_LIST["Detect DBs"] --> DB_SEL["Select DB"] --> DB_REPL["REPL: run SQL"]
-        DB_SEL --> DB_PULL["Pull DB files"]
-    end
-
-    %% === FILES ===
-    subgraph FILES["7 Files"]
-        TREE["Tree (lazy load dirs)"] --> FILE_ACT["Pull / Open file"]
-    end
-
-    %% === TRACE ===
-    subgraph TRACE["2 Trace"]
-        T_IDLE["Idle"] -->|s| T_REC["Recording"] -->|s| T_PULL["Stop + pull → Perfetto UI"]
-    end
-
-    %% === PERMISSIONS ===
-    subgraph PERMS["3 Permissions"]
-        P_LIST["Permission list"] --> P_TOG["Enter: grant ↔ revoke"]
-        P_TOG --> P_LIST
-    end
+    SWITCH --> CONNECT
