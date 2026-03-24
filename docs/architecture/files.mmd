@@ -1,7 +1,0 @@
-graph TD
-    INIT["On app select: list root dir"] -->|thread| TREE["File tree"]
-    TREE --> NAV{Dir or file?}
-    NAV -->|dir| EXPAND["Expand → lazy load children"]
-    EXPAND -->|thread| TREE
-    NAV -->|file| ACTION["p: pull / o: open"]
-    ACTION -->|thread| DEST["→ ~/tmp/msh/.../files/"]

@@ -1,0 +1,81 @@
+graph TD
+    %% === STARTUP ===
+    START([Start]) --> INIT["Init device + auto-select package"] --> DATA["Start pollers"] --> LOOP
+
+    %% === EVENT LOOP ===
+    subgraph LOOP["Event Loop"]
+        POLL["Poll channels"] --> DRAW["Render"] --> WAIT["Wait key (1s)"]
+        WAIT -->|key| DISPATCH["Dispatch action"] --> POLL
+        WAIT -->|timeout| POLL
+    end
+
+    %% === POLLERS ===
+    subgraph BG["Pollers"]
+        BAT["Battery 30s"]
+        PID["PID 1s"]
+        CONN["Connectivity 5s"]
+        subgraph MON["Monitor 1s (gated by visibility)"]
+            direction LR
+            MEM["meminfo + cpu"]
+            GFX["gfxinfo"]
+            DISK["du (every 5th tick)"]
+        end
+        LOG["Logcat stream"]
+    end
+
+    BG -->|mpsc| POLL
+    PID -.->|PID change| LOG
+    DISPATCH -.->|AtomicU8 mask| MON
+    DISPATCH -->|spawn| OPS["One-off adb threads"] -->|mpsc| POLL
+
+    %% === TOOLBAR ===
+    subgraph TOOLBAR["Toolbar"]
+        F1["F1: Devices"] -->|thread| DROP_D["Dropdown + filter"]
+        DROP_D -->|device| CHANGE["ChangeDevice → reset"]
+        DROP_D -->|offline AVD| EMU["Launch emulator → poll boot"] --> CHANGE
+        F2["F2: Apps"] -->|thread| DROP_P["Dropdown + filter"] --> APP["ChangeApp"]
+        CHANGE -->|auto-select pkg| APP --> DATA
+    end
+
+    %% === MONITOR ===
+    subgraph MONITOR["Monitor Panels"]
+        HIST["History (60 samples)"]
+        HIST --> FRAMES["4 Frames"]
+        HIST --> DISKP["5 Disk"]
+        HIST --> SYS["6 CPU & Memory"]
+    end
+    MON -->|mpsc| HIST
+
+    %% === LOGCAT ===
+    subgraph LOGCAT["1 Logcat"]
+        BUF["Buffer (1000 lines)"] --> FILTER["Filter: tag + search + level"] --> RENDER_L["Render + scroll"]
+    end
+    LOG -->|mpsc| BUF
+
+    %% === COMMANDS ===
+    subgraph CMD["0 Commands"]
+        FUZZY["Type → fuzzy match → execute"]
+    end
+    FUZZY --> DISPATCH
+
+    %% === DATABASE ===
+    subgraph DB["8 Database"]
+        DB_LIST["Detect DBs"] --> DB_SEL["Select DB"] --> DB_REPL["REPL: run SQL"]
+        DB_SEL --> DB_PULL["Pull DB files"]
+    end
+
+    %% === FILES ===
+    subgraph FILES["7 Files"]
+        TREE["Tree (lazy load dirs)"] --> FILE_ACT["Pull / Open file"]
+    end
+
+    %% === TRACE ===
+    subgraph TRACE["2 Trace"]
+        T_IDLE["Idle"] -->|s| T_REC["Recording"] -->|s| T_PULL["Stop + pull → Perfetto UI"]
+    end
+
+    %% === PERMISSIONS ===
+    subgraph PERMS["3 Permissions"]
+        P_LIST["Permission list"] --> P_TOG["Enter: grant ↔ revoke"]
+        P_TOG --> P_LIST
+    end

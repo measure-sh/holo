@@ -1,8 +1,0 @@
-graph TD
-    DETECT["On app select: detect DBs"] -->|thread| LIST["DB list"]
-    LIST --> SELECT["Select DB"] --> REPL["REPL mode"]
-
-    REPL --> QUERY["Enter: run SQL"] -->|thread| RESULT["Output to history"]
-    RESULT --> REPL
-
-    LIST --> PULL["p: pull DB files → ~/tmp/msh/.../db/"]

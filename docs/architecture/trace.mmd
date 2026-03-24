@@ -1,5 +1,0 @@
-graph LR
-    IDLE["Idle"] -->|s| REC["Recording\n(perfetto)"]
-    REC -->|s| PULL["Stop + pull trace"]
-    PULL -->|thread| OPEN["Open in Perfetto UI"]
-    OPEN --> LIST["Trace list\n(Enter: reopen)"]

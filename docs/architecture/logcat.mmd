@@ -1,9 +1,0 @@
-graph TD
-    PID["PID poller 1s"] --> CHK{Changed?}
-    CHK -->|new PID| SPAWN["Spawn: adb logcat --pid=PID"]
-    CHK -->|PID gone| KILL["Kill subprocess"]
-    CHK -->|same| NOP[ ]
-
-    SPAWN --> BUF["Rolling buffer (1000 lines)"]
-    BUF --> FILTER["Filter: tag + search + level"]
-    FILTER --> RENDER["Render with highlights + scroll"]
