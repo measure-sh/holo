@@ -64,6 +64,7 @@ pub struct App {
     confirming_quit: bool,
     trace_state: TraceState,
     pub dialog: Option<String>,
+    saved_visibility: Option<([bool; 8], bool)>,
 }
 
 impl App {
@@ -88,6 +89,7 @@ impl App {
             confirming_quit: false,
             trace_state: TraceState::new(pkg),
             dialog: None,
+            saved_visibility: None,
         }
     }
 
@@ -105,25 +107,30 @@ impl App {
             return self.database_state.handle_key(key).unwrap_or(Action::Noop);
         }
 
-        if self.toolbar.open.is_some() {
-            match code {
-                KeyCode::F(1) => {
-                    self.toolbar.open_devices();
-                    return Action::FetchDevices;
-                }
-                KeyCode::F(2) => {
-                    self.toolbar.open_apps();
-                    return Action::FetchApps;
-                }
-                _ => {
-                    return match self.toolbar.handle_key(code) {
-                        ToolbarAction::SelectDevice(d) => Action::ChangeDevice(d),
-                        ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
-                        ToolbarAction::LaunchEmulator(name) => Action::LaunchEmulator(name),
-                        ToolbarAction::Close | ToolbarAction::None => Action::Noop,
-                    };
-                }
+        match code {
+            KeyCode::F(1) => {
+                self.toolbar.open_devices();
+                return Action::FetchDevices;
             }
+            KeyCode::F(2) => {
+                self.toolbar.open_apps();
+                return Action::FetchApps;
+            }
+            _ => {}
+        }
+
+        if self.toolbar.open.is_some() {
+            return match self.toolbar.handle_key(code) {
+                ToolbarAction::SelectDevice(d) => Action::ChangeDevice(d),
+                ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
+                ToolbarAction::LaunchEmulator(name) => Action::LaunchEmulator(name),
+                ToolbarAction::Close | ToolbarAction::None => Action::Noop,
+            };
+        }
+
+        if self.focused.is_some() && code == KeyCode::Char('z') {
+            self.toggle_zoom();
+            return Action::Noop;
         }
 
         if self.confirming_quit {
@@ -137,6 +144,7 @@ impl App {
         if self.focused == Some(panel::COMMANDS) {
             if let Some(action) = self.commands.handle_key(code) {
                 if matches!(action, Action::Unfocus) {
+                    self.restore_zoom();
                     self.focused = None;
                     return Action::Noop;
                 }
@@ -147,6 +155,7 @@ impl App {
         if self.database_state.confirming_pull.is_some() || self.focused == Some(panel::DATABASE) {
             if let Some(action) = self.database_state.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
+                    self.restore_zoom();
                     self.focused = None;
                     return Action::Noop;
                 }
@@ -157,6 +166,7 @@ impl App {
         if self.files_state.confirming.is_some() || self.focused == Some(panel::FILES) {
             if let Some(action) = self.files_state.handle_key(code) {
                 if matches!(action, Action::Unfocus) {
+                    self.restore_zoom();
                     self.focused = None;
                     return Action::Noop;
                 }
@@ -167,6 +177,7 @@ impl App {
         if self.focused == Some(panel::PERMISSIONS) {
             if let Some(action) = self.permissions_state.handle_key(code) {
                 if matches!(action, Action::Unfocus) {
+                    self.restore_zoom();
                     self.focused = None;
                     return Action::Noop;
                 }
@@ -177,6 +188,7 @@ impl App {
         if self.focused == Some(panel::LOGCAT) {
             if let Some(action) = self.logcat_state.handle_key(code) {
                 if matches!(action, Action::Unfocus) {
+                    self.restore_zoom();
                     self.focused = None;
                     return Action::Noop;
                 }
@@ -187,6 +199,7 @@ impl App {
         if self.focused == Some(panel::TRACE) {
             if let Some(action) = self.trace_state.handle_key(code) {
                 if matches!(action, Action::Unfocus) {
+                    self.restore_zoom();
                     self.focused = None;
                     return Action::Noop;
                 }
@@ -195,14 +208,6 @@ impl App {
         }
 
         match code {
-            KeyCode::F(1) => {
-                self.toolbar.open_devices();
-                Action::FetchDevices
-            }
-            KeyCode::F(2) => {
-                self.toolbar.open_apps();
-                Action::FetchApps
-            }
             KeyCode::Char('o') => Action::OpenApp,
             KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('q') => {
@@ -210,10 +215,12 @@ impl App {
                 Action::Noop
             }
             KeyCode::Char('0') => {
+                self.saved_visibility = None;
                 self.commands.visible = !self.commands.visible;
                 Action::Noop
             }
             KeyCode::Char(c @ '1'..='8') => {
+                self.saved_visibility = None;
                 self.toggle_visibility(c as u8 - b'0');
                 Action::Noop
             }
@@ -236,6 +243,34 @@ impl App {
             return;
         }
         self.panel_visible[idx] = !self.panel_visible[idx];
+    }
+
+    fn toggle_zoom(&mut self) {
+        if self.saved_visibility.is_some() {
+            self.restore_zoom();
+        } else if let Some(focused) = self.focused {
+            self.saved_visibility = Some((self.panel_visible, self.commands.visible));
+            if focused == panel::COMMANDS {
+                self.panel_visible = [false; 8];
+                self.commands.visible = true;
+            } else {
+                self.panel_visible = [false; 8];
+                self.commands.visible = false;
+                let idx = (focused - 1) as usize;
+                self.panel_visible[idx] = true;
+            }
+        }
+    }
+
+    fn restore_zoom(&mut self) {
+        if let Some((vis, cmd_vis)) = self.saved_visibility.take() {
+            self.panel_visible = vis;
+            self.commands.visible = cmd_vis;
+        }
+    }
+
+    pub fn is_zoomed(&self) -> bool {
+        self.saved_visibility.is_some()
     }
 
     fn toggle_focus(&mut self, n: u8) {
@@ -347,6 +382,10 @@ impl App {
 
     pub fn commands(&self) -> &CommandsState {
         &self.commands
+    }
+
+    pub fn commands_mut(&mut self) -> &mut CommandsState {
+        &mut self.commands
     }
 
     pub fn reset_for_new_app(&mut self, package: &str) {
@@ -1044,5 +1083,74 @@ mod tests {
         assert!(matches!(app.handle_key(key(KeyCode::Char('c'))), Action::Noop));
     }
 
+    #[test]
+    fn z_toggles_zoom_for_logcat() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('l')));
+        assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
 
+        let original_vis = *app.panel_visibility();
+        let original_cmd = app.commands().visible;
+
+        app.handle_key(key(KeyCode::Char('z')));
+        assert!(app.is_zoomed());
+        assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false, false, false]);
+        assert!(!app.commands().visible);
+
+        app.handle_key(key(KeyCode::Char('z')));
+        assert!(!app.is_zoomed());
+        assert_eq!(app.panel_visibility(), &original_vis);
+        assert_eq!(app.commands().visible, original_cmd);
+    }
+
+    #[test]
+    fn z_toggles_zoom_for_commands() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('c')));
+        assert_eq!(app.focused_panel(), Some(panel::COMMANDS));
+
+        app.handle_key(key(KeyCode::Char('z')));
+        assert!(app.is_zoomed());
+        assert_eq!(app.panel_visibility(), &[false; 8]);
+        assert!(app.commands().visible);
+
+        app.handle_key(key(KeyCode::Char('z')));
+        assert!(!app.is_zoomed());
+        assert_eq!(app.panel_visibility(), &[true; 8]);
+    }
+
+    #[test]
+    fn esc_exits_zoom() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('l')));
+        let original_vis = *app.panel_visibility();
+
+        app.handle_key(key(KeyCode::Char('z')));
+        assert!(app.is_zoomed());
+
+        app.handle_key(key(KeyCode::Esc));
+        assert!(!app.is_zoomed());
+        assert_eq!(app.panel_visibility(), &original_vis);
+        assert_eq!(app.focused_panel(), None);
+    }
+
+    #[test]
+    fn visibility_toggle_clears_zoom() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('l')));
+        app.handle_key(key(KeyCode::Char('z')));
+        assert!(app.is_zoomed());
+
+        app.handle_key(key(KeyCode::Char('2')));
+        assert!(!app.is_zoomed());
+    }
+
+    #[test]
+    fn z_noop_without_focus() {
+        let mut app = App::new(None, Some("com.test"));
+        let original_vis = *app.panel_visibility();
+        app.handle_key(key(KeyCode::Char('z')));
+        assert!(!app.is_zoomed());
+        assert_eq!(app.panel_visibility(), &original_vis);
+    }
 }
