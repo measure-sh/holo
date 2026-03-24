@@ -43,6 +43,7 @@ pub enum Action {
     ToggleWifi,
     ToggleDarkMode,
     WirelessAdb,
+    LaunchEmulator(String),
 }
 
 pub struct App {
@@ -111,6 +112,7 @@ impl App {
                     return match self.toolbar.handle_key(code) {
                         ToolbarAction::SelectDevice(d) => Action::ChangeDevice(d),
                         ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
+                        ToolbarAction::LaunchEmulator(name) => Action::LaunchEmulator(name),
                         ToolbarAction::Close | ToolbarAction::None => Action::Noop,
                     };
                 }

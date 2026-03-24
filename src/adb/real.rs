@@ -514,6 +514,38 @@ impl Adb for RealAdb {
         }
         Ok(())
     }
+
+    fn list_avds(&self) -> Result<Vec<String>> {
+        let output = Command::new("emulator").arg("-list-avds").output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("emulator -list-avds failed: {stderr}");
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_avd_list(&stdout))
+    }
+
+    fn launch_emulator(&self, avd_name: &str) -> Result<()> {
+        Command::new("emulator")
+            .args(["-avd", avd_name])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        Ok(())
+    }
+
+    fn get_avd_name(&self, serial: &str) -> Result<String> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "emu", "avd", "name"])
+            .output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let name = stdout.lines().next().unwrap_or("").trim().to_string();
+        if name.is_empty() {
+            bail!("could not get AVD name for {serial}");
+        }
+        Ok(name)
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {
@@ -771,8 +803,18 @@ pub fn parse_device_list(output: &str) -> Vec<Device> {
                 serial,
                 model,
                 device,
+                connected: true,
             })
         })
+        .collect()
+}
+
+pub fn parse_avd_list(output: &str) -> Vec<String> {
+    output
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
         .collect()
 }
 
@@ -1135,5 +1177,32 @@ Janky frames: 10 (2.00%)
     #[test]
     fn parses_du_output_empty() {
         assert_eq!(parse_du_output(""), (0, 0));
+    }
+
+    #[test]
+    fn parses_avd_list() {
+        let output = "Pixel_7_API_34\nMedium_Phone_API_35\n";
+        let avds = parse_avd_list(output);
+        assert_eq!(avds, vec!["Pixel_7_API_34", "Medium_Phone_API_35"]);
+    }
+
+    #[test]
+    fn parses_avd_list_empty() {
+        assert!(parse_avd_list("").is_empty());
+        assert!(parse_avd_list("\n\n").is_empty());
+    }
+
+    #[test]
+    fn parses_avd_list_with_whitespace() {
+        let output = "  Pixel_7_API_34  \n  Medium_Phone  \n";
+        let avds = parse_avd_list(output);
+        assert_eq!(avds, vec!["Pixel_7_API_34", "Medium_Phone"]);
+    }
+
+    #[test]
+    fn parsed_devices_are_connected() {
+        let output = "List of devices attached\nemulator-5554 device\n\n";
+        let devices = parse_device_list(output);
+        assert!(devices[0].connected);
     }
 }

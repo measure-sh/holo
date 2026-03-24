@@ -23,6 +23,7 @@ pub struct Device {
     pub serial: String,
     pub model: Option<String>,
     pub device: Option<String>,
+    pub connected: bool,
 }
 
 pub trait Adb: Send + Sync {
@@ -60,4 +61,7 @@ pub trait Adb: Send + Sync {
     fn get_disk_usage(&self, serial: &str, package: &str) -> Result<(u64, u64)>;
     fn get_dark_mode(&self, serial: &str) -> Result<bool>;
     fn set_dark_mode(&self, serial: &str, enabled: bool) -> Result<()>;
+    fn list_avds(&self) -> Result<Vec<String>>;
+    fn launch_emulator(&self, avd_name: &str) -> Result<()>;
+    fn get_avd_name(&self, serial: &str) -> Result<String>;
 }

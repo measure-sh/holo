@@ -37,6 +37,7 @@ pub enum ToolbarAction {
     Close,
     SelectDevice(Device),
     SelectApp(String),
+    LaunchEmulator(String),
 }
 
 pub struct ToolbarState {
@@ -153,7 +154,13 @@ impl ToolbarState {
                 let result = match kind {
                     DropdownKind::Device => {
                         let filtered = self.filtered_devices();
-                        filtered.get(self.cursor).map(|d| ToolbarAction::SelectDevice((*d).clone()))
+                        filtered.get(self.cursor).map(|d| {
+                            if d.connected {
+                                ToolbarAction::SelectDevice((*d).clone())
+                            } else {
+                                ToolbarAction::LaunchEmulator(d.serial.clone())
+                            }
+                        })
                     }
                     DropdownKind::App => {
                         let filtered = self.filtered_packages();
@@ -199,6 +206,7 @@ mod tests {
             serial: serial.to_string(),
             model: model.map(String::from),
             device: None,
+            connected: true,
         }
     }
 
@@ -406,5 +414,19 @@ mod tests {
         let mut state = ToolbarState::new(None);
         let result = state.receive_packages(vec!["com.example.app".to_string()]);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn enter_launches_offline_emulator() {
+        let mut state = ToolbarState::new(None);
+        state.open_devices();
+        state.receive_devices(vec![Device {
+            serial: "Pixel_7_API_34".to_string(),
+            model: Some("Pixel_7_API_34".to_string()),
+            device: None,
+            connected: false,
+        }]);
+        let action = state.handle_key(KeyCode::Enter);
+        assert!(matches!(action, ToolbarAction::LaunchEmulator(ref name) if name == "Pixel_7_API_34"));
     }
 }

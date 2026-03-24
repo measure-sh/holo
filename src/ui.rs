@@ -252,9 +252,10 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
             let items: Vec<ListItem> = filtered
                 .iter()
                 .map(|d| {
+                    let color = if d.connected { theme::FG } else { theme::MUTED };
                     ListItem::new(Line::from(Span::styled(
                         format!("  {}", selector::selector_label(d)),
-                        Style::new().fg(theme::FG),
+                        Style::new().fg(color),
                     )))
                 })
                 .collect();
@@ -308,7 +309,8 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let mut constraints = Vec::new();
     if top_visible {
         if section_count == 1 { constraints.push(Constraint::Min(0)); }
-        else { constraints.push(Constraint::Percentage(40)); }
+        else if mid_visible { constraints.push(Constraint::Percentage(40)); }
+        else { constraints.push(Constraint::Percentage(50)); }
     }
     if mid_visible {
         if !bot_visible && !top_visible { constraints.push(Constraint::Min(0)); }

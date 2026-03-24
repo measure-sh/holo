@@ -28,6 +28,7 @@ mod tests {
             serial: serial.to_string(),
             model: model.map(String::from),
             device: device.map(String::from),
+            connected: true,
         }
     }
 

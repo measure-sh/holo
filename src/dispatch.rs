@@ -234,6 +234,12 @@ impl DispatchContext {
                     d.stop_and_pull_trace(self.adb.clone(), s.clone(), p.clone());
                 }
             }
+            Action::LaunchEmulator(name) => {
+                let adb = self.adb.clone();
+                std::thread::spawn(move || {
+                    let _ = adb.launch_emulator(&name);
+                });
+            }
             Action::Noop | Action::Unfocus => {}
         }
         false
@@ -258,9 +264,31 @@ fn spawn_fetch_devices(adb: &Arc<dyn Adb>) -> mpsc::Receiver<Vec<Device>> {
     let (tx, rx) = mpsc::channel();
     let adb = adb.clone();
     std::thread::spawn(move || {
-        if let Ok(devices) = adb.list_devices() {
-            let _ = tx.send(devices);
+        let mut devices = adb.list_devices().unwrap_or_default();
+
+        let mut running_avds = std::collections::HashSet::new();
+        for d in &devices {
+            if d.serial.starts_with("emulator-") {
+                if let Ok(name) = adb.get_avd_name(&d.serial) {
+                    running_avds.insert(name);
+                }
+            }
         }
+
+        if let Ok(avds) = adb.list_avds() {
+            for avd in avds {
+                if !running_avds.contains(&avd) {
+                    devices.push(Device {
+                        serial: avd.clone(),
+                        model: Some(avd),
+                        device: None,
+                        connected: false,
+                    });
+                }
+            }
+        }
+
+        let _ = tx.send(devices);
     });
     rx
 }
