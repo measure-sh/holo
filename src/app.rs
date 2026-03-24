@@ -252,7 +252,8 @@ impl App {
             return;
         }
         let idx = (n - 1) as usize;
-        if self.panel_visible[idx] && self.panel_visible.iter().filter(|&&v| v).count() == 1 {
+        let visible_count = self.panel_visible.iter().filter(|&&v| v).count() + self.commands.visible as usize;
+        if self.panel_visible[idx] && visible_count == 1 {
             return;
         }
         self.panel_visible[idx] = !self.panel_visible[idx];
@@ -469,6 +470,7 @@ mod tests {
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new(None, Some("com.test"));
+        app.commands.visible = false;
         for n in 2..=8 {
             app.toggle_visibility(n);
         }
