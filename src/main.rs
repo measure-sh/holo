@@ -89,7 +89,7 @@ fn run_app(
         };
 
         if let Some(d) = &mut ctx.data {
-            if let (Some(s), Some(p)) = (&serial, &package) {
+            if let (Some(s), Some(_)) = (&serial, &package) {
                 d.poll(&mut app, s);
                 app.toolbar_mut().device_connected = d.device_connected;
             }

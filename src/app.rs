@@ -222,7 +222,7 @@ impl App {
                 }
                 Action::Noop
             }
-            KeyCode::Char(c @ '1'..='6') => {
+            KeyCode::Char(c @ '1'..='8') => {
                 self.saved_visibility = None;
                 self.toggle_visibility(c as u8 - b'0');
                 Action::Noop
@@ -241,21 +241,18 @@ impl App {
         if n == panel::COMMANDS {
             return self.commands.visible;
         }
-        if n > 6 {
-            return true;
-        }
-        if n == 0 {
+        if !(1..=8).contains(&n) {
             return false;
         }
         self.panel_visible[(n - 1) as usize]
     }
 
     fn toggle_visibility(&mut self, n: u8) {
-        if !(1..=6).contains(&n) {
+        if !(1..=8).contains(&n) {
             return;
         }
         let idx = (n - 1) as usize;
-        if self.panel_visible[idx] && self.panel_visible[..6].iter().filter(|&&v| v).count() == 1 {
+        if self.panel_visible[idx] && self.panel_visible.iter().filter(|&&v| v).count() == 1 {
             return;
         }
         self.panel_visible[idx] = !self.panel_visible[idx];
@@ -472,17 +469,17 @@ mod tests {
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new(None, Some("com.test"));
-        for n in 2..=6 {
+        for n in 2..=8 {
             app.toggle_visibility(n);
         }
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false, true, true]
+            &[true, false, false, false, false, false, false, false]
         );
         app.toggle_visibility(1);
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false, true, true]
+            &[true, false, false, false, false, false, false, false]
         );
     }
 
@@ -490,9 +487,8 @@ mod tests {
     fn out_of_range_is_ignored() {
         let mut app = App::new(None, Some("com.test"));
         app.toggle_visibility(0);
-        app.toggle_visibility(7);
-        app.toggle_visibility(8);
         app.toggle_visibility(9);
+        app.toggle_visibility(10);
         assert_eq!(app.panel_visibility(), &[true; 8]);
     }
 
