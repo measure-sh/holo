@@ -323,7 +323,7 @@ fn spawn_await_emulator(adb: Arc<dyn Adb>, avd_name: String) -> mpsc::Receiver<D
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let interval = std::time::Duration::from_secs(1);
-        for _ in 0..120 {
+        for _ in 0..60 {
             std::thread::sleep(interval);
             let devices = match adb.list_devices() {
                 Ok(d) => d,
