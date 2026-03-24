@@ -52,6 +52,9 @@ pub struct DataSources {
     pub initial_wifi_enabled: bool,
     pub initial_dark_mode: bool,
     pub app_version: Option<(String, String)>,
+
+    connectivity_rx: mpsc::Receiver<bool>,
+    pub device_connected: bool,
 }
 
 impl DataSources {
@@ -100,10 +103,15 @@ impl DataSources {
             initial_wifi_enabled,
             initial_dark_mode,
             app_version,
+            connectivity_rx: spawn_connectivity_poller(adb.clone(), serial.to_string()),
+            device_connected: true,
         }
     }
 
     pub fn poll(&mut self, app: &mut App, serial: &str, package: &str) {
+        while let Ok(connected) = self.connectivity_rx.try_recv() {
+            self.device_connected = connected;
+        }
         while let Ok(level) = self.battery_rx.try_recv() {
             self.battery_level = Some(level);
         }
@@ -237,4 +245,22 @@ impl DataSources {
     pub fn stop_and_pull_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
         self.trace_pull_rx = Some(trace::spawn_stop_and_pull_trace(adb, serial, package));
     }
+}
+
+fn spawn_connectivity_poller(adb: Arc<dyn Adb>, serial: String) -> mpsc::Receiver<bool> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let interval = std::time::Duration::from_secs(5);
+        loop {
+            let connected = adb
+                .get_state(&serial)
+                .map(|s| s == "device")
+                .unwrap_or(false);
+            if tx.send(connected).is_err() {
+                return;
+            }
+            std::thread::sleep(interval);
+        }
+    });
+    rx
 }

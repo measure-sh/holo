@@ -59,6 +59,7 @@ impl DispatchContext {
             Action::ChangeDevice(d) => {
                 let last = app.toolbar().last_package.clone();
                 app.toolbar_mut().device = Some(d.clone());
+                app.toolbar_mut().device_connected = true;
                 app.toolbar_mut().package = None;
                 self.data = None;
                 self.title = String::new();

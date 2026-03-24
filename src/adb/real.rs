@@ -554,6 +554,13 @@ impl Adb for RealAdb {
         }
         Ok(name)
     }
+
+    fn get_state(&self, serial: &str) -> Result<String> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "get-state"])
+            .output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {

@@ -64,4 +64,5 @@ pub trait Adb: Send + Sync {
     fn list_avds(&self) -> Result<Vec<String>>;
     fn launch_emulator(&self, avd_name: &str) -> Result<()>;
     fn get_avd_name(&self, serial: &str) -> Result<String>;
+    fn get_state(&self, serial: &str) -> Result<String>;
 }

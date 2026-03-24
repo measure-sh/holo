@@ -50,6 +50,7 @@ pub struct ToolbarState {
     pub cursor: usize,
     pub filter: String,
     pub loading: bool,
+    pub device_connected: bool,
 }
 
 impl ToolbarState {
@@ -64,6 +65,7 @@ impl ToolbarState {
             cursor: 0,
             filter: String::new(),
             loading: false,
+            device_connected: true,
         }
     }
 

@@ -152,9 +152,13 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let device_label = tb.device_label();
     let app_label = tb.app_label();
 
-    let device_dot = if has_device { theme::CYAN } else { theme::MUTED };
-    let device_fg = if has_device { theme::FG } else { theme::MUTED };
-    let device_bg = if has_device { theme::DIM_CYAN } else { theme::SURFACE };
+    let (device_dot, device_fg, device_bg) = if has_device && tb.device_connected {
+        (theme::CYAN, theme::FG, theme::DIM_CYAN)
+    } else if has_device {
+        (theme::RED, theme::FG, theme::DIM_RED)
+    } else {
+        (theme::MUTED, theme::MUTED, theme::SURFACE)
+    };
     let app_dot = if has_app { theme::GREEN } else { theme::MUTED };
     let app_fg = if has_app { theme::FG } else { theme::MUTED };
     let app_bg = if has_app { theme::DIM_GREEN } else { theme::SURFACE };
