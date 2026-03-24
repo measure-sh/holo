@@ -68,6 +68,7 @@ impl DispatchContext {
                 app.toolbar_mut().device = Some(d.clone());
                 app.toolbar_mut().device_connected = true;
                 app.toolbar_mut().package = None;
+                app.reset_for_new_app("");
                 self.data = None;
                 self.title = String::new();
                 let (packages, auto) = try_auto_select_package(&self.adb, &d, last.as_deref());

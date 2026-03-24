@@ -343,9 +343,13 @@ impl App {
     }
 
     pub fn reset_for_new_app(&mut self, package: &str) {
+        self.logcat_state = LogcatState::new();
         self.database_state = DatabaseState::new();
         self.files_state = FilesState::new(package);
         self.permissions_state = PermissionsState::new();
+        self.monitor_state = MonitorState::new();
+        self.trace_state = TraceState::new(package);
+        self.focused = None;
     }
 
     pub fn toolbar(&self) -> &ToolbarState {
