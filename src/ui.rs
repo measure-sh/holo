@@ -85,7 +85,7 @@ pub fn render_app(
             .add_modifier(Modifier::BOLD),
     );
 
-    let quit_spans = if app.confirming_quit() {
+    let mut hint_spans = if app.confirming_quit() {
         vec![
             Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
             Span::styled(" to confirm ", Style::new().fg(theme::FG)),
@@ -96,7 +96,12 @@ pub fn render_app(
             Span::styled("uit ", Style::new().fg(theme::MUTED)),
         ]
     };
-    let hint_line = Line::from(quit_spans);
+    if app.focused_panel().is_some() {
+        let label = if app.is_zoomed() { "oom out " } else { "oom in " };
+        hint_spans.push(Span::styled(" z", Style::new().fg(theme::KEY_HINT)));
+        hint_spans.push(Span::styled(label, Style::new().fg(theme::MUTED)));
+    }
+    let hint_line = Line::from(hint_spans);
 
     let branding_line = Line::from(vec![
         Span::styled("made with ", Style::new().fg(theme::MUTED)),

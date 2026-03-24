@@ -7,6 +7,7 @@ const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
     ("open app", || Action::OpenApp),
     ("kill app", || Action::KillApp),
     ("wakeup device", || Action::WakeScreen),
+    ("mirror device", || Action::MirrorDevice),
     ("clear data", || Action::ClearData),
     ("dark mode", || Action::ToggleDarkMode),
     ("take screenshot", || Action::Screenshot),
@@ -15,13 +16,13 @@ const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
     ("airplane mode", || Action::ToggleAirplaneMode),
     ("connect wireless adb", || Action::WirelessAdb),
     ("uninstall app", || Action::UninstallApp),
-    ("mirror device", || Action::MirrorDevice),
 ];
 
 pub struct CommandsState {
     pub visible: bool,
     pub cursor: usize,
     pub filter: String,
+    pub is_emulator: bool,
 }
 
 impl CommandsState {
@@ -30,6 +31,7 @@ impl CommandsState {
             visible: true,
             cursor: 0,
             filter: String::new(),
+            is_emulator: false,
         }
     }
 
@@ -74,7 +76,12 @@ impl CommandsState {
     pub fn filtered_commands(&self) -> Vec<(&'static str, fn() -> Action)> {
         COMMAND_LIST
             .iter()
-            .filter(|(name, _)| apps::fuzzy_matches(name, &self.filter))
+            .filter(|(name, _)| {
+                if self.is_emulator && *name == "mirror device" {
+                    return false;
+                }
+                apps::fuzzy_matches(name, &self.filter)
+            })
             .copied()
             .collect()
     }

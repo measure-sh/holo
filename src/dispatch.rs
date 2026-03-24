@@ -65,6 +65,7 @@ impl DispatchContext {
             }
             Action::ChangeDevice(d) => {
                 let last = app.toolbar().last_package.clone();
+                app.commands_mut().is_emulator = d.serial.starts_with("emulator-");
                 app.toolbar_mut().device = Some(d.clone());
                 app.toolbar_mut().device_connected = true;
                 app.toolbar_mut().package = None;
@@ -376,7 +377,7 @@ fn spawn_await_emulator(adb: Arc<dyn Adb>, avd_name: String) -> mpsc::Receiver<D
 }
 
 pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut App) -> DataSources {
-    let data = DataSources::new(adb.clone(), &device.serial, package);
+    let data = DataSources::new(adb.clone(), &device.serial, package, app.panel_visibility());
     app.set_layout_bounds(data.initial_layout_bounds);
     app.set_airplane_mode(data.initial_airplane_mode);
     app.set_wifi_enabled(data.initial_wifi_enabled);

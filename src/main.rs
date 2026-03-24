@@ -65,6 +65,7 @@ fn run_app(
     };
 
     if let Some(device) = &initial_device {
+        app.commands_mut().is_emulator = device.serial.starts_with("emulator-");
         let (packages, auto) = dispatch::try_auto_select_package(&adb, device, app.toolbar().last_package.as_deref());
         app.toolbar_mut().receive_packages(packages);
         if let Some(pkg) = auto {
@@ -89,7 +90,7 @@ fn run_app(
 
         if let Some(d) = &mut ctx.data {
             if let (Some(s), Some(p)) = (&serial, &package) {
-                d.poll(&mut app, s, p);
+                d.poll(&mut app, s);
                 app.toolbar_mut().device_connected = d.device_connected;
             }
         }
@@ -109,6 +110,9 @@ fn run_app(
                 let action = app.handle_key(key);
                 if ctx.dispatch(action, &mut app) {
                     return Ok(());
+                }
+                if let Some(d) = &ctx.data {
+                    d.update_monitor_visibility(app.panel_visibility());
                 }
             }
         }
