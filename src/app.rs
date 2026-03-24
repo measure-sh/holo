@@ -63,6 +63,7 @@ pub struct App {
     dark_mode: bool,
     confirming_quit: bool,
     trace_state: TraceState,
+    pub dialog: Option<String>,
 }
 
 impl App {
@@ -86,11 +87,16 @@ impl App {
             dark_mode: false,
             confirming_quit: false,
             trace_state: TraceState::new(pkg),
+            dialog: None,
         }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
         let code = key.code;
+        if self.dialog.is_some() {
+            self.dialog = None;
+            return Action::Noop;
+        }
         if self.logcat_state.editing.is_some() {
             return self.logcat_state.handle_key(code).unwrap_or(Action::Noop);
         }

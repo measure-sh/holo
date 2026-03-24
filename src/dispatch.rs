@@ -256,15 +256,33 @@ impl DispatchContext {
             }
             Action::MirrorDevice => {
                 if let Some(s) = &serial {
-                    let serial = s.clone();
-                    std::thread::spawn(move || {
-                        let _ = std::process::Command::new("scrcpy")
-                            .args(["-s", &serial])
-                            .stdin(std::process::Stdio::null())
-                            .stdout(std::process::Stdio::null())
-                            .stderr(std::process::Stdio::null())
-                            .spawn();
-                    });
+                    let has_scrcpy = std::process::Command::new("scrcpy")
+                        .arg("--version")
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .status()
+                        .is_ok();
+                    if has_scrcpy {
+                        let serial = s.clone();
+                        std::thread::spawn(move || {
+                            let _ = std::process::Command::new("scrcpy")
+                                .args(["-s", &serial])
+                                .stdin(std::process::Stdio::null())
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .spawn();
+                        });
+                    } else {
+                        app.dialog = Some(
+                            "scrcpy is not installed.\n\
+                             \n\
+                             Install with:\n\
+                             \n\
+                             macOS:   brew install scrcpy\n\
+                             Linux:   sudo apt install scrcpy\n\
+                             Windows: scoop install scrcpy".to_string()
+                        );
+                    }
                 }
             }
             Action::Noop | Action::Unfocus => {}

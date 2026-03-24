@@ -142,6 +142,11 @@ pub fn render_app(
         render_dim_overlay(frame, area);
         render_dropdown_overlay(frame, chunks[0], app);
     }
+
+    if let Some(msg) = &app.dialog {
+        render_dim_overlay(frame, area);
+        render_dialog(frame, area, msg);
+    }
 }
 
 fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
@@ -289,6 +294,40 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
             frame.render_stateful_widget(list, inner, &mut state);
         }
     }
+}
+
+fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {
+    let lines: Vec<&str> = message.lines().collect();
+    let width = lines.iter().map(|l| l.len()).max().unwrap_or(20) as u16 + 4;
+    let height = lines.len() as u16 + 4;
+    let width = width.min(area.width.saturating_sub(4));
+    let height = height.min(area.height.saturating_sub(2));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let dialog_area = Rect::new(x, y, width, height);
+
+    frame.render_widget(Clear, dialog_area);
+
+    let bottom = Line::from(vec![
+        Span::styled(" press any key to close ", Style::new().fg(theme::MUTED)),
+    ]);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(theme::ACCENT))
+        .title_bottom(bottom)
+        .style(Style::new().bg(theme::POPUP_BG));
+
+    let inner = block.inner(dialog_area);
+    frame.render_widget(block, dialog_area);
+
+    let text: Vec<Line> = lines
+        .into_iter()
+        .map(|l| Line::from(Span::styled(l.to_string(), Style::new().fg(theme::FG))))
+        .collect();
+    let paragraph = ratatui::widgets::Paragraph::new(text);
+    frame.render_widget(paragraph, inner);
 }
 
 fn is_focused(app: &App, panel_number: u8) -> bool {
