@@ -322,8 +322,8 @@ fn spawn_fetch_packages(adb: &Arc<dyn Adb>, serial: &str) -> mpsc::Receiver<Vec<
 fn spawn_await_emulator(adb: Arc<dyn Adb>, avd_name: String) -> mpsc::Receiver<Device> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let interval = std::time::Duration::from_secs(3);
-        for _ in 0..40 {
+        let interval = std::time::Duration::from_secs(1);
+        for _ in 0..120 {
             std::thread::sleep(interval);
             let devices = match adb.list_devices() {
                 Ok(d) => d,
