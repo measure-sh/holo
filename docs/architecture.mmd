@@ -1,41 +1,60 @@
 graph TD
-    START([Start]) --> DETECT["Detect device via adb devices"]
+    %% ── Startup ──
+    START([Start])
+    START --> DETECT["Detect device\nadb devices"]
+
+    %% ── Device Selection ──
     DETECT --> HAS{Device?}
-    HAS -->|no| WAIT_F1["Show empty UI, wait for F1"]
-    HAS -->|yes| CACHE["Load cached package from ~/.cache/msh"]
-    WAIT_F1 -->|F1 → select device| CACHE
+    HAS -->|no| WAIT_F1["Wait for F1"]
+    HAS -->|yes| CACHE["Load cached package"]
+    WAIT_F1 -->|select device| CACHE
 
-    CACHE --> MATCH{Cached pkg on device?}
+    %% ── Package Selection ──
+    CACHE --> MATCH{Package found?}
     MATCH -->|yes| CONNECT
-    MATCH -->|no| WAIT_F2["Open app selector"]
-    WAIT_F2 -->|F2 → select package| CONNECT
+    MATCH -->|no| WAIT_F2["Wait for F2"]
+    WAIT_F2 -->|select package| CONNECT
 
-    CONNECT["Connect to device + package"] --> START_POLLERS
+    %% ── Connection ──
+    CONNECT["Connect to device + package"]
+    CONNECT --> POLLERS
+    CONNECT --> FETCH["Fetch initial state\npermissions, databases,\nfiles, settings"]
 
-    subgraph START_POLLERS["Start Background Threads"]
+    %% ── Background Threads ──
+    subgraph POLLERS[" "]
         direction LR
-        P1["pidof 1s"]
-        P2["battery 30s"]
-        P3["connectivity 5s"]
-        P4["monitor 1s\n(mem, cpu, gfx, disk)"]
+        P1["🔄 pidof\n1s"]
+        P2["🔋 battery\n30s"]
+        P3["📡 connectivity\n5s"]
+        P4["📊 monitor\n1s · gated"]
     end
 
-    START_POLLERS --> PID_READY{PID found?}
-    PID_READY -->|yes| LOGCAT["Start logcat --pid=PID"]
-    PID_READY -->|no| POLL_PID["Keep polling pidof"]
-    POLL_PID --> PID_READY
+    POLLERS --> PID{PID found?}
+    PID -->|no| PID
+    PID -->|yes| LOGCAT["Start logcat stream\nadb logcat --pid"]
 
-    LOGCAT --> RUNNING["App Running"]
+    %% ── Main Loop ──
+    LOGCAT --> LOOP
+    FETCH --> LOOP
 
-    subgraph RUNNING["Main Loop"]
+    subgraph LOOP["Main Loop"]
         direction TB
-        RECV["Receive poller data"] --> RENDER["Render all visible panels"]
-        RENDER --> KEY["Wait for input (1s timeout)"]
+
+        RECV["Receive poller data"]
+        RECV --> RENDER["Render visible panels"]
+        RENDER --> KEY["Wait for input · 1s timeout"]
+
         KEY -->|timeout| RECV
-        KEY -->|panel key| FOCUS["Focus/zoom/toggle panel"]
-        KEY -->|action key| ACTION["Execute adb command"]
-        KEY -->|F1/F2| SWITCH["Switch device or app → reconnect"]
+
+        KEY -->|"0-8"| TOGGLE["Toggle panel visibility"]
+        KEY -->|"c l t p f d"| FOCUS["Focus panel"]
+        KEY -->|z| ZOOM["Zoom in/out"]
+        KEY -->|"o k and others"| ACTION["Run adb command"]
+        KEY -->|F1 · F2| SWITCH["Switch device/app"]
+
+        TOGGLE --> RECV
         FOCUS --> RECV
+        ZOOM --> RECV
         ACTION --> RECV
     end
 
