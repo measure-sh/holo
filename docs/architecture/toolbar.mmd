@@ -1,35 +1,16 @@
 graph TD
-    subgraph DEVICE["F1: Device Selection"]
-        F1["F1 pressed"] --> FETCH_D["Spawn thread:\n1. adb devices -l\n2. emulator -list-avds"]
-        FETCH_D -->|mpsc| DROPDOWN_D["Device dropdown\n(connected devices + offline AVDs)"]
-        DROPDOWN_D --> FILTER_D["Type to fuzzy filter"]
-        FILTER_D --> SELECT_D["Enter: select"]
-        SELECT_D --> IS_EMU{Offline emulator?}
-        IS_EMU -->|yes| LAUNCH["Launch emulator\nemulator -avd &lt;name&gt;"]
-        LAUNCH --> WAIT["Poll for boot\n1s × 60 attempts\nadb devices + emu avd name"]
-        WAIT -->|booted| CHANGE_D["ChangeDevice action"]
-        IS_EMU -->|no| CHANGE_D
-    end
+    F1["F1: Devices"] -->|thread| LIST_D["adb devices + list-avds"]
+    LIST_D --> DROP_D["Dropdown + fuzzy filter"]
+    DROP_D --> SEL{Select}
+    SEL -->|device| CHANGE["ChangeDevice → reset state"]
+    SEL -->|offline AVD| LAUNCH["Launch emulator → poll boot 1s×60"] --> CHANGE
 
-    CHANGE_D --> RESET["Reset app state\n• clear logcat, db, files, perms\n• set is_emulator flag\n• auto-select last package"]
+    F2["F2: Apps"] -->|thread| LIST_P["pm list packages -3"]
+    LIST_P --> DROP_P["Dropdown + fuzzy filter"]
+    DROP_P --> APP["ChangeApp"]
 
-    subgraph APP["F2: App Selection"]
-        F2["F2 pressed"] --> FETCH_P["Spawn thread:\nadb shell pm list packages -3"]
-        FETCH_P -->|mpsc| DROPDOWN_P["Package dropdown"]
-        DROPDOWN_P --> FILTER_P["Type to fuzzy filter"]
-        FILTER_P --> SELECT_P["Enter: select"]
-    end
+    CHANGE -->|auto-select pkg| APP
+    APP --> BUILD["Start pollers + fetch initial state"]
 
-    SELECT_P --> CHANGE_A["ChangeApp action"]
-    CHANGE_A --> BUILD["Build DataSources\n• start all pollers\n• fetch initial state\n  (layout bounds, airplane,\n   wifi, dark mode, version)"]
-    RESET -->|package found| BUILD
-
-    BUILD --> RUNNING["App running\n• pollers active\n• logcat streaming"]
-
-    subgraph CACHE["Package Cache"]
-        SAVE["Save last package\n~/.cache/msh/last_package"]
-        LOAD["Load on device change\n→ auto-select if found"]
-    end
-
-    CHANGE_A --> SAVE
-    RESET --> LOAD
+    APP -.->|save| CACHE["~/.cache/msh/last_package"]
+    CHANGE -.->|load| CACHE

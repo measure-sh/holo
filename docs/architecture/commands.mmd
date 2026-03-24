@@ -1,33 +1,4 @@
-graph TD
-    FOCUS["Focus panel (c key)"] --> INPUT["Type to filter"]
-    INPUT --> FUZZY["Fuzzy match against command list"]
-
-    subgraph COMMANDS["Command List"]
-        direction TB
-        C1["open app → monkey -p pkg"]
-        C2["kill app → am force-stop"]
-        C3["wakeup device → input keyevent WAKEUP"]
-        C4["mirror device → scrcpy -s serial\n(hidden on emulators)"]
-        C5["clear data → pm clear"]
-        C6["dark mode → cmd uimode night"]
-        C7["take screenshot → screencap -p"]
-        C8["layout bounds → setprop debug.layout"]
-        C9["wifi → svc wifi"]
-        C10["airplane mode → cmd connectivity"]
-        C11["connect wireless adb → tcpip 5555"]
-        C12["uninstall app → adb uninstall"]
-    end
-
-    FUZZY --> FILTERED["Filtered list"]
-    FILTERED --> SELECT["Up/Down to navigate\nEnter to execute"]
-    SELECT --> ACTION["Dispatch Action"]
-    ACTION -->|spawns thread| ADB["Execute adb command"]
-
-    subgraph KEYS["Key Bindings"]
-        direction LR
-        K1["Type: filter"]
-        K2["Up/Down: navigate"]
-        K3["Enter: execute"]
-        K4["Backspace: delete filter char"]
-        K5["Esc: unfocus"]
-    end
+graph LR
+    TYPE["Type to filter"] --> FUZZY["Fuzzy match"]
+    FUZZY --> LIST["Command list\n(mirror hidden on emulators)"]
+    LIST --> EXEC["Enter → dispatch action → adb thread"]

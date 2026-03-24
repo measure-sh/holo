@@ -1,22 +1,5 @@
-graph TD
-    IDLE["Idle"] --> START["s: start trace"]
-    START -->|spawn thread| PERFETTO["adb shell perfetto -d --txt -c - -o /data/misc/perfetto-traces/msh_trace\nConfig: 512MB ring buffers, 30min\nCaptures: ftrace (gfx, input, view), process stats, system stats"]
-    PERFETTO -->|"mpsc Ok"| RECORDING["Recording\n(shows elapsed time)"]
-    PERFETTO -->|"mpsc Err"| FAILED["Show error, return to idle"]
-
-    RECORDING --> STOP["s: stop trace"]
-    STOP -->|spawn thread| PULL["1. adb shell pkill -INT perfetto\n2. adb pull trace file\n→ ~/tmp/msh/&lt;pkg&gt;/traces/"]
-    PULL -->|"mpsc Ok(path)"| OPEN["Open in Perfetto UI\n(TCP bridge to ui.perfetto.dev)"]
-    PULL -->|"mpsc Err"| SHOW_ERR["Show error"]
-
-    OPEN --> LIST["Trace list\n(pulled traces)"]
-    LIST --> NAV["Navigate (Up/Down)"]
-    NAV --> REOPEN["Enter: reopen in Perfetto UI"]
-
-    subgraph KEYS["Key Bindings"]
-        direction LR
-        K1["s: start/stop trace"]
-        K2["Up/Down: navigate traces"]
-        K3["Enter: open trace"]
-        K4["Esc: unfocus"]
-    end
+graph LR
+    IDLE["Idle"] -->|s| REC["Recording\n(perfetto)"]
+    REC -->|s| PULL["Stop + pull trace"]
+    PULL -->|thread| OPEN["Open in Perfetto UI"]
+    OPEN --> LIST["Trace list\n(Enter: reopen)"]
