@@ -44,6 +44,7 @@ pub enum Action {
     ToggleDarkMode,
     WirelessAdb,
     LaunchEmulator(String),
+    MirrorDevice,
 }
 
 pub struct App {

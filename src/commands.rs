@@ -15,6 +15,7 @@ const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
     ("airplane mode", || Action::ToggleAirplaneMode),
     ("connect wireless adb", || Action::WirelessAdb),
     ("uninstall app", || Action::UninstallApp),
+    ("mirror device", || Action::MirrorDevice),
 ];
 
 pub struct CommandsState {

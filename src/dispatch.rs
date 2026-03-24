@@ -254,6 +254,19 @@ impl DispatchContext {
                 });
                 self.pending_emulator_rx = Some(spawn_await_emulator(adb2, avd_name));
             }
+            Action::MirrorDevice => {
+                if let Some(s) = &serial {
+                    let serial = s.clone();
+                    std::thread::spawn(move || {
+                        let _ = std::process::Command::new("scrcpy")
+                            .args(["-s", &serial])
+                            .stdin(std::process::Stdio::null())
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .spawn();
+                    });
+                }
+            }
             Action::Noop | Action::Unfocus => {}
         }
         false
