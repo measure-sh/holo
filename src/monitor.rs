@@ -1,7 +1,13 @@
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use crate::adb::Adb;
+use crate::panel;
+
+pub const POLL_SYSTEM: u8 = 1;
+pub const POLL_FRAMES: u8 = 2;
+pub const POLL_DISK: u8 = 4;
 
 const MAX_SAMPLES: usize = 60;
 
@@ -97,43 +103,70 @@ impl MonitorState {
 
 }
 
+pub fn visibility_mask(vis: &[bool; 8]) -> u8 {
+    let mut mask = 0u8;
+    if vis[(panel::SYSTEM - 1) as usize] { mask |= POLL_SYSTEM; }
+    if vis[(panel::FRAMES - 1) as usize] { mask |= POLL_FRAMES; }
+    if vis[(panel::DISK - 1) as usize] { mask |= POLL_DISK; }
+    mask
+}
+
 pub fn spawn_poller(
     adb: Arc<dyn Adb>,
     serial: String,
     package: String,
+    visibility: Arc<AtomicU8>,
 ) -> mpsc::Receiver<MonitorSample> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let interval = Duration::from_secs(1);
+        let mut tick: u64 = 0;
+        let mut last_data_kb: u64 = 0;
+        let mut last_cache_kb: u64 = 0;
         loop {
+            let mask = visibility.load(Ordering::Relaxed);
+            if mask == 0 {
+                std::thread::sleep(interval);
+                tick += 1;
+                continue;
+            }
             let mut sample = MonitorSample::default();
+            let poll_disk = mask & POLL_DISK != 0 && tick % 5 == 0;
 
             std::thread::scope(|s| {
-                let mem = s.spawn(|| adb.get_meminfo(&serial, &package));
-                let cpu = s.spawn(|| adb.get_cpu_usage(&serial, &package));
-                let gfx = s.spawn(|| adb.get_gfx_info(&serial, &package));
-                let disk = s.spawn(|| adb.get_disk_usage(&serial, &package));
+                let mem = (mask & POLL_SYSTEM != 0)
+                    .then(|| s.spawn(|| adb.get_meminfo(&serial, &package)));
+                let cpu = (mask & POLL_SYSTEM != 0)
+                    .then(|| s.spawn(|| adb.get_cpu_usage(&serial, &package)));
+                let gfx = (mask & POLL_FRAMES != 0)
+                    .then(|| s.spawn(|| adb.get_gfx_info(&serial, &package)));
+                let disk = poll_disk
+                    .then(|| s.spawn(|| adb.get_disk_usage(&serial, &package)));
 
-                if let Ok(Ok(mem)) = mem.join() {
+                if let Some(Ok(Ok(mem))) = mem.map(|h| h.join()) {
                     sample.rss_kb = mem.rss_kb;
                 }
-                if let Ok(Ok(cpu)) = cpu.join() {
+                if let Some(Ok(Ok(cpu))) = cpu.map(|h| h.join()) {
                     sample.cpu_percent = cpu;
                 }
-                if let Ok(Ok(gfx)) = gfx.join() {
+                if let Some(Ok(Ok(gfx))) = gfx.map(|h| h.join()) {
                     sample.total_frames = gfx.total_frames;
                     sample.slow_frames = gfx.slow_frames;
                     sample.frozen_frames = gfx.frozen_frames;
                 }
-                if let Ok(Ok((data, cache))) = disk.join() {
-                    sample.data_kb = data;
-                    sample.cache_kb = cache;
+                if let Some(Ok(Ok((data, cache)))) = disk.map(|h| h.join()) {
+                    last_data_kb = data;
+                    last_cache_kb = cache;
                 }
             });
+
+            sample.data_kb = last_data_kb;
+            sample.cache_kb = last_cache_kb;
 
             if tx.send(sample).is_err() {
                 return;
             }
+            tick += 1;
             std::thread::sleep(interval);
         }
     });
