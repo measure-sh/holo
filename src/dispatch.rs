@@ -68,15 +68,17 @@ impl DispatchContext {
                 app.toolbar_mut().device = Some(d.clone());
                 app.toolbar_mut().device_connected = true;
                 app.toolbar_mut().package = None;
-                app.reset_for_new_app("");
                 self.data = None;
                 self.title = String::new();
                 let (packages, auto) = try_auto_select_package(&self.adb, &d, last.as_deref());
                 app.toolbar_mut().receive_packages(packages);
                 if let Some(pkg) = auto {
                     app.toolbar_mut().package = Some(pkg.clone());
+                    app.reset_for_new_app(&pkg);
                     self.data = Some(build_data(&self.adb, &d, &pkg, app));
                     self.title = build_title(self.data.as_ref().unwrap());
+                } else {
+                    app.reset_for_new_app("");
                 }
             }
             Action::ChangeApp(p) => {
