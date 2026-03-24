@@ -1,10 +1,18 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::process::Command;
 
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
 use super::{Adb, Device, GfxInfo, MemInfo};
+
+fn emulator_path() -> PathBuf {
+    std::env::var_os("ANDROID_HOME")
+        .or_else(|| std::env::var_os("ANDROID_SDK_ROOT"))
+        .map(|sdk| PathBuf::from(sdk).join("emulator").join("emulator"))
+        .unwrap_or_else(|| PathBuf::from("emulator"))
+}
 
 pub struct RealAdb;
 
@@ -516,7 +524,7 @@ impl Adb for RealAdb {
     }
 
     fn list_avds(&self) -> Result<Vec<String>> {
-        let output = Command::new("emulator").arg("-list-avds").output()?;
+        let output = Command::new(emulator_path()).arg("-list-avds").output()?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("emulator -list-avds failed: {stderr}");
@@ -526,7 +534,7 @@ impl Adb for RealAdb {
     }
 
     fn launch_emulator(&self, avd_name: &str) -> Result<()> {
-        Command::new("emulator")
+        Command::new(emulator_path())
             .args(["-avd", avd_name])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
