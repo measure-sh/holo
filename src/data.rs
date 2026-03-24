@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
 
 use crate::adb::Adb;
@@ -26,8 +26,8 @@ pub struct DataSources {
     battery_rx: mpsc::Receiver<u8>,
     pub battery_level: Option<u8>,
 
-    procs_rx: mpsc::Receiver<HashMap<String, u32>>,
-    process_map: Option<HashMap<String, u32>>,
+    procs_rx: mpsc::Receiver<Option<u32>>,
+    last_polled_pid: Option<u32>,
 
     logcat_handle: Option<logcat::LogcatHandle>,
     pub logcat_lines: Vec<String>,
@@ -43,6 +43,7 @@ pub struct DataSources {
     files_pull_rx: Option<mpsc::Receiver<Result<(String, bool), String>>>,
 
     monitor_rx: mpsc::Receiver<MonitorSample>,
+    monitor_visibility: Arc<AtomicU8>,
 
     trace_start_rx: Option<mpsc::Receiver<Result<(), String>>>,
     trace_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
@@ -58,17 +59,18 @@ pub struct DataSources {
 }
 
 impl DataSources {
-    pub fn new(adb: Arc<dyn Adb>, serial: &str, package: &str) -> Self {
+    pub fn new(adb: Arc<dyn Adb>, serial: &str, package: &str, panel_vis: &[bool; 8]) -> Self {
         let initial_layout_bounds = adb.get_layout_bounds(serial).unwrap_or(false);
         let initial_airplane_mode = adb.get_airplane_mode(serial).unwrap_or(false);
         let initial_wifi_enabled = adb.get_wifi_enabled(serial).unwrap_or(false);
         let initial_dark_mode = adb.get_dark_mode(serial).unwrap_or(false);
         let app_version = adb.get_app_version(serial, package).ok();
+        let monitor_visibility = Arc::new(AtomicU8::new(monitor::visibility_mask(panel_vis)));
         Self {
             battery_rx: battery::spawn_poller(adb.clone(), serial.to_string()),
             battery_level: None,
-            procs_rx: processes::spawn_poller(adb.clone(), serial.to_string()),
-            process_map: None,
+            procs_rx: processes::spawn_poller(adb.clone(), serial.to_string(), package.to_string()),
+            last_polled_pid: None,
             logcat_handle: None,
             logcat_lines: Vec::new(),
             monitored_pid: None,
@@ -95,6 +97,7 @@ impl DataSources {
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
+                monitor_visibility.clone(),
             ),
             trace_start_rx: None,
             trace_pull_rx: None,
@@ -103,26 +106,31 @@ impl DataSources {
             initial_wifi_enabled,
             initial_dark_mode,
             app_version,
+            monitor_visibility,
             connectivity_rx: spawn_connectivity_poller(adb.clone(), serial.to_string()),
             device_connected: true,
         }
     }
 
-    pub fn poll(&mut self, app: &mut App, serial: &str, package: &str) {
+    pub fn update_monitor_visibility(&self, vis: &[bool; 8]) {
+        self.monitor_visibility.store(monitor::visibility_mask(vis), Ordering::Relaxed);
+    }
+
+    pub fn poll(&mut self, app: &mut App, serial: &str) {
         while let Ok(connected) = self.connectivity_rx.try_recv() {
             self.device_connected = connected;
         }
         while let Ok(level) = self.battery_rx.try_recv() {
             self.battery_level = Some(level);
         }
-        while let Ok(procs) = self.procs_rx.try_recv() {
-            self.process_map = Some(procs);
+        while let Ok(pid) = self.procs_rx.try_recv() {
+            self.last_polled_pid = pid;
         }
         while let Ok(info) = self.monitor_rx.try_recv() {
             app.monitor_state_mut().push(info);
         }
 
-        let current_pid = self.process_map.as_ref().and_then(|m| m.get(package).copied());
+        let current_pid = self.last_polled_pid;
         if current_pid != self.monitored_pid {
             self.logcat_handle = None;
             self.monitored_pid = None;
