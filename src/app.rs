@@ -217,6 +217,9 @@ impl App {
             KeyCode::Char('0') => {
                 self.saved_visibility = None;
                 self.commands.visible = !self.commands.visible;
+                if !self.commands.visible && self.focused == Some(panel::COMMANDS) {
+                    self.focused = None;
+                }
                 Action::Noop
             }
             KeyCode::Char(c @ '1'..='8') => {
@@ -234,6 +237,16 @@ impl App {
         }
     }
 
+    fn is_panel_visible(&self, n: u8) -> bool {
+        if n == panel::COMMANDS {
+            return self.commands.visible;
+        }
+        if !(1..=8).contains(&n) {
+            return false;
+        }
+        self.panel_visible[(n - 1) as usize]
+    }
+
     fn toggle_visibility(&mut self, n: u8) {
         if !(1..=8).contains(&n) {
             return;
@@ -243,6 +256,9 @@ impl App {
             return;
         }
         self.panel_visible[idx] = !self.panel_visible[idx];
+        if !self.panel_visible[idx] && self.focused == Some(n) {
+            self.focused = None;
+        }
     }
 
     fn toggle_zoom(&mut self) {
@@ -276,8 +292,10 @@ impl App {
     fn toggle_focus(&mut self, n: u8) {
         if self.focused == Some(n) {
             self.focused = None;
-        } else {
+        } else if self.is_panel_visible(n) {
             self.focused = Some(n);
+        } else {
+            return;
         }
         self.logcat_state.editing = None;
         self.database_state.editing_query = false;
@@ -1152,5 +1170,36 @@ mod tests {
         app.handle_key(key(KeyCode::Char('z')));
         assert!(!app.is_zoomed());
         assert_eq!(app.panel_visibility(), &original_vis);
+    }
+
+    #[test]
+    fn focus_key_ignored_for_hidden_panel() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('1')));
+        assert!(!app.panel_visibility()[0]);
+        app.handle_key(key(KeyCode::Char('l')));
+        assert_eq!(app.focused_panel(), None);
+    }
+
+    #[test]
+    fn hiding_focused_panel_clears_focus() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('l')));
+        assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
+        app.handle_key(key(KeyCode::Char('1')));
+        assert_eq!(app.focused_panel(), None);
+    }
+
+    #[test]
+    fn hiding_commands_clears_focus() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('c')));
+        assert_eq!(app.focused_panel(), Some(panel::COMMANDS));
+        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.focused_panel(), None);
+        app.handle_key(key(KeyCode::Char('0')));
+        assert!(!app.commands().visible);
+        app.handle_key(key(KeyCode::Char('c')));
+        assert_eq!(app.focused_panel(), None);
     }
 }
