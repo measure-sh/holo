@@ -13,6 +13,7 @@ pub struct DispatchContext {
     pub title: String,
     pub devices_rx: Option<mpsc::Receiver<Vec<Device>>>,
     pub packages_rx: Option<mpsc::Receiver<Vec<String>>>,
+    pub pending_emulator_rx: Option<mpsc::Receiver<Device>>,
 }
 
 impl DispatchContext {
@@ -33,6 +34,12 @@ impl DispatchContext {
                     }
                 }
                 self.packages_rx = None;
+            }
+        }
+        if let Some(rx) = &self.pending_emulator_rx {
+            if let Ok(device) = rx.try_recv() {
+                self.pending_emulator_rx = None;
+                self.dispatch(Action::ChangeDevice(device), app);
             }
         }
     }
@@ -237,9 +244,12 @@ impl DispatchContext {
             }
             Action::LaunchEmulator(name) => {
                 let adb = self.adb.clone();
+                let adb2 = self.adb.clone();
+                let avd_name = name.clone();
                 std::thread::spawn(move || {
                     let _ = adb.launch_emulator(&name);
                 });
+                self.pending_emulator_rx = Some(spawn_await_emulator(adb2, avd_name));
             }
             Action::Noop | Action::Unfocus => {}
         }
@@ -301,6 +311,31 @@ fn spawn_fetch_packages(adb: &Arc<dyn Adb>, serial: &str) -> mpsc::Receiver<Vec<
     std::thread::spawn(move || {
         if let Ok(packages) = adb.list_packages(&serial) {
             let _ = tx.send(packages);
+        }
+    });
+    rx
+}
+
+fn spawn_await_emulator(adb: Arc<dyn Adb>, avd_name: String) -> mpsc::Receiver<Device> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let interval = std::time::Duration::from_secs(3);
+        for _ in 0..40 {
+            std::thread::sleep(interval);
+            let devices = match adb.list_devices() {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
+            for d in &devices {
+                if d.serial.starts_with("emulator-") {
+                    if let Ok(name) = adb.get_avd_name(&d.serial) {
+                        if name == avd_name {
+                            let _ = tx.send(d.clone());
+                            return;
+                        }
+                    }
+                }
+            }
         }
     });
     rx

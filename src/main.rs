@@ -61,6 +61,7 @@ fn run_app(
         title: String::new(),
         devices_rx: None,
         packages_rx: None,
+        pending_emulator_rx: None,
     };
 
     if let Some(device) = &initial_device {
