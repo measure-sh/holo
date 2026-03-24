@@ -1,0 +1,55 @@
+graph TD
+    START([App Start]) --> INIT_DEVICE["Get initial device\nadb devices -l"]
+    INIT_DEVICE --> HAS_DEVICE{Device found?}
+    HAS_DEVICE -->|yes| AUTO_PKG["Auto-select last package\nfrom ~/.cache/msh/last_package"]
+    HAS_DEVICE -->|no| LOOP
+
+    AUTO_PKG --> PKG_FOUND{Package found?}
+    PKG_FOUND -->|yes| BUILD_DATA["Build DataSources\n(starts all pollers)"]
+    PKG_FOUND -->|no| OPEN_F2["Open app selector"]
+    OPEN_F2 --> LOOP
+    BUILD_DATA --> LOOP
+
+    subgraph LOOP["Main Loop (runs every frame)"]
+        direction TB
+        POLL["1. Poll all channels\n(non-blocking try_recv)"]
+        CHECK_PID["2. Check PID change\n→ respawn logcat if needed"]
+        DRAW["3. Render UI"]
+        WAIT["4. Wait for key event\n(1s timeout)"]
+        HANDLE["5. Handle key → Action"]
+        EXEC["6. Dispatch action\n(may spawn threads)"]
+        SYNC_VIS["7. Sync monitor visibility"]
+
+        POLL --> CHECK_PID --> DRAW --> WAIT
+        WAIT -->|key pressed| HANDLE --> EXEC --> SYNC_VIS --> POLL
+        WAIT -->|timeout| POLL
+    end
+
+    subgraph POLLERS["Background Threads (always running)"]
+        BAT["Battery\n30s"]
+        PID["PID\n1s"]
+        MON["Monitor\n1s (gated)"]
+        CONN["Connectivity\n5s"]
+        LOG["Logcat\nstreaming"]
+    end
+
+    subgraph PANELS["Panels"]
+        direction LR
+        P0["0 Commands"]
+        P1["1 Logcat"]
+        P2["2 Trace"]
+        P3["3 Permissions"]
+        P4["4 Frames"]
+        P5["5 Disk"]
+        P6["6 CPU & Mem"]
+        P7["7 Files"]
+        P8["8 Database"]
+    end
+
+    POLLERS -->|"mpsc channels"| POLL
+    EXEC -->|"spawns one-off threads"| ACTIONS["ADB Actions\n(launch, kill, clear,\nscreenshot, toggle, etc.)"]
+    EXEC -->|"spawns async ops"| ASYNC["Async Ops\n(db query, file pull,\ntrace start/stop)"]
+    ASYNC -->|"mpsc results"| POLL
+
+    POLL --> PANELS
+    HANDLE --> PANELS

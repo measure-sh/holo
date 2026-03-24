@@ -1,0 +1,40 @@
+graph TD
+    VIS["Panel visibility\n(main thread)"] -->|"Arc&lt;AtomicU8&gt;"| MASK["Visibility Mask\nPOLL_SYSTEM=1, POLL_FRAMES=2, POLL_DISK=4"]
+
+    MASK --> CHECK{mask == 0?}
+    CHECK -->|yes| SLEEP["Sleep 1s, skip tick"]
+    CHECK -->|no| SCOPE["thread::scope (parallel)"]
+
+    SCOPE --> SYS_CHECK{"POLL_SYSTEM\nset?"}
+    SCOPE --> GFX_CHECK{"POLL_FRAMES\nset?"}
+    SCOPE --> DISK_CHECK{"POLL_DISK set\n& tick % 5 == 0?"}
+
+    SYS_CHECK -->|yes| MEM["get_meminfo\nadb shell cat /proc/PID/status\n→ rss_kb"]
+    SYS_CHECK -->|yes| CPU["get_cpu_usage\nadb shell top -b -n 1 -q\n→ cpu_percent"]
+    GFX_CHECK -->|yes| GFX["get_gfx_info\nadb shell dumpsys gfxinfo\n→ total/slow/frozen frames"]
+    DISK_CHECK -->|yes| DISK["get_disk_usage\nadb shell run-as du -s . ./cache\n→ data_kb, cache_kb"]
+
+    MEM --> SAMPLE["MonitorSample"]
+    CPU --> SAMPLE
+    GFX --> SAMPLE
+    DISK --> LAST["Carry forward\nlast_data_kb, last_cache_kb"]
+    LAST --> SAMPLE
+    DISK_CHECK -->|no| LAST
+
+    SAMPLE -->|mpsc| HISTORY["MonitorState\n(max 60 samples)"]
+
+    HISTORY --> DELTAS["Compute frame deltas\nslow %, frozen %"]
+    HISTORY --> TRENDS["Compute trends\n(Rising/Falling/Stable)"]
+    HISTORY --> SPARKLINES["Extract sparkline data"]
+
+    subgraph PANELS["Three Monitor Panels"]
+        FRAMES["4 Frames\n• frames/sec sparkline\n• slow % sparkline\n• frozen % sparkline"]
+        DISK_P["5 Disk\n• data size + trend\n• cache size + trend"]
+        SYSTEM["6 CPU & Memory\n• CPU % sparkline\n• RSS memory sparkline"]
+    end
+
+    DELTAS --> FRAMES
+    SPARKLINES --> FRAMES
+    SPARKLINES --> DISK_P
+    TRENDS --> DISK_P
+    SPARKLINES --> SYSTEM

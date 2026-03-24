@@ -1,0 +1,30 @@
+graph TD
+    APP_SELECT["App selected"] -->|spawn thread| ROOT["List root dir\nadb shell run-as &lt;pkg&gt; ls -p ."]
+    ROOT -->|mpsc| TREE["File tree\n(dirs sorted before files)"]
+
+    TREE --> NAV["Navigate (Up/Down)"]
+    NAV --> IS_DIR{Directory?}
+
+    IS_DIR -->|yes, collapsed| EXPAND["Expand (Enter/Right)"]
+    EXPAND --> CACHED{Children cached?}
+    CACHED -->|yes| SHOW["Show cached children"]
+    CACHED -->|no, spawn thread| LOAD["adb shell run-as &lt;pkg&gt; ls -p &lt;path&gt;"]
+    LOAD -->|mpsc| SHOW
+
+    IS_DIR -->|yes, expanded| COLLAPSE["Collapse (Enter/Left)"]
+    IS_DIR -->|no (file)| FILE_ACTIONS
+
+    subgraph FILE_ACTIONS["File Actions"]
+        PULL["p: pull file\nexec-out run-as cat → ~/tmp/msh/&lt;pkg&gt;/files/"]
+        OPEN["o: pull & open\nsame as pull, then xdg-open/open"]
+    end
+
+    subgraph KEYS["Key Bindings"]
+        direction LR
+        K1["Up/Down: navigate"]
+        K2["Enter/Right: expand dir"]
+        K3["Left: collapse dir"]
+        K4["p: pull file"]
+        K5["o: open file"]
+        K6["Esc: unfocus"]
+    end

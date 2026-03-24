@@ -1,0 +1,38 @@
+graph TD
+    APP_SELECT["App selected"] -->|spawn thread| DETECT["Detect databases\nadb shell run-as &lt;pkg&gt; ls databases/"]
+    DETECT -->|mpsc| DB_LIST["DatabaseState.databases\n(filtered: no -journal/-wal/-shm)"]
+
+    DB_LIST --> NAV["Navigate list (Up/Down)"]
+    NAV --> SELECT["Select DB (Enter)"]
+    SELECT --> REPL["REPL Mode"]
+
+    subgraph REPL["REPL Mode"]
+        EDIT["Edit SQL query (e key)"] --> TYPE["Type query in textarea"]
+        TYPE --> RUN["Execute (Enter)"]
+        RUN -->|spawn thread| QUERY["adb shell run-as &lt;pkg&gt;\nsqlite3 databases/db 'SQL'"]
+        QUERY -->|"mpsc Ok(output)"| RESULT["Push result to history"]
+        QUERY -->|"mpsc Err(msg)"| ERROR["Push error to history"]
+        RESULT --> DISPLAY["Render REPL history"]
+        ERROR --> DISPLAY
+        DISPLAY --> EDIT
+    end
+
+    subgraph PULL["Pull Database"]
+        P_CONFIRM["Press p → confirm pull"]
+        P_CONFIRM --> PP["Press p again to confirm"]
+        PP -->|spawn thread| P_EXEC["Pull 3 files:\n• db\n• db-wal\n• db-shm\nvia exec-out run-as cat"]
+        P_EXEC --> P_DEST["Save to ~/tmp/msh/&lt;pkg&gt;/db/"]
+    end
+
+    subgraph KEYS["Key Bindings"]
+        direction LR
+        K1["Up/Down: navigate DBs"]
+        K2["Enter: select DB"]
+        K3["e: edit query"]
+        K4["Enter (editing): run query"]
+        K5["Up/Down (editing): query history"]
+        K6["c: copy output"]
+        K7["p: pull DB"]
+        K8["r: reset"]
+        K9["Esc: back / unfocus"]
+    end

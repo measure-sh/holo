@@ -1,0 +1,25 @@
+graph TD
+    APP_SELECT["App selected"] -->|spawn thread| LOAD["Load permissions\nadb shell dumpsys package &lt;pkg&gt;\n→ parse runtime permissions"]
+    LOAD -->|mpsc| LIST["Permission list\n(name, granted/denied)"]
+
+    LIST --> NAV["Navigate (Up/Down)"]
+    NAV --> TOGGLE["Enter: toggle permission"]
+    TOGGLE --> GRANTED{Currently granted?}
+    GRANTED -->|yes, spawn thread| REVOKE["adb shell pm revoke &lt;pkg&gt; &lt;perm&gt;"]
+    GRANTED -->|no, spawn thread| GRANT["adb shell pm grant &lt;pkg&gt; &lt;perm&gt;"]
+    REVOKE --> UPDATE["Update state"]
+    GRANT --> UPDATE
+
+    subgraph RENDER["Render"]
+        NAME["Short name\n(strip android.permission. prefix)"]
+        STATUS["Green = granted\nRed = denied"]
+    end
+
+    LIST --> RENDER
+
+    subgraph KEYS["Key Bindings"]
+        direction LR
+        K1["Up/Down: navigate"]
+        K2["Enter: toggle grant/revoke"]
+        K3["Esc: unfocus"]
+    end

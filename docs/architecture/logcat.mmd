@@ -1,0 +1,39 @@
+graph TD
+    PID_POLL["PID Poller (1s)\nadb shell pidof -s &lt;pkg&gt;"] -->|"Option&lt;u32&gt;"| CHECK{PID changed?}
+    CHECK -->|no| SKIP[Keep current logcat]
+    CHECK -->|yes, None| KILL_LOG[Kill logcat subprocess]
+    CHECK -->|yes, Some| RESPAWN
+
+    KILL_LOG --> IDLE[No logcat running]
+
+    subgraph RESPAWN["Respawn Logcat"]
+        SPAWN["Spawn subprocess\nadb -s SERIAL logcat --pid=PID"] --> READ["BufReader reads stdout\nline by line"]
+        READ --> SEND["Send each line via mpsc"]
+    end
+
+    SEND --> BUFFER["Rolling buffer\n(max 1000 lines)"]
+    BUFFER --> ADJUST["Adjust scroll for new lines"]
+
+    subgraph RENDER["Render"]
+        FILTER["Apply filters\n• tag (substring)\n• search (substring)\n• level (V/D/I/W/E/F)"]
+        HIGHLIGHT["Highlight search matches"]
+        SCROLL["Apply scroll offset"]
+        DISPLAY["Display in panel"]
+        FILTER --> HIGHLIGHT --> SCROLL --> DISPLAY
+    end
+
+    BUFFER --> FILTER
+
+    subgraph KEYS["Key Bindings (when focused)"]
+        direction LR
+        K1["j/k: scroll"]
+        K2["Space: page down"]
+        K3["/: search filter"]
+        K4["t: tag filter"]
+        K5["Left/Right: level"]
+        K6["r: reset filters"]
+        K7["c: copy to clipboard"]
+        K8["Esc: unfocus"]
+    end
+
+    KEYS --> FILTER
