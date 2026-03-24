@@ -344,9 +344,9 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let commands_visible = app.commands().visible;
     let logcat_visible = vis[0];
     let trace_visible = vis[1];
-    let permissions_visible = vis[5];
+    let permissions_visible = vis[2];
     let mid_visible = trace_visible || permissions_visible;
-    let bot_left_visible = vis[2] || vis[3] || vis[4];
+    let bot_left_visible = vis[3] || vis[4] || vis[5];
     let bot_right_visible = vis[6] || vis[7];
     let bot_visible = bot_left_visible || bot_right_visible;
 
@@ -486,7 +486,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let left_visible = vis[2] || vis[3] || vis[4];
+    let left_visible = vis[3] || vis[4] || vis[5];
     let right_visible = vis[6] || vis[7];
 
     match (left_visible, right_visible) {
@@ -507,9 +507,9 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
 fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
     let panels: Vec<u8> = [
-        (vis[2], panel::FRAMES),
-        (vis[3], panel::DISK),
-        (vis[4], panel::SYSTEM),
+        (vis[3], panel::FRAMES),
+        (vis[4], panel::DISK),
+        (vis[5], panel::SYSTEM),
     ]
     .iter()
     .filter(|(v, _)| *v)
