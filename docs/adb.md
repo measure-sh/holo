@@ -9,7 +9,7 @@ All ADB commands used by msh, organized by feature area.
 | Streaming | Logcat | `adb logcat --pid=<pid>` | `logcat.rs:104` |
 | 1s | Process PID | `adb shell pidof -s <package>` | `processes.rs:11` |
 | 1s | CPU | `adb shell top -b -n 1 -q` | `monitor.rs:139` |
-| 1s | Memory | `adb shell pidof -s <pkg>; cat /proc/$PID/status` | `monitor.rs:137` |
+| 1s | Memory | `adb shell 'PID=$(pidof -s <pkg>); [ -n "$PID" ] && cat /proc/$PID/status'` | `monitor.rs:137` |
 | 1s | Frames | `adb shell dumpsys gfxinfo <package>` | `monitor.rs:141` |
 | 5s | Disk | `adb shell run-as <package> du -s . ./cache` | `monitor.rs:134` |
 | 30s | Battery | `adb shell dumpsys battery` | `battery.rs:41` |
@@ -52,7 +52,7 @@ All ADB commands used by msh, organized by feature area.
 | Command | Purpose |
 |---------|---------|
 | `adb shell top -b -n 1 -q` | CPU usage snapshot |
-| `adb shell pidof -s <pkg>; cat /proc/$PID/status` | RSS memory from proc filesystem |
+| `adb shell 'PID=$(pidof -s <pkg>); [ -n "$PID" ] && cat /proc/$PID/status'` | RSS memory from proc filesystem |
 | `adb shell dumpsys gfxinfo <package>` | Frame render times, slow/frozen frame counts |
 | `adb shell run-as <package> du -s . ./cache` | App data and cache size on disk |
 
@@ -77,6 +77,7 @@ All ADB commands used by msh, organized by feature area.
 |---------|---------|
 | `adb shell run-as <package> ls databases/` | List app databases |
 | `adb shell run-as <package> sqlite3 databases/<db> '<sql>'` | Execute SQL query on app database |
+| `adb shell run-as <package> ls databases/<db>` | Check if db file exists before pull |
 | `adb exec-out run-as <package> cat databases/<db>` | Download database file (also -wal, -shm) |
 
 ### Trace (Perfetto)
@@ -93,7 +94,10 @@ All ADB commands used by msh, organized by feature area.
 |---------|---------|
 | `adb shell settings put global sysui_demo_allowed 1` | Enable system UI demo mode |
 | `adb shell am broadcast -a com.android.systemui.demo -e command enter` | Enter demo mode |
-| `adb shell am broadcast -a com.android.systemui.demo -e command clock/battery/network/notifications` | Set clean status bar values |
+| `adb shell am broadcast -a com.android.systemui.demo -e command clock -e hhmm 1000` | Set clock to 10:00 |
+| `adb shell am broadcast -a com.android.systemui.demo -e command battery -e level 100 -e plugged false` | Set battery to 100% unplugged |
+| `adb shell am broadcast -a com.android.systemui.demo -e command network -e wifi show -e level 4` | Set full WiFi signal |
+| `adb shell am broadcast -a com.android.systemui.demo -e command notifications -e visible false` | Hide notifications |
 | `adb exec-out screencap -p` | Capture screenshot as PNG (after 500ms delay) |
 | `adb shell am broadcast -a com.android.systemui.demo -e command exit` | Exit demo mode |
 
