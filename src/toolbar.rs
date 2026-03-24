@@ -71,7 +71,7 @@ impl ToolbarState {
 
     pub fn device_label(&self) -> String {
         match &self.device {
-            Some(d) => selector::device_label(d),
+            Some(d) => selector::selector_label(d),
             None => "no device".to_string(),
         }
     }
@@ -123,7 +123,7 @@ impl ToolbarState {
         self.devices
             .iter()
             .filter(|d| {
-                let label = selector::device_label(d);
+                let label = selector::selector_label(d);
                 apps::fuzzy_matches(&label, &self.filter)
             })
             .collect()
@@ -223,7 +223,7 @@ mod tests {
     #[test]
     fn device_label_with_device() {
         let state = ToolbarState::new(Some(make_device("ABC", Some("Pixel 7"))));
-        assert_eq!(state.device_label(), "Pixel 7");
+        assert_eq!(state.device_label(), "ABC: Pixel 7");
     }
 
     #[test]
