@@ -20,6 +20,7 @@ pub struct MonitorSample {
     pub frozen_frames: u64,
     pub data_kb: u64,
     pub cache_kb: u64,
+    pub debuggable: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,6 +35,7 @@ pub struct MonitorState {
     pub frame_count_history: Vec<u64>,
     pub slow_percent_history: Vec<f32>,
     pub frozen_percent_history: Vec<f32>,
+    pub debuggable: bool,
 }
 
 impl MonitorState {
@@ -43,10 +45,12 @@ impl MonitorState {
             frame_count_history: Vec::new(),
             slow_percent_history: Vec::new(),
             frozen_percent_history: Vec::new(),
+            debuggable: true,
         }
     }
 
     pub fn push(&mut self, sample: MonitorSample) {
+        self.debuggable = sample.debuggable;
         if let Some(prev) = self.history.last() {
             let frame_delta = sample.total_frames.saturating_sub(prev.total_frames);
             let slow_delta = sample.slow_frames.saturating_sub(prev.slow_frames);
@@ -123,6 +127,7 @@ pub fn spawn_poller(
         let mut tick: u64 = 0;
         let mut last_data_kb: u64 = 0;
         let mut last_cache_kb: u64 = 0;
+        let debuggable = adb.is_debuggable(&serial, &package);
         loop {
             let mask = visibility.load(Ordering::Relaxed);
             if mask == 0 {
@@ -162,6 +167,7 @@ pub fn spawn_poller(
 
             sample.data_kb = last_data_kb;
             sample.cache_kb = last_cache_kb;
+            sample.debuggable = debuggable;
 
             if tx.send(sample).is_err() {
                 return;
@@ -180,6 +186,7 @@ mod tests {
     fn sample(rss: u64) -> MonitorSample {
         MonitorSample {
             rss_kb: rss,
+            debuggable: true,
             ..Default::default()
         }
     }
@@ -287,6 +294,17 @@ mod tests {
         assert!(state.frame_count_history.is_empty());
         assert!(state.slow_percent_history.is_empty());
         assert!(state.frozen_percent_history.is_empty());
+    }
+
+    #[test]
+    fn push_tracks_debuggable_flag() {
+        let mut state = MonitorState::new();
+        assert!(state.debuggable);
+        state.push(MonitorSample {
+            debuggable: false,
+            ..Default::default()
+        });
+        assert!(!state.debuggable);
     }
 
 }

@@ -559,6 +559,16 @@ impl Adb for RealAdb {
             .output()?;
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
+
+    fn is_debuggable(&self, serial: &str, package: &str) -> bool {
+        Command::new("adb")
+            .args(["-s", serial, "shell", "run-as", package, "id"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {

@@ -223,6 +223,12 @@ fn render_monitor(
         return;
     }
 
+    if !state.debuggable {
+        let items = vec![Line::styled(" not debuggable", Style::new().fg(theme::MUTED))];
+        frame.render_widget(List::new(items), inner);
+        return;
+    }
+
     let spark_width = (inner.width as usize).saturating_sub(27).max(5);
     frame.render_widget(List::new(items_fn(spark_width, state)), inner);
 }
