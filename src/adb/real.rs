@@ -569,6 +569,25 @@ impl Adb for RealAdb {
             .map(|s| s.success())
             .unwrap_or(false)
     }
+
+    fn get_show_taps(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "get", "system", "show_touches"])
+            .output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).trim() == "1")
+    }
+
+    fn set_show_taps(&self, serial: &str, enabled: bool) -> Result<()> {
+        let val = if enabled { "1" } else { "0" };
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "put", "system", "show_touches", val])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("settings put show_touches failed: {stderr}");
+        }
+        Ok(())
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {

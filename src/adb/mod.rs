@@ -64,4 +64,6 @@ pub trait Adb: Send + Sync {
     fn get_avd_name(&self, serial: &str) -> Result<String>;
     fn get_state(&self, serial: &str) -> Result<String>;
     fn is_debuggable(&self, serial: &str, package: &str) -> bool;
+    fn get_show_taps(&self, serial: &str) -> Result<bool>;
+    fn set_show_taps(&self, serial: &str, enabled: bool) -> Result<()>;
 }

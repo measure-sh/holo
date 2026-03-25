@@ -45,6 +45,7 @@ pub enum Action {
     WirelessAdb,
     LaunchEmulator(String),
     MirrorDevice,
+    ToggleShowTaps,
 }
 
 pub struct App {
@@ -61,6 +62,7 @@ pub struct App {
     airplane_mode: bool,
     wifi_enabled: bool,
     dark_mode: bool,
+    show_taps: bool,
     confirming_quit: bool,
     trace_state: TraceState,
     pub dialog: Option<String>,
@@ -86,6 +88,7 @@ impl App {
             airplane_mode: false,
             wifi_enabled: false,
             dark_mode: false,
+            show_taps: false,
             confirming_quit: false,
             trace_state: TraceState::new(pkg),
             dialog: None,
@@ -403,6 +406,14 @@ impl App {
         self.dark_mode = v;
     }
 
+    pub fn show_taps(&self) -> bool {
+        self.show_taps
+    }
+
+    pub fn set_show_taps(&mut self, v: bool) {
+        self.show_taps = v;
+    }
+
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
     }
@@ -589,6 +600,12 @@ mod tests {
     fn ctrl_i_toggles_airplane_mode() {
         let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(ctrl('i')), Action::ToggleAirplaneMode));
+    }
+
+    #[test]
+    fn ctrl_t_toggles_show_taps() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(matches!(app.handle_key(ctrl('t')), Action::ToggleShowTaps));
     }
 
     #[test]

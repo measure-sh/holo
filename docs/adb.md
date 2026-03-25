@@ -115,6 +115,8 @@ All ADB commands used by msh, organized by feature area.
 | `adb shell settings get secure ui_night_mode` | Get dark mode state |
 | `adb shell cmd uimode night yes/no` | Toggle dark mode |
 | `adb shell input keyevent KEYCODE_WAKEUP` | Wake device screen |
+| `adb shell settings get system show_touches` | Get show taps state |
+| `adb shell settings put system show_touches 1/0` | Toggle show taps overlay |
 
 ### Wireless ADB
 
