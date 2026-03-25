@@ -46,6 +46,7 @@ pub enum Action {
     LaunchEmulator(String),
     MirrorDevice,
     ToggleShowTaps,
+    TogglePointerLocation,
 }
 
 pub struct App {
@@ -63,6 +64,7 @@ pub struct App {
     wifi_enabled: bool,
     dark_mode: bool,
     show_taps: bool,
+    pointer_location: bool,
     confirming_quit: bool,
     trace_state: TraceState,
     pub dialog: Option<String>,
@@ -89,6 +91,7 @@ impl App {
             wifi_enabled: false,
             dark_mode: false,
             show_taps: false,
+            pointer_location: false,
             confirming_quit: false,
             trace_state: TraceState::new(pkg),
             dialog: None,
@@ -414,6 +417,14 @@ impl App {
         self.show_taps = v;
     }
 
+    pub fn pointer_location(&self) -> bool {
+        self.pointer_location
+    }
+
+    pub fn set_pointer_location(&mut self, v: bool) {
+        self.pointer_location = v;
+    }
+
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
     }
@@ -606,6 +617,12 @@ mod tests {
     fn ctrl_t_toggles_show_taps() {
         let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(ctrl('t')), Action::ToggleShowTaps));
+    }
+
+    #[test]
+    fn ctrl_p_toggles_pointer_location() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(matches!(app.handle_key(ctrl('p')), Action::TogglePointerLocation));
     }
 
     #[test]

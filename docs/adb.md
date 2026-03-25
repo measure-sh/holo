@@ -117,6 +117,8 @@ All ADB commands used by msh, organized by feature area.
 | `adb shell input keyevent KEYCODE_WAKEUP` | Wake device screen |
 | `adb shell settings get system show_touches` | Get show taps state |
 | `adb shell settings put system show_touches 1/0` | Toggle show taps overlay |
+| `adb shell settings get system pointer_location` | Get pointer location state |
+| `adb shell settings put system pointer_location 1/0` | Toggle pointer location overlay |
 
 ### Wireless ADB
 

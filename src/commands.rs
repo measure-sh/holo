@@ -17,6 +17,7 @@ const COMMAND_LIST: &[(&str, char, fn() -> Action)] = &[
     ("wireless adb", 'b', || Action::WirelessAdb),
     ("uninstall", 'u', || Action::UninstallApp),
     ("show taps", 't', || Action::ToggleShowTaps),
+    ("pointer location", 'p', || Action::TogglePointerLocation),
 ];
 
 pub struct CommandsState {

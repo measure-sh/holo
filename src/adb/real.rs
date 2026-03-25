@@ -588,6 +588,25 @@ impl Adb for RealAdb {
         }
         Ok(())
     }
+
+    fn get_pointer_location(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "get", "system", "pointer_location"])
+            .output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).trim() == "1")
+    }
+
+    fn set_pointer_location(&self, serial: &str, enabled: bool) -> Result<()> {
+        let val = if enabled { "1" } else { "0" };
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "put", "system", "pointer_location", val])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("settings put pointer_location failed: {stderr}");
+        }
+        Ok(())
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {
