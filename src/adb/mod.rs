@@ -68,4 +68,6 @@ pub trait Adb: Send + Sync {
     fn set_show_taps(&self, serial: &str, enabled: bool) -> Result<()>;
     fn get_pointer_location(&self, serial: &str) -> Result<bool>;
     fn set_pointer_location(&self, serial: &str, enabled: bool) -> Result<()>;
+    fn get_gpu_rendering(&self, serial: &str) -> Result<bool>;
+    fn set_gpu_rendering(&self, serial: &str, enabled: bool) -> Result<()>;
 }

@@ -119,6 +119,8 @@ All ADB commands used by msh, organized by feature area.
 | `adb shell settings put system show_touches 1/0` | Toggle show taps overlay |
 | `adb shell settings get system pointer_location` | Get pointer location state |
 | `adb shell settings put system pointer_location 1/0` | Toggle pointer location overlay |
+| `adb shell getprop debug.hwui.profile` | Get GPU rendering bars state |
+| `adb shell setprop debug.hwui.profile visual_bars/""` | Toggle GPU rendering bars overlay |
 
 ### Wireless ADB
 

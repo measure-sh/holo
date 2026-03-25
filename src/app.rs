@@ -47,6 +47,7 @@ pub enum Action {
     MirrorDevice,
     ToggleShowTaps,
     TogglePointerLocation,
+    ToggleGpuRendering,
 }
 
 pub struct App {
@@ -65,6 +66,7 @@ pub struct App {
     dark_mode: bool,
     show_taps: bool,
     pointer_location: bool,
+    gpu_rendering: bool,
     confirming_quit: bool,
     trace_state: TraceState,
     pub dialog: Option<String>,
@@ -92,6 +94,7 @@ impl App {
             dark_mode: false,
             show_taps: false,
             pointer_location: false,
+            gpu_rendering: false,
             confirming_quit: false,
             trace_state: TraceState::new(pkg),
             dialog: None,
@@ -425,6 +428,14 @@ impl App {
         self.pointer_location = v;
     }
 
+    pub fn gpu_rendering(&self) -> bool {
+        self.gpu_rendering
+    }
+
+    pub fn set_gpu_rendering(&mut self, v: bool) {
+        self.gpu_rendering = v;
+    }
+
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
     }
@@ -623,6 +634,12 @@ mod tests {
     fn ctrl_p_toggles_pointer_location() {
         let mut app = App::new(None, Some("com.test"));
         assert!(matches!(app.handle_key(ctrl('p')), Action::TogglePointerLocation));
+    }
+
+    #[test]
+    fn ctrl_g_toggles_gpu_rendering() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(matches!(app.handle_key(ctrl('g')), Action::ToggleGpuRendering));
     }
 
     #[test]

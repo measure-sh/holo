@@ -159,6 +159,13 @@ impl DispatchContext {
                     spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_pointer_location(s, enabled));
                 }
             }
+            Action::ToggleGpuRendering => {
+                app.set_gpu_rendering(!app.gpu_rendering());
+                if let Some(s) = &serial {
+                    let enabled = app.gpu_rendering();
+                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_gpu_rendering(s, enabled));
+                }
+            }
             Action::WirelessAdb => {
                 if let Some(s) = &serial {
                     spawn_app_action(&self.adb, s, "", |adb, s, _| adb.enable_wireless_adb(s).map(|_| ()));
@@ -398,6 +405,7 @@ pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut 
     app.set_dark_mode(data.initial_dark_mode);
     app.set_show_taps(data.initial_show_taps);
     app.set_pointer_location(data.initial_pointer_location);
+    app.set_gpu_rendering(data.initial_gpu_rendering);
     data
 }
 

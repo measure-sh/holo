@@ -607,6 +607,28 @@ impl Adb for RealAdb {
         }
         Ok(())
     }
+
+    fn get_gpu_rendering(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "getprop", "debug.hwui.profile"])
+            .output()?;
+        Ok(String::from_utf8_lossy(&output.stdout).trim() == "visual_bars")
+    }
+
+    fn set_gpu_rendering(&self, serial: &str, enabled: bool) -> Result<()> {
+        let val = if enabled { "visual_bars" } else { "" };
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "setprop", "debug.hwui.profile", val])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("setprop debug.hwui.profile failed: {stderr}");
+        }
+        Command::new("adb")
+            .args(["-s", serial, "shell", "service", "call", "activity", "1599295570"])
+            .output()?;
+        Ok(())
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {

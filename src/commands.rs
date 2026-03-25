@@ -18,6 +18,7 @@ const COMMAND_LIST: &[(&str, char, fn() -> Action)] = &[
     ("uninstall", 'u', || Action::UninstallApp),
     ("show taps", 't', || Action::ToggleShowTaps),
     ("pointer location", 'p', || Action::TogglePointerLocation),
+    ("gpu rendering", 'g', || Action::ToggleGpuRendering),
 ];
 
 pub struct CommandsState {
