@@ -23,10 +23,8 @@ pub const SUPERSCRIPT_DIGITS: [char; 8] = [
     '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}',
 ];
 
-pub fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
+pub fn panel_title(panel_number: u8, _focused: bool) -> Line<'static> {
     let def = panel::by_number(panel_number);
-    let color = def.border_color(focused);
-
     let mut spans = Vec::new();
 
     let superscript = if panel_number == 0 {
@@ -34,7 +32,7 @@ pub fn panel_title(panel_number: u8, focused: bool) -> Line<'static> {
     } else {
         SUPERSCRIPT_DIGITS[(panel_number - 1) as usize]
     };
-    let digit_color = if focused { color } else { theme::MUTED };
+    let digit_color = def.bright_color;
     spans.push(Span::styled(
         format!(" {}", superscript),
         Style::new().fg(digit_color).add_modifier(Modifier::BOLD),
@@ -137,11 +135,15 @@ pub fn render_app(
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
         .split(inner);
 
     render_toolbar(frame, chunks[0], app);
-    render_panels(frame, chunks[1], app, logcat_lines);
+    render_panels(frame, chunks[2], app, logcat_lines);
 
     if app.toolbar().open.is_some() {
         render_dim_overlay(frame, area);
@@ -174,14 +176,14 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let app_bg = if has_app { theme::DIM_GREEN } else { theme::SURFACE };
 
     let line = Line::from(vec![
-        Span::styled("F1 ", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("^D ", Style::new().fg(theme::KEY_HINT)),
         Span::styled(" \u{2022} ", Style::new().fg(device_dot).bg(device_bg)),
         Span::styled(
             format!("{device_label} \u{25BE} "),
             Style::new().fg(device_fg).bg(device_bg),
         ),
         Span::styled("      ", Style::new()),
-        Span::styled("F2 ", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("^A ", Style::new().fg(theme::KEY_HINT)),
         Span::styled(" \u{2022} ", Style::new().fg(app_dot).bg(app_bg)),
         Span::styled(
             format!("{app_label} \u{25BE} "),
@@ -343,28 +345,26 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let vis = app.panel_visibility();
     let commands_visible = app.commands().visible;
     let logcat_visible = vis[0];
-    let trace_visible = vis[1];
-    let permissions_visible = vis[2];
+    let monitor_visible = vis[1] || vis[2] || vis[3];
+    let trace_visible = vis[4];
+    let permissions_visible = vis[5];
     let mid_visible = trace_visible || permissions_visible;
-    let bot_left_visible = vis[3] || vis[4] || vis[5];
-    let bot_right_visible = vis[6] || vis[7];
-    let bot_visible = bot_left_visible || bot_right_visible;
+    let bot_visible = vis[6] || vis[7];
 
     let top_visible = commands_visible || logcat_visible;
-    let section_count = top_visible as u8 + mid_visible as u8 + bot_visible as u8;
+    let section_count = top_visible as u8 + monitor_visible as u8 + mid_visible as u8 + bot_visible as u8;
     if section_count == 0 { return; }
 
-    let mut constraints = Vec::new();
-    if top_visible {
-        if section_count == 1 { constraints.push(Constraint::Min(0)); }
-        else if mid_visible { constraints.push(Constraint::Percentage(40)); }
-        else { constraints.push(Constraint::Percentage(50)); }
-    }
-    if mid_visible {
-        if !bot_visible && !top_visible { constraints.push(Constraint::Min(0)); }
-        else { constraints.push(Constraint::Percentage(15)); }
-    }
-    if bot_visible { constraints.push(Constraint::Min(0)); }
+    let mut weights: Vec<u32> = Vec::new();
+    if top_visible { weights.push(5); }
+    if monitor_visible { weights.push(2); }
+    if mid_visible { weights.push(2); }
+    if bot_visible { weights.push(2); }
+    let total: u32 = weights.iter().sum();
+    let constraints: Vec<Constraint> = weights
+        .iter()
+        .map(|&w| Constraint::Ratio(w, total))
+        .collect();
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
@@ -374,6 +374,10 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let mut idx = 0;
     if top_visible {
         render_top_section(frame, rows[idx], app, logcat_lines, commands_visible, logcat_visible);
+        idx += 1;
+    }
+    if monitor_visible {
+        render_monitor_section(frame, rows[idx], app);
         idx += 1;
     }
     if mid_visible {
@@ -446,26 +450,13 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 
     let items: Vec<ListItem> = filtered
         .iter()
-        .map(|(name, _)| {
-            let is_toggle_on = (*name == "layout bounds" && app.layout_bounds())
-                || (*name == "airplane mode" && app.airplane_mode())
-                || (*name == "wifi" && app.wifi_enabled())
-                || (*name == "dark mode" && app.dark_mode());
-            let is_global = *name == "open app" || *name == "kill app";
-            let display_name = if *name == "layout bounds" || *name == "wifi" || *name == "airplane mode" || *name == "dark mode" {
-                let verb = if is_toggle_on { "disable" } else { "enable" };
-                format!("{} {}", verb, name)
-            } else {
-                name.to_string()
-            };
-            let mut spans = vec![];
-            if is_global {
-                let (first, rest) = display_name.split_at(1);
-                spans.push(Span::styled(first.to_string(), Style::new().fg(theme::KEY_HINT)));
-                spans.push(Span::styled(rest.to_string(), Style::new().fg(theme::FG)));
-            } else {
-                spans.push(Span::styled(display_name, Style::new().fg(theme::FG)));
-            }
+        .map(|(name, shortcut, _)| {
+            let hint = format!("^{}", shortcut);
+            let spans = vec![
+                Span::styled(*name, Style::new().fg(theme::FG)),
+                Span::raw("  "),
+                Span::styled(hint, Style::new().fg(theme::MUTED)),
+            ];
             ListItem::new(Line::from(spans))
         })
         .collect();
@@ -484,89 +475,55 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 
+fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App) {
+    let vis = app.panel_visibility();
+    let panels: Vec<u8> = [
+        (vis[1], panel::FRAMES),
+        (vis[2], panel::DISK),
+        (vis[3], panel::SYSTEM),
+    ]
+    .iter()
+    .filter(|(v, _)| *v)
+    .map(|(_, p)| *p)
+    .collect();
+
+    if panels.is_empty() {
+        return;
+    }
+
+    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, &p) in panels.iter().enumerate() {
+        match p {
+            panel::FRAMES => monitor_ui::render_frames_panel(frame, cols[i], false, app.monitor_state()),
+            panel::DISK => monitor_ui::render_disk_panel(frame, cols[i], false, app.monitor_state()),
+            panel::SYSTEM => monitor_ui::render_system_panel(frame, cols[i], false, app.monitor_state()),
+            _ => {}
+        }
+    }
+}
+
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let left_visible = vis[3] || vis[4] || vis[5];
-    let right_visible = vis[6] || vis[7];
+    let files_visible = vis[6];
+    let database_visible = vis[7];
 
-    match (left_visible, right_visible) {
+    match (files_visible, database_visible) {
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            render_bottom_left(frame, cols[0], app);
-            render_right_column(frame, cols[1], app);
+            files_ui::render_files_panel(frame, cols[0], is_focused(app, panel::FILES), app.files_state());
+            database_ui::render_database_panel(frame, cols[1], is_focused(app, panel::DATABASE), app.database_state_mut());
         }
-        (true, false) => render_bottom_left(frame, area, app),
-        (false, true) => render_right_column(frame, area, app),
+        (true, false) => files_ui::render_files_panel(frame, area, is_focused(app, panel::FILES), app.files_state()),
+        (false, true) => database_ui::render_database_panel(frame, area, is_focused(app, panel::DATABASE), app.database_state_mut()),
         (false, false) => {}
-    }
-}
-
-fn render_bottom_left(frame: &mut Frame, area: Rect, app: &mut App) {
-    let vis = app.panel_visibility();
-    let panels: Vec<u8> = [
-        (vis[3], panel::FRAMES),
-        (vis[4], panel::DISK),
-        (vis[5], panel::SYSTEM),
-    ]
-    .iter()
-    .filter(|(v, _)| *v)
-    .map(|(_, p)| *p)
-    .collect();
-
-    if panels.is_empty() {
-        return;
-    }
-
-    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-
-    for (i, &p) in panels.iter().enumerate() {
-        match p {
-            panel::FRAMES => monitor_ui::render_frames_panel(frame, rows[i], false, app.monitor_state()),
-            panel::DISK => monitor_ui::render_disk_panel(frame, rows[i], false, app.monitor_state()),
-            panel::SYSTEM => monitor_ui::render_system_panel(frame, rows[i], false, app.monitor_state()),
-            _ => {}
-        }
-    }
-}
-
-fn render_right_column(frame: &mut Frame, area: Rect, app: &mut App) {
-    let vis = app.panel_visibility();
-    let panels: Vec<u8> = [
-        (vis[6], panel::FILES),
-        (vis[7], panel::DATABASE),
-    ]
-    .iter()
-    .filter(|(v, _)| *v)
-    .map(|(_, p)| *p)
-    .collect();
-
-    if panels.is_empty() {
-        return;
-    }
-
-    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
-    let rows = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(constraints)
-        .split(area);
-
-    for (i, &p) in panels.iter().enumerate() {
-        match p {
-            panel::FILES => {
-                files_ui::render_files_panel(frame, rows[i], is_focused(app, panel::FILES), app.files_state());
-            }
-            panel::DATABASE => {
-                database_ui::render_database_panel(frame, rows[i], is_focused(app, panel::DATABASE), app.database_state_mut());
-            }
-            _ => {}
-        }
     }
 }
 

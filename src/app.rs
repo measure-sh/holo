@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::adb::Device;
 use crate::commands::CommandsState;
@@ -107,16 +107,18 @@ impl App {
             return self.database_state.handle_key(key).unwrap_or(Action::Noop);
         }
 
-        match code {
-            KeyCode::F(1) => {
-                self.toolbar.open_devices();
-                return Action::FetchDevices;
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            match code {
+                KeyCode::Char('d') => {
+                    self.toolbar.open_devices();
+                    return Action::FetchDevices;
+                }
+                KeyCode::Char('a') => {
+                    self.toolbar.open_apps();
+                    return Action::FetchApps;
+                }
+                _ => {}
             }
-            KeyCode::F(2) => {
-                self.toolbar.open_apps();
-                return Action::FetchApps;
-            }
-            _ => {}
         }
 
         if self.toolbar.open.is_some() {
@@ -142,7 +144,7 @@ impl App {
         }
 
         if self.focused == Some(panel::COMMANDS) {
-            if let Some(action) = self.commands.handle_key(code) {
+            if let Some(action) = self.commands.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;
@@ -207,9 +209,15 @@ impl App {
             }
         }
 
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            if let KeyCode::Char(ch) = code {
+                if let Some(action) = self.commands.action_for_shortcut(ch) {
+                    return action;
+                }
+            }
+        }
+
         match code {
-            KeyCode::Char('o') => Action::OpenApp,
-            KeyCode::Char('k') => Action::KillApp,
             KeyCode::Char('q') => {
                 self.confirming_quit = true;
                 Action::Noop
@@ -543,16 +551,44 @@ mod tests {
         assert_eq!(app.focused_panel(), None);
     }
 
-    #[test]
-    fn o_opens_app() {
-        let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('o'))), Action::OpenApp));
+    fn ctrl(ch: char) -> KeyEvent {
+        KeyEvent::new(KeyCode::Char(ch), KeyModifiers::CONTROL)
     }
 
     #[test]
-    fn k_kills_app() {
+    fn ctrl_o_opens_app() {
         let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('k'))), Action::KillApp));
+        assert!(matches!(app.handle_key(ctrl('o')), Action::OpenApp));
+    }
+
+    #[test]
+    fn ctrl_k_kills_app() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(matches!(app.handle_key(ctrl('k')), Action::KillApp));
+    }
+
+    #[test]
+    fn ctrl_d_opens_device_selector() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(matches!(app.handle_key(ctrl('d')), Action::FetchDevices));
+    }
+
+    #[test]
+    fn ctrl_a_opens_app_selector() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(matches!(app.handle_key(ctrl('a')), Action::FetchApps));
+    }
+
+    #[test]
+    fn ctrl_n_toggles_dark_mode() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(matches!(app.handle_key(ctrl('n')), Action::ToggleDarkMode));
+    }
+
+    #[test]
+    fn ctrl_i_toggles_airplane_mode() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(matches!(app.handle_key(ctrl('i')), Action::ToggleAirplaneMode));
     }
 
     #[test]
@@ -592,7 +628,7 @@ mod tests {
     fn t_focuses_trace_panel() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('t')));
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.focused_panel(), Some(panel::TRACE));
     }
 
     #[test]
@@ -620,7 +656,7 @@ mod tests {
     fn esc_unfocuses_trace_panel() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('t')));
-        assert_eq!(app.focused_panel(), Some(2));
+        assert_eq!(app.focused_panel(), Some(panel::TRACE));
         app.handle_key(key(KeyCode::Esc));
         assert_eq!(app.focused_panel(), None);
     }

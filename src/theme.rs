@@ -21,6 +21,8 @@ pub const DIM_YELLOW: Color = Color::Rgb(0x38, 0x2e, 0x1c);
 pub const DIM_CYAN: Color = Color::Rgb(0x12, 0x2e, 0x36);
 pub const DIM_MAGENTA: Color = Color::Rgb(0x2e, 0x26, 0x3c);
 pub const DIM_RED: Color = Color::Rgb(0x3c, 0x20, 0x26);
+pub const ORANGE: Color = Color::Rgb(0xff, 0x9e, 0x64);
+pub const DIM_ORANGE: Color = Color::Rgb(0x3c, 0x2a, 0x1a);
 pub const DIM_TEAL: Color = Color::Rgb(0x1a, 0x32, 0x2e);
 
 pub fn level_color(level: char) -> Color {

@@ -1,21 +1,21 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::app::Action;
 use crate::apps;
 
-const COMMAND_LIST: &[(&str, fn() -> Action)] = &[
-    ("open app", || Action::OpenApp),
-    ("kill app", || Action::KillApp),
-    ("wakeup device", || Action::WakeScreen),
-    ("mirror device", || Action::MirrorDevice),
-    ("clear data", || Action::ClearData),
-    ("dark mode", || Action::ToggleDarkMode),
-    ("take screenshot", || Action::Screenshot),
-    ("layout bounds", || Action::ToggleLayoutBounds),
-    ("wifi", || Action::ToggleWifi),
-    ("airplane mode", || Action::ToggleAirplaneMode),
-    ("connect wireless adb", || Action::WirelessAdb),
-    ("uninstall app", || Action::UninstallApp),
+const COMMAND_LIST: &[(&str, char, fn() -> Action)] = &[
+    ("open app", 'o', || Action::OpenApp),
+    ("kill app", 'k', || Action::KillApp),
+    ("wakeup", 'w', || Action::WakeScreen),
+    ("mirror", 'r', || Action::MirrorDevice),
+    ("clear data", 'x', || Action::ClearData),
+    ("dark mode", 'n', || Action::ToggleDarkMode),
+    ("screenshot", 's', || Action::Screenshot),
+    ("layout bounds", 'l', || Action::ToggleLayoutBounds),
+    ("wifi", 'f', || Action::ToggleWifi),
+    ("airplane mode", 'i', || Action::ToggleAirplaneMode),
+    ("wireless adb", 'b', || Action::WirelessAdb),
+    ("uninstall", 'u', || Action::UninstallApp),
 ];
 
 pub struct CommandsState {
@@ -35,8 +35,13 @@ impl CommandsState {
         }
     }
 
-    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
-        match code {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            if let KeyCode::Char(ch) = key.code {
+                return self.action_for_shortcut(ch);
+            }
+        }
+        match key.code {
             KeyCode::Up => {
                 self.cursor = self.cursor.saturating_sub(1);
                 Some(Action::Noop)
@@ -48,7 +53,7 @@ impl CommandsState {
             }
             KeyCode::Enter => {
                 let filtered = self.filtered_commands();
-                if let Some((_, action_fn)) = filtered.get(self.cursor) {
+                if let Some((_, _, action_fn)) = filtered.get(self.cursor) {
                     Some(action_fn())
                 } else {
                     Some(Action::Noop)
@@ -73,11 +78,22 @@ impl CommandsState {
         }
     }
 
-    pub fn filtered_commands(&self) -> Vec<(&'static str, fn() -> Action)> {
+    pub fn action_for_shortcut(&self, ch: char) -> Option<Action> {
+        let ch = ch.to_ascii_lowercase();
         COMMAND_LIST
             .iter()
-            .filter(|(name, _)| {
-                if self.is_emulator && *name == "mirror device" {
+            .find(|(name, key, _)| {
+                *key == ch
+                    && !(self.is_emulator && *name == "mirror")
+            })
+            .map(|(_, _, action_fn)| action_fn())
+    }
+
+    pub fn filtered_commands(&self) -> Vec<(&'static str, char, fn() -> Action)> {
+        COMMAND_LIST
+            .iter()
+            .filter(|(name, _, _)| {
+                if self.is_emulator && *name == "mirror" {
                     return false;
                 }
                 apps::fuzzy_matches(name, &self.filter)
