@@ -279,14 +279,12 @@ fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
 
     let timestamp = Span::styled(parsed.timestamp, Style::new().fg(t.muted));
 
-    let tag_style = Style::new().fg(level_fg).add_modifier(Modifier::BOLD);
-    let tag_spans = highlight_spans(parsed.tag, search, tag_style);
+    let tag = Span::styled(parsed.tag, Style::new().fg(t.muted));
 
     let msg_text = parsed.message.replace('\t', "  ");
     let msg_prefix = Span::styled(": ", Style::new().fg(t.fg));
 
-    let mut spans = vec![label, sep.clone(), timestamp, sep];
-    spans.extend(tag_spans);
+    let mut spans = vec![label, sep.clone(), timestamp, sep, tag];
     spans.push(msg_prefix);
     let msg_style = Style::new().fg(t.fg);
     if search.is_empty() {
