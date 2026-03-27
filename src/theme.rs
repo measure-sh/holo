@@ -4,7 +4,6 @@ use ratatui::style::Color;
 pub struct Theme {
     pub bg: Color,
     pub surface: Color,
-    pub popup_bg: Color,
     pub fg: Color,
     pub muted: Color,
     pub accent: Color,
@@ -25,11 +24,23 @@ const DARK: Theme = Theme {
     magenta:  Color::Rgb(0xbb, 0x9a, 0xf7),
     cyan:     Color::Rgb(0x0d, 0xb9, 0xd7),
     surface:  Color::Rgb(0x32, 0x34, 0x4a),
-    popup_bg: Color::Rgb(0x1a, 0x1b, 0x26),
     muted:    Color::Rgb(0x56, 0x5f, 0x89),
 };
 
-const THEMES: [&Theme; 1] = [&DARK];
+const LIGHT: Theme = Theme {
+    bg:       Color::Rgb(0xf3, 0xe4, 0xcb),
+    fg:       Color::Rgb(0x4d, 0x2e, 0x1a),
+    accent:   Color::Rgb(0xa3, 0x2f, 0x1a),
+    red:      Color::Rgb(0xa4, 0x37, 0x3c),
+    green:    Color::Rgb(0xa4, 0x6d, 0x2d),
+    yellow:   Color::Rgb(0xa8, 0x61, 0x1f),
+    magenta:  Color::Rgb(0x9c, 0x35, 0x21),
+    cyan:     Color::Rgb(0x75, 0x58, 0x33),
+    surface:  Color::Rgb(0xc8, 0xb4, 0x94),
+    muted:    Color::Rgb(0x9f, 0x82, 0x53),
+};
+
+const THEMES: [&Theme; 2] = [&DARK, &LIGHT];
 static CURRENT: AtomicU8 = AtomicU8::new(0);
 
 pub fn current() -> &'static Theme {
