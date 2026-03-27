@@ -5,7 +5,14 @@ use color_eyre::Result;
 use crate::adb::{Adb, Device};
 use crate::app::{Action, App};
 use crate::data::DataSources;
+use crate::theme;
 use crate::toolbar;
+
+pub struct CommandResult {
+    pub error_msg: String,
+    pub result: Result<()>,
+    pub rollback: Option<Box<dyn FnOnce(&mut App) + Send>>,
+}
 
 pub struct DispatchContext {
     pub adb: Arc<dyn Adb>,
@@ -14,6 +21,8 @@ pub struct DispatchContext {
     pub devices_rx: Option<mpsc::Receiver<Vec<Device>>>,
     pub packages_rx: Option<mpsc::Receiver<Vec<String>>>,
     pub pending_emulator_rx: Option<mpsc::Receiver<Device>>,
+    pub command_tx: mpsc::Sender<CommandResult>,
+    pub command_rx: mpsc::Receiver<CommandResult>,
 }
 
 impl DispatchContext {
@@ -40,6 +49,14 @@ impl DispatchContext {
             if let Ok(device) = rx.try_recv() {
                 self.pending_emulator_rx = None;
                 self.dispatch(Action::ChangeDevice(device), app);
+            }
+        }
+        while let Ok(cr) = self.command_rx.try_recv() {
+            if cr.result.is_err() {
+                app.set_status_flash(cr.error_msg, true);
+                if let Some(rollback) = cr.rollback {
+                    rollback(app);
+                }
             }
         }
     }
@@ -94,97 +111,133 @@ impl DispatchContext {
             }
             Action::OpenApp => {
                 if let (Some(s), Some(p)) = (&serial, &package) {
-                    spawn_app_action(&self.adb, s, p, |adb, s, p| adb.launch_app(s, p));
+                    app.set_status_flash("Opening app...".into(), false);
+                    spawn_app_action(&self.adb, s, p, "Failed to open app", &self.command_tx, None, |adb, s, p| adb.launch_app(s, p));
                 }
             }
             Action::KillApp => {
                 if let (Some(s), Some(p)) = (&serial, &package) {
-                    spawn_app_action(&self.adb, s, p, |adb, s, p| adb.kill_app(s, p));
+                    app.set_status_flash("Killing app...".into(), false);
+                    spawn_app_action(&self.adb, s, p, "Failed to kill app", &self.command_tx, None, |adb, s, p| adb.kill_app(s, p));
                 }
             }
             Action::ClearData => {
                 if let (Some(s), Some(p)) = (&serial, &package) {
-                    spawn_app_action(&self.adb, s, p, |adb, s, p| adb.clear_app_data(s, p));
+                    app.set_status_flash("Clearing data...".into(), false);
+                    spawn_app_action(&self.adb, s, p, "Failed to clear data", &self.command_tx, None, |adb, s, p| adb.clear_app_data(s, p));
                 }
             }
             Action::UninstallApp => {
                 if let (Some(s), Some(p)) = (&serial, &package) {
-                    spawn_app_action(&self.adb, s, p, |adb, s, p| adb.uninstall_app(s, p));
+                    app.set_status_flash("Uninstalling...".into(), false);
+                    spawn_app_action(&self.adb, s, p, "Failed to uninstall", &self.command_tx, None, |adb, s, p| adb.uninstall_app(s, p));
                 }
             }
             Action::WakeScreen => {
                 if let Some(s) = &serial {
-                    spawn_app_action(&self.adb, s, package.as_deref().unwrap_or(""), |adb, s, _| adb.wake_screen(s));
+                    app.set_status_flash("Waking screen...".into(), false);
+                    spawn_app_action(&self.adb, s, package.as_deref().unwrap_or(""), "Failed to wake screen", &self.command_tx, None, |adb, s, _| adb.wake_screen(s));
                 }
             }
             Action::ToggleLayoutBounds => {
                 app.set_layout_bounds(!app.layout_bounds());
+                let enabled = app.layout_bounds();
+                let label = if enabled { "Layout bounds on" } else { "Layout bounds off" };
+                app.set_status_flash(label.into(), false);
                 if let Some(s) = &serial {
-                    let enabled = app.layout_bounds();
-                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_layout_bounds(s, enabled));
+                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_layout_bounds(!enabled));
+                    spawn_app_action(&self.adb, s, "", "Failed to set layout bounds", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_layout_bounds(s, enabled));
                 }
             }
             Action::ToggleAirplaneMode => {
                 app.set_airplane_mode(!app.airplane_mode());
+                let enabled = app.airplane_mode();
+                let label = if enabled { "Airplane mode on" } else { "Airplane mode off" };
+                app.set_status_flash(label.into(), false);
                 if let Some(s) = &serial {
-                    let enabled = app.airplane_mode();
-                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_airplane_mode(s, enabled));
+                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_airplane_mode(!enabled));
+                    spawn_app_action(&self.adb, s, "", "Failed to toggle airplane mode", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_airplane_mode(s, enabled));
                 }
             }
             Action::ToggleWifi => {
                 app.set_wifi_enabled(!app.wifi_enabled());
+                let enabled = app.wifi_enabled();
+                let label = if enabled { "Wi-Fi on" } else { "Wi-Fi off" };
+                app.set_status_flash(label.into(), false);
                 if let Some(s) = &serial {
-                    let enabled = app.wifi_enabled();
-                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_wifi_enabled(s, enabled));
+                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_wifi_enabled(!enabled));
+                    spawn_app_action(&self.adb, s, "", "Failed to toggle Wi-Fi", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_wifi_enabled(s, enabled));
                 }
             }
             Action::ToggleDarkMode => {
                 app.set_dark_mode(!app.dark_mode());
+                let enabled = app.dark_mode();
+                theme::set_theme(if enabled { 0 } else { 1 });
+                let label = if enabled { "Dark mode on" } else { "Dark mode off" };
+                app.set_status_flash(label.into(), false);
                 if let Some(s) = &serial {
-                    let enabled = app.dark_mode();
-                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_dark_mode(s, enabled));
+                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_dark_mode(!enabled));
+                    spawn_app_action(&self.adb, s, "", "Failed to toggle dark mode", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_dark_mode(s, enabled));
                 }
             }
             Action::ToggleShowTaps => {
                 app.set_show_taps(!app.show_taps());
+                let enabled = app.show_taps();
+                let label = if enabled { "Show taps on" } else { "Show taps off" };
+                app.set_status_flash(label.into(), false);
                 if let Some(s) = &serial {
-                    let enabled = app.show_taps();
-                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_show_taps(s, enabled));
+                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_show_taps(!enabled));
+                    spawn_app_action(&self.adb, s, "", "Failed to toggle show taps", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_show_taps(s, enabled));
                 }
             }
             Action::TogglePointerLocation => {
                 app.set_pointer_location(!app.pointer_location());
+                let enabled = app.pointer_location();
+                let label = if enabled { "Pointer location on" } else { "Pointer location off" };
+                app.set_status_flash(label.into(), false);
                 if let Some(s) = &serial {
-                    let enabled = app.pointer_location();
-                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_pointer_location(s, enabled));
+                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_pointer_location(!enabled));
+                    spawn_app_action(&self.adb, s, "", "Failed to toggle pointer location", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_pointer_location(s, enabled));
                 }
             }
             Action::ToggleGpuRendering => {
                 app.set_gpu_rendering(!app.gpu_rendering());
+                let enabled = app.gpu_rendering();
+                let label = if enabled { "GPU rendering on" } else { "GPU rendering off" };
+                app.set_status_flash(label.into(), false);
                 if let Some(s) = &serial {
-                    let enabled = app.gpu_rendering();
-                    spawn_app_action(&self.adb, s, "", move |adb, s, _| adb.set_gpu_rendering(s, enabled));
+                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_gpu_rendering(!enabled));
+                    spawn_app_action(&self.adb, s, "", "Failed to toggle GPU rendering", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_gpu_rendering(s, enabled));
                 }
             }
             Action::WirelessAdb => {
                 if let Some(s) = &serial {
-                    spawn_app_action(&self.adb, s, "", |adb, s, _| adb.enable_wireless_adb(s).map(|_| ()));
+                    app.set_status_flash("Enabling wireless ADB...".into(), false);
+                    spawn_app_action(&self.adb, s, "", "Failed to enable wireless ADB", &self.command_tx, None, |adb, s, _| adb.enable_wireless_adb(s).map(|_| ()));
                 }
             }
             Action::Screenshot => {
                 if let (Some(s), Some(p)) = (&serial, &package) {
+                    app.set_status_flash("Taking screenshot...".into(), false);
                     let adb = self.adb.clone();
                     let serial = s.clone();
                     let package = p.clone();
+                    let tx = self.command_tx.clone();
                     std::thread::spawn(move || {
                         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
                         let dest = std::env::temp_dir().join("msh")
                             .join(&package)
                             .join("screenshots")
                             .join(format!("{timestamp}_screenshot.png"));
-                        if adb.take_screenshot(&serial, &dest).is_ok() {
+                        let result = adb.take_screenshot(&serial, &dest);
+                        if result.is_ok() {
                             let _ = open::that(&dest);
                         }
+                        let _ = tx.send(CommandResult {
+                            error_msg: "Failed to take screenshot".into(),
+                            result,
+                            rollback: None,
+                        });
                     });
                 }
             }
@@ -247,14 +300,9 @@ impl DispatchContext {
                     d.start_list_dir(self.adb.clone(), s.clone(), p.clone(), path);
                 }
             }
-            Action::PullFile(path) => {
-                if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
-                    d.start_pull_file(self.adb.clone(), s.clone(), p.clone(), path, false);
-                }
-            }
             Action::OpenFile(path) => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
-                    d.start_pull_file(self.adb.clone(), s.clone(), p.clone(), path, true);
+                    d.start_pull_file(self.adb.clone(), s.clone(), p.clone(), path);
                 }
             }
             Action::StartTrace => {
@@ -278,6 +326,7 @@ impl DispatchContext {
             }
             Action::MirrorDevice => {
                 if let Some(s) = &serial {
+                    app.set_status_flash("Starting mirror...".into(), false);
                     let has_scrcpy = std::process::Command::new("scrcpy")
                         .arg("--version")
                         .stdout(std::process::Stdio::null())
@@ -335,13 +384,19 @@ fn spawn_app_action(
     adb: &Arc<dyn Adb>,
     serial: &str,
     package: &str,
+    error_msg: &str,
+    tx: &mpsc::Sender<CommandResult>,
+    rollback: Option<Box<dyn FnOnce(&mut App) + Send>>,
     f: impl FnOnce(Arc<dyn Adb>, &str, &str) -> Result<()> + Send + 'static,
 ) {
     let adb = adb.clone();
     let serial = serial.to_string();
     let package = package.to_string();
+    let tx = tx.clone();
+    let error_msg = error_msg.to_string();
     std::thread::spawn(move || {
-        let _ = f(adb, &serial, &package);
+        let result = f(adb, &serial, &package);
+        let _ = tx.send(CommandResult { error_msg, result, rollback });
     });
 }
 
@@ -421,6 +476,7 @@ pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut 
     app.set_airplane_mode(data.initial_airplane_mode);
     app.set_wifi_enabled(data.initial_wifi_enabled);
     app.set_dark_mode(data.initial_dark_mode);
+    theme::set_theme(if data.initial_dark_mode { 0 } else { 1 });
     app.set_show_taps(data.initial_show_taps);
     app.set_pointer_location(data.initial_pointer_location);
     app.set_gpu_rendering(data.initial_gpu_rendering);
