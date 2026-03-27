@@ -11,16 +11,18 @@ use crate::adb::Adb;
 use crate::theme;
 
 fn battery_color(level: u8) -> ratatui::style::Color {
+    let t = theme::current();
     if level < 10 {
-        theme::RED
+        t.red
     } else if level <= 25 {
-        theme::YELLOW
+        t.yellow
     } else {
-        theme::FG
+        t.fg
     }
 }
 
 pub fn battery_bar(level: u8) -> Line<'static> {
+    let t = theme::current();
     const BAR_WIDTH: usize = 10;
     let filled = ((level as usize) * BAR_WIDTH / 100).min(BAR_WIDTH);
     let empty = BAR_WIDTH - filled;
@@ -29,7 +31,7 @@ pub fn battery_bar(level: u8) -> Line<'static> {
     Line::from(vec![
         Span::raw(" "),
         Span::styled("█".repeat(filled), Style::new().fg(color)),
-        Span::styled("░".repeat(empty), Style::new().fg(theme::SURFACE)),
+        Span::styled("░".repeat(empty), Style::new().fg(t.surface)),
         Span::styled(format!(" {level}% "), Style::new().fg(color)),
     ])
     .alignment(Alignment::Right)
@@ -57,19 +59,22 @@ mod tests {
 
     #[test]
     fn battery_color_red_below_10() {
-        assert_eq!(battery_color(0), theme::RED);
-        assert_eq!(battery_color(9), theme::RED);
+        let t = theme::current();
+        assert_eq!(battery_color(0), t.red);
+        assert_eq!(battery_color(9), t.red);
     }
 
     #[test]
     fn battery_color_yellow_10_to_25() {
-        assert_eq!(battery_color(10), theme::YELLOW);
-        assert_eq!(battery_color(25), theme::YELLOW);
+        let t = theme::current();
+        assert_eq!(battery_color(10), t.yellow);
+        assert_eq!(battery_color(25), t.yellow);
     }
 
     #[test]
     fn battery_color_normal_above_25() {
-        assert_eq!(battery_color(26), theme::FG);
-        assert_eq!(battery_color(100), theme::FG);
+        let t = theme::current();
+        assert_eq!(battery_color(26), t.fg);
+        assert_eq!(battery_color(100), t.fg);
     }
 }

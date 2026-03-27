@@ -23,10 +23,11 @@ pub fn render_logcat_panel(
     logcat_lines: &[String],
     app: &mut App,
 ) {
+    let t = theme::current();
     let editing = app.logcat_state().editing;
 
     let copied_active = app.logcat_state().copied_at
-        .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(1));
+        .is_some_and(|ts| ts.elapsed() < std::time::Duration::from_secs(1));
     if !copied_active {
         app.logcat_state_mut().copied_at = None;
     }
@@ -60,13 +61,13 @@ pub fn render_logcat_panel(
             Line::from(vec![
                 Span::styled(
                     format!(" ↑{} ", logcat_scroll),
-                    Style::new().fg(theme::MUTED),
+                    Style::new().fg(t.muted),
                 ),
                 Span::styled(
                     " esc",
-                    Style::new().fg(theme::KEY_HINT).add_modifier(Modifier::BOLD),
+                    Style::new().fg(t.red).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" resume ", Style::new().fg(theme::MUTED)),
+                Span::styled(" resume ", Style::new().fg(t.muted)),
             ])
             .alignment(Alignment::Right),
         );
@@ -86,15 +87,16 @@ pub fn render_logcat_panel(
         let mut scrollbar_state =
             ScrollbarState::new(filtered.len().saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::new().fg(theme::MUTED))
-            .track_style(Style::new().fg(theme::SURFACE));
+            .thumb_style(Style::new().fg(t.muted))
+            .track_style(Style::new().fg(t.surface));
         frame.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
     }
 }
 
 fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, copied_active: bool) -> Line<'static> {
-    let accent = Style::new().fg(theme::KEY_HINT);
-    let muted = Style::new().fg(theme::MUTED);
+    let t = theme::current();
+    let accent = Style::new().fg(t.red);
+    let muted = Style::new().fg(t.muted);
     let border = Style::new().fg(panel::by_number(panel::LOGCAT).border_color(true));
 
     let mut spans = Vec::new();
@@ -102,13 +104,13 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
     spans.push(Span::styled(" /", accent));
     if matches!(editing, Some(LogcatEditTarget::Search)) {
         let search_text = if filter.search.is_empty() { String::new() } else { filter.search.clone() };
-        spans.push(Span::styled(search_text, Style::new().fg(theme::FG)));
-        spans.push(Span::styled("_", Style::new().fg(theme::FG)));
-        spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
+        spans.push(Span::styled(search_text, Style::new().fg(t.fg)));
+        spans.push(Span::styled("_", Style::new().fg(t.fg)));
+        spans.push(Span::styled(" ↩ ", Style::new().fg(t.red)));
     } else if filter.search.is_empty() {
         spans.push(Span::styled("search ", muted));
     } else {
-        spans.push(Span::styled(format!("{} ", filter.search), Style::new().fg(theme::FG)));
+        spans.push(Span::styled(format!("{} ", filter.search), Style::new().fg(t.fg)));
     }
 
     spans.push(Span::styled("───", border));
@@ -124,10 +126,10 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
     };
     spans.push(Span::styled(" t", accent));
     spans.push(Span::styled("ag:", muted));
-    spans.push(Span::styled(format!("{}", tag_display), Style::new().fg(theme::FG)));
+    spans.push(Span::styled(format!("{}", tag_display), Style::new().fg(t.fg)));
     if matches!(editing, Some(LogcatEditTarget::Tag)) {
-        spans.push(Span::styled("_", Style::new().fg(theme::FG)));
-        spans.push(Span::styled(" ↩ ", Style::new().fg(theme::RED)));
+        spans.push(Span::styled("_", Style::new().fg(t.fg)));
+        spans.push(Span::styled(" ↩ ", Style::new().fg(t.red)));
     } else {
         spans.push(Span::styled(" ", muted));
     }
@@ -150,7 +152,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
     spans.push(Span::styled("───", border));
 
     if copied_active {
-        spans.push(Span::styled(" copied! ", Style::new().fg(theme::GREEN)));
+        spans.push(Span::styled(" copied! ", Style::new().fg(t.green)));
     } else {
         spans.push(Span::styled(" c", accent));
         spans.push(Span::styled("opy ", muted));
@@ -164,7 +166,7 @@ mod tests {
     use super::*;
 
     fn base() -> Style {
-        Style::new().fg(theme::FG)
+        Style::new().fg(theme::current().fg)
     }
 
     #[test]
@@ -228,9 +230,10 @@ fn highlight_spans<'a>(text: &'a str, search: &str, base_style: Style) -> Vec<Sp
         return vec![Span::styled(text, base_style)];
     }
 
+    let t = theme::current();
     let highlight_style = Style::new()
-        .fg(theme::BG)
-        .bg(theme::YELLOW)
+        .fg(t.bg)
+        .bg(t.yellow)
         .add_modifier(Modifier::UNDERLINED);
 
     let lower_text = text.to_lowercase();
@@ -261,6 +264,7 @@ fn highlight_spans<'a>(text: &'a str, search: &str, base_style: Style) -> Vec<Sp
 }
 
 fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
+    let t = theme::current();
     let Some(parsed) = logcat::parse(raw) else {
         return Line::from(raw.replace('\t', "  "));
     };
@@ -273,25 +277,24 @@ fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
 
     let sep = Span::raw(" ");
 
-    let timestamp = Span::styled(parsed.timestamp, Style::new().fg(theme::MUTED));
+    let timestamp = Span::styled(parsed.timestamp, Style::new().fg(t.muted));
 
     let tag_style = Style::new().fg(level_fg).add_modifier(Modifier::BOLD);
     let tag_spans = highlight_spans(parsed.tag, search, tag_style);
 
     let msg_text = parsed.message.replace('\t', "  ");
-    let msg_prefix = Span::styled(": ", Style::new().fg(theme::FG));
+    let msg_prefix = Span::styled(": ", Style::new().fg(t.fg));
 
     let mut spans = vec![label, sep.clone(), timestamp, sep];
     spans.extend(tag_spans);
     spans.push(msg_prefix);
-    // msg_text is owned, so we need to handle it separately
-    let msg_style = Style::new().fg(theme::FG);
+    let msg_style = Style::new().fg(t.fg);
     if search.is_empty() {
         spans.push(Span::styled(msg_text, msg_style));
     } else {
         let highlight_style = Style::new()
-            .fg(theme::BG)
-            .bg(theme::YELLOW)
+            .fg(t.bg)
+            .bg(t.yellow)
             .add_modifier(Modifier::UNDERLINED);
         let lower_msg = msg_text.to_lowercase();
         let lower_search = search.to_lowercase();

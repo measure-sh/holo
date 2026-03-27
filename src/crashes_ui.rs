@@ -17,9 +17,9 @@ pub fn render_crashes_panel(
     focused: bool,
     state: &CrashesState,
 ) {
+    let t = theme::current();
     let color = panel::by_number(panel::CRASHES).border_color(focused);
-    let accent = panel::by_number(panel::CRASHES).bright_color;
-    let muted = Style::new().fg(theme::MUTED);
+    let muted = Style::new().fg(t.muted);
 
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -29,7 +29,7 @@ pub fn render_crashes_panel(
 
     if focused {
         block = block.title_bottom(Line::from(vec![
-            Span::styled(" ↩", Style::new().fg(accent)),
+            Span::styled(" ↩", Style::new().fg(t.accent)),
             Span::styled(" open ", muted),
         ]));
     }
@@ -40,7 +40,7 @@ pub fn render_crashes_panel(
     if let Some(ref err) = state.error {
         let item = ListItem::new(Line::from(Span::styled(
             err.as_str(),
-            Style::new().fg(theme::RED),
+            Style::new().fg(t.red),
         )));
         frame.render_widget(List::new(vec![item]), inner);
         return;
@@ -73,14 +73,14 @@ pub fn render_crashes_panel(
             let actual = start + i;
             let is_selected = actual == selected && focused;
             let style = if is_selected {
-                Style::new().fg(accent).add_modifier(Modifier::BOLD)
+                Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
             } else {
-                Style::new().fg(theme::FG)
+                Style::new().fg(t.fg)
             };
             let prefix = if is_selected { "▸ " } else { "  " };
             ListItem::new(Line::from(vec![
                 Span::styled(prefix, style),
-                Span::styled(&entry.timestamp, Style::new().fg(theme::MUTED)),
+                Span::styled(&entry.timestamp, Style::new().fg(t.muted)),
                 Span::styled(" ", Style::new()),
                 Span::styled(&entry.exception, style),
             ]))
@@ -93,8 +93,8 @@ pub fn render_crashes_panel(
         let mut scrollbar_state =
             ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::new().fg(theme::MUTED))
-            .track_style(Style::new().fg(theme::SURFACE));
+            .thumb_style(Style::new().fg(t.muted))
+            .track_style(Style::new().fg(t.surface));
         frame.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
     }
 }

@@ -1,7 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::style::Color;
 
 use crate::app::Action;
 use crate::apps;
+use crate::theme;
 
 const COMMAND_LIST: &[(&str, char, fn() -> Action)] = &[
     ("open app", 'o', || Action::OpenApp),
@@ -26,6 +28,7 @@ pub struct CommandsState {
     pub cursor: usize,
     pub filter: String,
     pub is_emulator: bool,
+    pub triggered: Option<(char, std::time::Instant)>,
 }
 
 impl CommandsState {
@@ -35,6 +38,7 @@ impl CommandsState {
             cursor: 0,
             filter: String::new(),
             is_emulator: false,
+            triggered: None,
         }
     }
 
@@ -56,7 +60,8 @@ impl CommandsState {
             }
             KeyCode::Enter => {
                 let filtered = self.filtered_commands();
-                if let Some((_, _, action_fn)) = filtered.get(self.cursor) {
+                if let Some((_, shortcut, action_fn)) = filtered.get(self.cursor) {
+                    self.triggered = Some((*shortcut, std::time::Instant::now()));
                     Some(action_fn())
                 } else {
                     Some(Action::Noop)
@@ -81,7 +86,7 @@ impl CommandsState {
         }
     }
 
-    pub fn action_for_shortcut(&self, ch: char) -> Option<Action> {
+    pub fn action_for_shortcut(&mut self, ch: char) -> Option<Action> {
         let ch = ch.to_ascii_lowercase();
         COMMAND_LIST
             .iter()
@@ -89,7 +94,42 @@ impl CommandsState {
                 *key == ch
                     && !(self.is_emulator && *name == "mirror")
             })
-            .map(|(_, _, action_fn)| action_fn())
+            .map(|(_, key, action_fn)| {
+                self.triggered = Some((*key, std::time::Instant::now()));
+                action_fn()
+            })
+    }
+
+    pub fn triggered_color(&self, shortcut: char) -> Option<Color> {
+        const HOLD_MS: u128 = 1400;
+        const FADE_MS: u128 = 600;
+        const TOTAL_MS: u128 = HOLD_MS + FADE_MS;
+        let (ch, t) = self.triggered.as_ref()?;
+        if *ch != shortcut {
+            return None;
+        }
+        let elapsed = t.elapsed().as_millis();
+        if elapsed >= TOTAL_MS {
+            return None;
+        }
+        let th = theme::current();
+        if elapsed < HOLD_MS {
+            return Some(th.green);
+        }
+        let ratio = (elapsed - HOLD_MS) as f32 / FADE_MS as f32;
+        let (Color::Rgb(sr, sg, sb), Color::Rgb(er, eg, eb)) = (th.green, th.fg) else {
+            return None;
+        };
+        let lerp = |s: u8, e: u8| -> u8 {
+            (s as f32 + (e as f32 - s as f32) * ratio) as u8
+        };
+        Some(Color::Rgb(lerp(sr, er), lerp(sg, eg), lerp(sb, eb)))
+    }
+
+    pub fn has_active_animation(&self) -> bool {
+        self.triggered
+            .as_ref()
+            .is_some_and(|(_, t)| t.elapsed().as_millis() < 2000)
     }
 
     pub fn filtered_commands(&self) -> Vec<(&'static str, char, fn() -> Action)> {

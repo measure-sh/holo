@@ -26,6 +26,7 @@ pub const SUPERSCRIPT_DIGITS: [char; 9] = [
 ];
 
 pub fn panel_title(panel_number: u8, _focused: bool) -> Line<'static> {
+    let t = theme::current();
     let def = panel::by_number(panel_number);
     let mut spans = Vec::new();
 
@@ -34,10 +35,9 @@ pub fn panel_title(panel_number: u8, _focused: bool) -> Line<'static> {
     } else {
         SUPERSCRIPT_DIGITS[(panel_number - 1) as usize]
     };
-    let digit_color = def.bright_color;
     spans.push(Span::styled(
         format!(" {}", superscript),
-        Style::new().fg(digit_color).add_modifier(Modifier::BOLD),
+        Style::new().fg(t.accent).add_modifier(Modifier::BOLD),
     ));
 
     if let Some(key) = def.focus_key {
@@ -45,26 +45,26 @@ pub fn panel_title(panel_number: u8, _focused: bool) -> Line<'static> {
             let before = &def.name[..pos];
             let after = &def.name[pos + key.len_utf8()..];
             if !before.is_empty() {
-                spans.push(Span::styled(before.to_string(), Style::new().fg(theme::FG)));
+                spans.push(Span::styled(before.to_string(), Style::new().fg(t.fg)));
             }
             spans.push(Span::styled(
                 String::from(key),
-                Style::new().fg(theme::KEY_HINT),
+                Style::new().fg(t.red),
             ));
             spans.push(Span::styled(
                 format!("{after} "),
-                Style::new().fg(theme::FG),
+                Style::new().fg(t.fg),
             ));
         } else {
             spans.push(Span::styled(
                 format!("{} ", def.name),
-                Style::new().fg(theme::FG),
+                Style::new().fg(t.fg),
             ));
         }
     } else {
         spans.push(Span::styled(
             format!("{} ", def.name),
-            Style::new().fg(theme::FG),
+            Style::new().fg(t.fg),
         ));
     }
 
@@ -87,38 +87,47 @@ pub fn render_app(
     app: &mut App,
     logcat_lines: &[String],
 ) {
+    let t = theme::current();
     let area = frame.area();
 
     let title_line = Line::from(" msh ").style(
         Style::new()
-            .fg(theme::ACCENT)
+            .fg(t.accent)
             .add_modifier(Modifier::BOLD),
     );
 
     let mut hint_spans = if app.confirming_quit() {
         vec![
-            Span::styled(" q", Style::new().fg(theme::KEY_HINT)),
-            Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+            Span::styled(" q", Style::new().fg(t.red)),
+            Span::styled(" to confirm ", Style::new().fg(t.fg)),
         ]
     } else {
         vec![
-            Span::styled(" qq", Style::new().fg(theme::KEY_HINT)),
-            Span::styled("uit ", Style::new().fg(theme::MUTED)),
+            Span::styled(" qq", Style::new().fg(t.red)),
+            Span::styled("uit ", Style::new().fg(t.muted)),
         ]
     };
     if app.focused_panel().is_some() {
         let label = if app.is_zoomed() { "oom out " } else { "oom in " };
-        hint_spans.push(Span::styled(" z", Style::new().fg(theme::KEY_HINT)));
-        hint_spans.push(Span::styled(label, Style::new().fg(theme::MUTED)));
+        hint_spans.push(Span::styled(" z", Style::new().fg(t.red)));
+        hint_spans.push(Span::styled(label, Style::new().fg(t.muted)));
     }
     let hint_line = Line::from(hint_spans);
 
-    let branding_line = Line::from(vec![
-        Span::styled("made with ", Style::new().fg(theme::MUTED)),
-        Span::styled("\u{2665}", Style::new().fg(theme::RED)),
-        Span::styled(" by ", Style::new().fg(theme::MUTED)),
-        Span::styled("measure.sh ", Style::new().fg(theme::ACCENT)),
-    ]).alignment(Alignment::Center);
+    let branding_line = if let Some((msg, is_error)) = app.status_flash_active() {
+        let color = if is_error { t.red } else { t.green };
+        Line::from(Span::styled(
+            format!(" {} ", msg),
+            Style::new().fg(color),
+        )).alignment(Alignment::Center)
+    } else {
+        Line::from(vec![
+            Span::styled("made with ", Style::new().fg(t.muted)),
+            Span::styled("\u{2665}", Style::new().fg(t.red)),
+            Span::styled(" by ", Style::new().fg(t.muted)),
+            Span::styled("measure.sh ", Style::new().fg(t.accent)),
+        ]).alignment(Alignment::Center)
+    };
 
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -131,7 +140,7 @@ pub fn render_app(
 
     let info_line = Line::from(Span::styled(
         title,
-        Style::new().fg(theme::MUTED),
+        Style::new().fg(t.muted),
     ))
     .alignment(Alignment::Right);
 
@@ -139,8 +148,8 @@ pub fn render_app(
         .title_bottom(hint_line)
         .title_bottom(branding_line)
         .title_bottom(info_line)
-        .border_style(Style::new().fg(theme::SURFACE))
-        .style(Style::new().bg(theme::BG).fg(theme::FG));
+        .border_style(Style::new().fg(t.surface))
+        .style(Style::new().bg(t.bg).fg(t.fg));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -169,6 +178,7 @@ pub fn render_app(
 }
 
 fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
+    let t = theme::current();
     let tb = app.toolbar();
     let has_device = tb.device.is_some();
     let has_app = tb.package.is_some();
@@ -177,25 +187,25 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let app_label = tb.app_label();
 
     let (device_dot, device_fg, device_bg) = if has_device && tb.device_connected {
-        (theme::CYAN, theme::FG, theme::DIM_CYAN)
+        (t.cyan, t.fg, t.surface)
     } else if has_device {
-        (theme::RED, theme::FG, theme::DIM_RED)
+        (t.red, t.fg, t.surface)
     } else {
-        (theme::MUTED, theme::MUTED, theme::SURFACE)
+        (t.muted, t.muted, t.surface)
     };
-    let app_dot = if has_app { theme::GREEN } else { theme::MUTED };
-    let app_fg = if has_app { theme::FG } else { theme::MUTED };
-    let app_bg = if has_app { theme::DIM_GREEN } else { theme::SURFACE };
+    let app_dot = if has_app { t.green } else { t.muted };
+    let app_fg = if has_app { t.fg } else { t.muted };
+    let app_bg = if has_app { t.surface } else { t.surface };
 
     let line = Line::from(vec![
-        Span::styled("^D ", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("^D ", Style::new().fg(t.red)),
         Span::styled(" \u{2022} ", Style::new().fg(device_dot).bg(device_bg)),
         Span::styled(
             format!("{device_label} \u{25BE} "),
             Style::new().fg(device_fg).bg(device_bg),
         ),
         Span::styled("      ", Style::new()),
-        Span::styled("^A ", Style::new().fg(theme::KEY_HINT)),
+        Span::styled("^A ", Style::new().fg(t.red)),
         Span::styled(" \u{2022} ", Style::new().fg(app_dot).bg(app_bg)),
         Span::styled(
             format!("{app_label} \u{25BE} "),
@@ -210,11 +220,13 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_dim_overlay(frame: &mut Frame, area: Rect) {
-    let dim = Block::default().style(Style::new().bg(theme::BG).add_modifier(Modifier::DIM));
+    let t = theme::current();
+    let dim = Block::default().style(Style::new().bg(t.bg).add_modifier(Modifier::DIM));
     frame.render_widget(dim, area);
 }
 
 fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
+    let t = theme::current();
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
@@ -234,42 +246,40 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
 
     frame.render_widget(Clear, dropdown_area);
 
-    let accent_color = theme::ACCENT;
-
     let title = match kind {
         DropdownKind::Device => " select device ",
         DropdownKind::App => " select app ",
     };
 
     let mut bottom_spans = vec![
-        Span::styled(" /", Style::new().fg(accent_color)),
+        Span::styled(" /", Style::new().fg(t.accent)),
     ];
     if tb.filter.is_empty() {
-        bottom_spans.push(Span::styled("search ", Style::new().fg(theme::MUTED)));
+        bottom_spans.push(Span::styled("search ", Style::new().fg(t.muted)));
     } else {
-        bottom_spans.push(Span::styled(format!("{} ", tb.filter), Style::new().fg(theme::FG)));
+        bottom_spans.push(Span::styled(format!("{} ", tb.filter), Style::new().fg(t.fg)));
     }
     bottom_spans.extend([
-        Span::styled("↩", Style::new().fg(accent_color)),
-        Span::styled(" select ", Style::new().fg(theme::MUTED)),
-        Span::styled("esc", Style::new().fg(accent_color)),
-        Span::styled(" close ", Style::new().fg(theme::MUTED)),
+        Span::styled("↩", Style::new().fg(t.accent)),
+        Span::styled(" select ", Style::new().fg(t.muted)),
+        Span::styled("esc", Style::new().fg(t.accent)),
+        Span::styled(" close ", Style::new().fg(t.muted)),
     ]);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(Line::from(Span::styled(title, Style::new().fg(accent_color).add_modifier(Modifier::BOLD))))
+        .title(Line::from(Span::styled(title, Style::new().fg(t.accent).add_modifier(Modifier::BOLD))))
         .title_bottom(Line::from(bottom_spans))
-        .border_style(Style::new().fg(accent_color))
-        .style(Style::new().bg(theme::POPUP_BG));
+        .border_style(Style::new().fg(t.accent))
+        .style(Style::new().bg(t.popup_bg));
 
     let inner = block.inner(dropdown_area);
     frame.render_widget(block, dropdown_area);
 
     if tb.loading {
         let loading = ratatui::widgets::Paragraph::new("  Loading...")
-            .style(Style::new().fg(theme::MUTED));
+            .style(Style::new().fg(t.muted));
         frame.render_widget(loading, inner);
         return;
     }
@@ -280,7 +290,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
             let items: Vec<ListItem> = filtered
                 .iter()
                 .map(|d| {
-                    let color = if d.connected { theme::FG } else { theme::MUTED };
+                    let color = if d.connected { t.fg } else { t.muted };
                     ListItem::new(Line::from(Span::styled(
                         format!("  {}", selector::selector_label(d)),
                         Style::new().fg(color),
@@ -288,7 +298,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
                 })
                 .collect();
             let list = List::new(items)
-                .highlight_style(Style::new().fg(accent_color).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::new().fg(t.accent).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▸");
             let clamped = tb.cursor.min(filtered.len().saturating_sub(1));
             let mut state = ListState::default().with_selected(Some(clamped));
@@ -301,12 +311,12 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
                 .map(|&name| {
                     ListItem::new(Span::styled(
                         format!("  {name}"),
-                        Style::new().fg(theme::FG),
+                        Style::new().fg(t.fg),
                     ))
                 })
                 .collect();
             let list = List::new(items)
-                .highlight_style(Style::new().fg(accent_color).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::new().fg(t.accent).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▸");
             let clamped = tb.cursor.min(filtered.len().saturating_sub(1));
             let mut state = ListState::default().with_selected(Some(clamped));
@@ -316,6 +326,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
 }
 
 fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {
+    let t = theme::current();
     let lines: Vec<&str> = message.lines().collect();
     let width = lines.iter().map(|l| l.len()).max().unwrap_or(20) as u16 + 4;
     let height = lines.len() as u16 + 4;
@@ -328,22 +339,22 @@ fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {
     frame.render_widget(Clear, dialog_area);
 
     let bottom = Line::from(vec![
-        Span::styled(" press any key to close ", Style::new().fg(theme::MUTED)),
+        Span::styled(" press any key to close ", Style::new().fg(t.muted)),
     ]);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(theme::ACCENT))
+        .border_style(Style::new().fg(t.accent))
         .title_bottom(bottom)
-        .style(Style::new().bg(theme::POPUP_BG));
+        .style(Style::new().bg(t.popup_bg));
 
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
 
     let text: Vec<Line> = lines
         .into_iter()
-        .map(|l| Line::from(Span::styled(l.to_string(), Style::new().fg(theme::FG))))
+        .map(|l| Line::from(Span::styled(l.to_string(), Style::new().fg(t.fg))))
         .collect();
     let paragraph = ratatui::widgets::Paragraph::new(text);
     frame.render_widget(paragraph, inner);
@@ -453,24 +464,24 @@ fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visibl
 }
 
 fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
+    let t = theme::current();
     let focused = is_focused(app, panel::COMMANDS);
-    let accent = panel::by_number(panel::COMMANDS).bright_color;
     let border_color = panel::by_number(panel::COMMANDS).border_color(focused);
 
     let mut block = panel_block(panel::COMMANDS, focused);
     if focused {
         let filter = &app.commands().filter;
         let filter_span = if filter.is_empty() {
-            Span::styled(" /", Style::new().fg(accent))
+            Span::styled(" /", Style::new().fg(t.accent))
         } else {
-            Span::styled(format!(" /{filter}"), Style::new().fg(theme::FG))
+            Span::styled(format!(" /{filter}"), Style::new().fg(t.fg))
         };
         block = block.title_bottom(Line::from(vec![
             filter_span,
             Span::styled(" ", Style::new()),
             Span::styled("───", Style::new().fg(border_color)),
-            Span::styled(" ↩", Style::new().fg(accent)),
-            Span::styled(" run ", Style::new().fg(theme::FG)),
+            Span::styled(" ↩", Style::new().fg(t.accent)),
+            Span::styled(" run ", Style::new().fg(t.fg)),
         ]));
     }
 
@@ -483,17 +494,20 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
         .iter()
         .map(|(name, shortcut, _)| {
             let hint = format!("^{}", shortcut);
+            let triggered = app.commands().triggered_color(*shortcut);
+            let name_color = triggered.unwrap_or(t.fg);
+            let hint_color = triggered.unwrap_or(t.muted);
             let spans = vec![
-                Span::styled(*name, Style::new().fg(theme::FG)),
+                Span::styled(*name, Style::new().fg(name_color)),
                 Span::raw("  "),
-                Span::styled(hint, Style::new().fg(theme::MUTED)),
+                Span::styled(hint, Style::new().fg(hint_color)),
             ];
             ListItem::new(Line::from(spans))
         })
         .collect();
 
     let list = List::new(items)
-        .highlight_style(Style::new().fg(accent).add_modifier(Modifier::BOLD))
+        .highlight_style(Style::new().fg(t.accent).add_modifier(Modifier::BOLD))
         .highlight_symbol("▸ ");
 
     if focused {
@@ -556,4 +570,3 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
         (false, false) => {}
     }
 }
-

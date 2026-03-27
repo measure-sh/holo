@@ -17,15 +17,16 @@ pub fn render_files_panel(
     focused: bool,
     state: &FilesState,
 ) {
+    let t = theme::current();
     let color = panel::by_number(panel::FILES).border_color(focused);
-    let accent = Style::new().fg(panel::by_number(panel::FILES).bright_color);
-    let muted = Style::new().fg(theme::MUTED);
+    let accent = Style::new().fg(t.accent);
+    let muted = Style::new().fg(t.muted);
     let border_fg = Style::new().fg(color);
 
     let flash_active = state
         .action_flash
         .as_ref()
-        .is_some_and(|(_, t)| t.elapsed() < std::time::Duration::from_secs(1));
+        .is_some_and(|(_, ts)| ts.elapsed() < std::time::Duration::from_secs(1));
 
     let flash_label = if flash_active {
         Some(state.action_flash.as_ref().unwrap().0)
@@ -37,10 +38,10 @@ pub fn render_files_panel(
         let pull_spans: Vec<Span> = if matches!(&state.confirming, Some(FileConfirm::Pull(_))) {
             vec![
                 Span::styled(" p", accent),
-                Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+                Span::styled(" to confirm ", Style::new().fg(t.fg)),
             ]
         } else if flash_label == Some("pulling...") {
-            vec![Span::styled(" pulling... ", Style::new().fg(theme::GREEN))]
+            vec![Span::styled(" pulling... ", Style::new().fg(t.green))]
         } else {
             vec![
                 Span::styled(" p", accent),
@@ -50,10 +51,10 @@ pub fn render_files_panel(
         let open_spans: Vec<Span> = if matches!(&state.confirming, Some(FileConfirm::Open(_))) {
             vec![
                 Span::styled(" o", accent),
-                Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+                Span::styled(" to confirm ", Style::new().fg(t.fg)),
             ]
         } else if flash_label == Some("opening...") {
-            vec![Span::styled(" opening... ", Style::new().fg(theme::GREEN))]
+            vec![Span::styled(" opening... ", Style::new().fg(t.green))]
         } else {
             vec![
                 Span::styled(" o", accent),
@@ -89,7 +90,7 @@ pub fn render_files_panel(
     frame.render_widget(block, area);
 
     let root_label = format!("data/data/{}", state.package);
-    let root_line = ListItem::new(Line::from(Span::styled(root_label, Style::new().fg(theme::FG))));
+    let root_line = ListItem::new(Line::from(Span::styled(root_label, Style::new().fg(t.fg))));
     frame.render_widget(List::new(vec![root_line]), inner);
 
     let tree_area = Rect {
@@ -101,7 +102,7 @@ pub fn render_files_panel(
     if let Some(ref err) = state.error {
         let item = ListItem::new(Line::from(Span::styled(
             err.as_str(),
-            Style::new().fg(theme::RED),
+            Style::new().fg(t.red),
         )));
         frame.render_widget(List::new(vec![item]), tree_area);
         return;
@@ -112,7 +113,7 @@ pub fn render_files_panel(
         None => {
             let item = ListItem::new(Line::from(Span::styled(
                 "loading...",
-                Style::new().fg(theme::MUTED),
+                Style::new().fg(t.muted),
             )));
             frame.render_widget(List::new(vec![item]), tree_area);
             return;
@@ -122,7 +123,7 @@ pub fn render_files_panel(
     if children.is_empty() {
         let item = ListItem::new(Line::from(Span::styled(
             "empty",
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(t.muted),
         )));
         frame.render_widget(List::new(vec![item]), tree_area);
         return;
@@ -142,14 +143,12 @@ pub fn render_files_panel(
     };
     let end = (start + visible_height).min(flat.len());
 
-    let accent = panel::by_number(panel::FILES).bright_color;
-
     let items: Vec<ListItem> = flat[start..end]
         .iter()
         .enumerate()
         .map(|(i, entry)| {
             let is_selected = (start + i) == selected;
-            build_tree_line(entry, is_selected, focused, accent)
+            build_tree_line(entry, is_selected, focused)
         })
         .collect();
 
@@ -160,45 +159,45 @@ fn build_tree_line(
     entry: &FlatEntry,
     selected: bool,
     focused: bool,
-    accent: ratatui::style::Color,
 ) -> ListItem<'static> {
+    let t = theme::current();
     let mut spans: Vec<Span> = Vec::new();
 
     for level in 0..entry.depth {
         let is_last = entry.ancestor_is_last.get(level).copied().unwrap_or(false);
         if is_last {
-            spans.push(Span::styled("   ", Style::new().fg(theme::MUTED)));
+            spans.push(Span::styled("   ", Style::new().fg(t.muted)));
         } else {
-            spans.push(Span::styled("│  ", Style::new().fg(theme::MUTED)));
+            spans.push(Span::styled("│  ", Style::new().fg(t.muted)));
         }
     }
 
     if entry.depth > 0 {
         if entry.is_last_sibling {
-            spans.push(Span::styled("└─ ", Style::new().fg(theme::MUTED)));
+            spans.push(Span::styled("└─ ", Style::new().fg(t.muted)));
         } else {
-            spans.push(Span::styled("├─ ", Style::new().fg(theme::MUTED)));
+            spans.push(Span::styled("├─ ", Style::new().fg(t.muted)));
         }
     }
 
     if entry.is_dir {
         if entry.loading {
-            spans.push(Span::styled("⟳ ", Style::new().fg(theme::MUTED)));
+            spans.push(Span::styled("⟳ ", Style::new().fg(t.muted)));
         } else if entry.expanded {
-            spans.push(Span::styled("▾ ", Style::new().fg(theme::FG)));
+            spans.push(Span::styled("▾ ", Style::new().fg(t.fg)));
         } else {
-            spans.push(Span::styled("▸ ", Style::new().fg(theme::FG)));
+            spans.push(Span::styled("▸ ", Style::new().fg(t.fg)));
         }
     }
 
     let name_style = if selected && focused {
-        Style::new().fg(accent).add_modifier(Modifier::BOLD)
+        Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
     } else if selected {
-        Style::new().fg(theme::FG).add_modifier(Modifier::BOLD)
+        Style::new().fg(t.fg).add_modifier(Modifier::BOLD)
     } else if entry.is_dir {
-        Style::new().fg(theme::FG)
+        Style::new().fg(t.fg)
     } else {
-        Style::new().fg(theme::MUTED)
+        Style::new().fg(t.muted)
     };
 
     spans.push(Span::styled(entry.name.clone(), name_style));

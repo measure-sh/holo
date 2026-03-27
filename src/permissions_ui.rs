@@ -19,9 +19,10 @@ pub fn render_permissions_panel(
 ) {
     use ratatui::widgets::{Block, Borders, BorderType};
 
+    let t = theme::current();
     let color = panel::by_number(panel::PERMISSIONS).border_color(focused);
-    let accent = Style::new().fg(panel::by_number(panel::PERMISSIONS).bright_color);
-    let muted = Style::new().fg(theme::MUTED);
+    let accent = Style::new().fg(t.accent);
+    let muted = Style::new().fg(t.muted);
     let border_fg = Style::new().fg(color);
 
     let mut block = Block::default()
@@ -41,7 +42,7 @@ pub fn render_permissions_panel(
     if let Some(ref err) = state.error {
         let item = ListItem::new(Line::from(Span::styled(
             err.as_str(),
-            Style::new().fg(theme::RED),
+            Style::new().fg(t.red),
         )));
         frame.render_widget(List::new(vec![item]), inner);
         return;
@@ -50,7 +51,7 @@ pub fn render_permissions_panel(
     if state.permissions.is_empty() {
         let item = ListItem::new(Line::from(Span::styled(
             "loading permissions…",
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(t.muted),
         )));
         frame.render_widget(List::new(vec![item]), inner);
         return;
@@ -73,12 +74,11 @@ pub fn render_permissions_panel(
             let actual_index = start + i;
             let selected = actual_index == state.selected_index && focused;
             let name = PermissionsState::short_name(perm);
-            let accent = panel::by_number(panel::PERMISSIONS).bright_color;
 
             let style = if selected {
-                Style::new().fg(accent).add_modifier(Modifier::BOLD)
+                Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
             } else {
-                Style::new().fg(theme::FG)
+                Style::new().fg(t.fg)
             };
             let prefix = if selected { "▸ " } else { "  " };
 
@@ -86,7 +86,7 @@ pub fn render_permissions_panel(
                 Span::styled(prefix, style),
             ];
             if *granted {
-                spans.push(Span::styled("• ", Style::new().fg(accent)));
+                spans.push(Span::styled("• ", Style::new().fg(t.accent)));
             }
             spans.push(Span::styled(name, style));
 
@@ -100,8 +100,8 @@ pub fn render_permissions_panel(
         let mut scrollbar_state =
             ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::new().fg(theme::MUTED))
-            .track_style(Style::new().fg(theme::SURFACE));
+            .thumb_style(Style::new().fg(t.muted))
+            .track_style(Style::new().fg(t.surface));
         frame.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
     }
 }

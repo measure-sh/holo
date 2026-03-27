@@ -5,14 +5,13 @@ use crate::theme;
 pub struct PanelDef {
     pub number: u8,
     pub name: &'static str,
-    pub dim_color: Color,
-    pub bright_color: Color,
     pub focus_key: Option<char>,
 }
 
 impl PanelDef {
     pub fn border_color(&self, focused: bool) -> Color {
-        if focused { self.bright_color } else { self.dim_color }
+        let t = theme::current();
+        if focused { t.accent } else { t.surface }
     }
 }
 
@@ -28,16 +27,16 @@ pub const FILES: u8 = 8;
 pub const DATABASE: u8 = 9;
 
 pub const PANELS: [PanelDef; 10] = [
-    PanelDef { number: 0, name: "commands",     dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: Some('c') },
-    PanelDef { number: 1, name: "logcat",       dim_color: theme::DIM_GREEN,   bright_color: theme::GREEN,   focus_key: Some('l') },
-    PanelDef { number: 2, name: "disk",         dim_color: theme::DIM_ORANGE,  bright_color: theme::ORANGE,  focus_key: None },
-    PanelDef { number: 3, name: "cpu & memory", dim_color: theme::DIM_ORANGE,  bright_color: theme::ORANGE,  focus_key: None },
-    PanelDef { number: 4, name: "permissions",  dim_color: theme::DIM_CYAN,    bright_color: theme::CYAN,    focus_key: Some('p') },
-    PanelDef { number: 5, name: "trace",        dim_color: theme::DIM_BLUE,    bright_color: theme::ACCENT,  focus_key: Some('t') },
-    PanelDef { number: 6, name: "crashes",      dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: Some('e') },
-    PanelDef { number: 7, name: "anrs",         dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: Some('a') },
-    PanelDef { number: 8, name: "files",        dim_color: theme::DIM_MAGENTA, bright_color: theme::MAGENTA, focus_key: Some('f') },
-    PanelDef { number: 9, name: "database",     dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: Some('d') },
+    PanelDef { number: 0, name: "commands",     focus_key: Some('c') },
+    PanelDef { number: 1, name: "logcat",       focus_key: Some('l') },
+    PanelDef { number: 2, name: "disk",         focus_key: None },
+    PanelDef { number: 3, name: "cpu & memory", focus_key: None },
+    PanelDef { number: 4, name: "permissions",  focus_key: Some('p') },
+    PanelDef { number: 5, name: "trace",        focus_key: Some('t') },
+    PanelDef { number: 6, name: "crashes",      focus_key: Some('e') },
+    PanelDef { number: 7, name: "anrs",         focus_key: Some('a') },
+    PanelDef { number: 8, name: "files",        focus_key: Some('f') },
+    PanelDef { number: 9, name: "database",     focus_key: Some('d') },
 ];
 
 pub fn by_number(n: u8) -> &'static PanelDef {

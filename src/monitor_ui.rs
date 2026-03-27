@@ -28,10 +28,11 @@ fn format_mb_precise(kb: u64) -> String {
 }
 
 fn trend_symbol(trend: Trend) -> (&'static str, ratatui::style::Color) {
+    let t = theme::current();
     match trend {
-        Trend::Rising => ("▲", theme::RED),
-        Trend::Falling => ("▼", theme::GREEN),
-        Trend::Stable => ("─", theme::MUTED),
+        Trend::Rising => ("▲", t.red),
+        Trend::Falling => ("▼", t.green),
+        Trend::Stable => ("─", t.muted),
     }
 }
 
@@ -89,15 +90,16 @@ fn mem_item(
     trend: Trend,
     spark_width: usize,
 ) -> ListItem<'static> {
+    let t = theme::current();
     let current = data.last().copied().unwrap_or(0);
     let (spark, min, max) = sparkline_str(data, spark_width);
     let (arrow, arrow_color) = trend_symbol(trend);
 
     let mut lines = vec![
         Line::from(vec![
-            Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
-            Span::styled(spark, Style::new().fg(theme::ACCENT)),
-            Span::styled(format!("  {:>8}", format_mb(current)), Style::new().fg(theme::FG)),
+            Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
+            Span::styled(spark, Style::new().fg(t.accent)),
+            Span::styled(format!("  {:>8}", format_mb(current)), Style::new().fg(t.fg)),
             Span::raw(" "),
             Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
         ]),
@@ -105,7 +107,7 @@ fn mem_item(
     if min != max {
         lines.push(Line::from(Span::styled(
             format!(" {:>12}{}-{}", "", format_mb(min), format_mb(max)),
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(t.muted),
         )));
     }
     lines.push(Line::raw(""));
@@ -118,15 +120,16 @@ fn disk_item(
     trend: Trend,
     spark_width: usize,
 ) -> ListItem<'static> {
+    let t = theme::current();
     let current = data.last().copied().unwrap_or(0);
     let (spark, min, max) = sparkline_str(data, spark_width);
     let (arrow, arrow_color) = trend_symbol(trend);
 
     let mut lines = vec![
         Line::from(vec![
-            Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
-            Span::styled(spark, Style::new().fg(theme::ACCENT)),
-            Span::styled(format!("  {:>8}", format_mb_precise(current)), Style::new().fg(theme::FG)),
+            Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
+            Span::styled(spark, Style::new().fg(t.accent)),
+            Span::styled(format!("  {:>8}", format_mb_precise(current)), Style::new().fg(t.fg)),
             Span::raw(" "),
             Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
         ]),
@@ -134,7 +137,7 @@ fn disk_item(
     if min != max {
         lines.push(Line::from(Span::styled(
             format!(" {:>12}{}-{}", "", format_mb_precise(min), format_mb_precise(max)),
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(t.muted),
         )));
     }
     lines.push(Line::raw(""));
@@ -142,20 +145,21 @@ fn disk_item(
 }
 
 fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
+    let t = theme::current();
     let current = data.last().copied().unwrap_or(0.0);
     let (spark, min, max) = sparkline_str_f32(data, spark_width);
 
     let mut lines = vec![
         Line::from(vec![
-            Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(theme::FG)),
-            Span::styled(spark, Style::new().fg(theme::GREEN)),
-            Span::styled(format!("  {:>7.1}%", current), Style::new().fg(theme::FG)),
+            Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(t.fg)),
+            Span::styled(spark, Style::new().fg(t.green)),
+            Span::styled(format!("  {:>7.1}%", current), Style::new().fg(t.fg)),
         ]),
     ];
     if (max - min) >= 0.01 {
         lines.push(Line::from(Span::styled(
             format!(" {:>12}{:.1}-{:.1}%", "", min, max),
-            Style::new().fg(theme::MUTED),
+            Style::new().fg(t.muted),
         )));
     }
     lines.push(Line::raw(""));
@@ -170,18 +174,19 @@ fn render_monitor(
     state: &MonitorState,
     items_fn: impl FnOnce(usize, &MonitorState) -> Vec<ListItem<'static>>,
 ) {
+    let t = theme::current();
     let block = panel_block(panel_number, focused);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     if state.history.is_empty() {
-        let items = vec![Line::styled(" waiting...", Style::new().fg(theme::MUTED))];
+        let items = vec![Line::styled(" waiting...", Style::new().fg(t.muted))];
         frame.render_widget(List::new(items), inner);
         return;
     }
 
     if !state.debuggable {
-        let items = vec![Line::styled(" not debuggable", Style::new().fg(theme::MUTED))];
+        let items = vec![Line::styled(" not debuggable", Style::new().fg(t.muted))];
         frame.render_widget(List::new(items), inner);
         return;
     }

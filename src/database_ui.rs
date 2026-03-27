@@ -20,14 +20,15 @@ pub fn render_database_panel(
     focused: bool,
     db_state: &mut DatabaseState,
 ) {
-    let accent = Style::new().fg(theme::KEY_HINT);
-    let muted = Style::new().fg(theme::MUTED);
+    let t = theme::current();
+    let accent = Style::new().fg(t.red);
+    let muted = Style::new().fg(t.muted);
 
     if let Some(ref err) = db_state.error {
         let block = panel_block(panel::DATABASE, focused);
         let inner = block.inner(area);
         frame.render_widget(block, area);
-        let item = ListItem::new(Line::from(Span::styled(err.as_str(), Style::new().fg(theme::RED))));
+        let item = ListItem::new(Line::from(Span::styled(err.as_str(), Style::new().fg(t.red))));
         frame.render_widget(List::new(vec![item]), inner);
         return;
     }
@@ -38,20 +39,20 @@ pub fn render_database_panel(
                 format!(" {} ", SUPERSCRIPT_DIGITS[(panel::DATABASE - 1) as usize]),
                 Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused)).add_modifier(Modifier::BOLD),
             ),
-            Span::styled("d", Style::new().fg(theme::KEY_HINT)),
-            Span::styled(format!("atabase: {} ", db_name), Style::new().fg(theme::FG)),
+            Span::styled("d", Style::new().fg(t.red)),
+            Span::styled(format!("atabase: {} ", db_name), Style::new().fg(t.fg)),
         ]);
 
         let border_fg = Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused));
         let copied_active = db_state.copied_at
-            .is_some_and(|t| t.elapsed() < std::time::Duration::from_secs(2));
+            .is_some_and(|ts| ts.elapsed() < std::time::Duration::from_secs(2));
         if !copied_active {
             db_state.copied_at = None;
         }
         let pull_spans: Vec<Span> = if db_state.confirming_pull.is_some() {
             vec![
                 Span::styled(" p", accent),
-                Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+                Span::styled(" to confirm ", Style::new().fg(t.fg)),
             ]
         } else {
             vec![
@@ -60,7 +61,7 @@ pub fn render_database_panel(
             ]
         };
         let copy_spans: Vec<Span> = if copied_active {
-            vec![Span::styled(" copied! ", Style::new().fg(theme::GREEN))]
+            vec![Span::styled(" copied! ", Style::new().fg(t.green))]
         } else {
             vec![
                 Span::styled(" c", accent),
@@ -115,12 +116,12 @@ pub fn render_database_panel(
             height: inner.height.saturating_sub(1),
         };
 
-        let selected = Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD);
+        let selected = Style::new().fg(t.yellow).add_modifier(Modifier::BOLD);
 
         if editing {
             frame.render_widget(Line::from(Span::styled("> ", selected)), prompt_area);
             db_state.textarea.set_style(selected);
-            db_state.textarea.set_cursor_style(Style::new().fg(theme::BG).bg(theme::FG));
+            db_state.textarea.set_cursor_style(Style::new().fg(t.bg).bg(t.fg));
             frame.render_widget(&db_state.textarea, textarea_area);
         } else if db_state.history.is_empty() {
             let full_input_row = Rect { x: inner.x, y: prompt_area.y, width: inner.width, height: 1.min(inner.height) };
@@ -141,10 +142,10 @@ pub fn render_database_panel(
                         ListItem::new(Line::from(Span::styled(format!("> {s}"), selected)))
                     }
                     ReplLine::Output(s) => {
-                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(theme::FG))))
+                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(t.fg))))
                     }
                     ReplLine::Error(s) => {
-                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(theme::RED))))
+                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(t.red))))
                     }
                 }
             }).collect();
@@ -153,8 +154,8 @@ pub fn render_database_panel(
                 let mut scrollbar_state =
                     ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
                 let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                    .thumb_style(Style::new().fg(theme::MUTED))
-                    .track_style(Style::new().fg(theme::SURFACE));
+                    .thumb_style(Style::new().fg(t.muted))
+                    .track_style(Style::new().fg(t.surface));
                 frame.render_stateful_widget(scrollbar, history_area, &mut scrollbar_state);
             }
         }
@@ -164,7 +165,7 @@ pub fn render_database_panel(
         let bottom_line = if db_state.confirming_pull.is_some() {
             Line::from(vec![
                 Span::styled(" p", accent),
-                Span::styled(" to confirm ", Style::new().fg(theme::FG)),
+                Span::styled(" to confirm ", Style::new().fg(t.fg)),
             ])
         } else if focused && !db_state.databases.is_empty() {
             Line::from(vec![
@@ -205,9 +206,9 @@ pub fn render_database_panel(
                 .map(|(i, name)| {
                     let selected = i == db_state.selected_index && focused;
                     let style = if selected {
-                        Style::new().fg(theme::YELLOW).add_modifier(Modifier::BOLD)
+                        Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
                     } else {
-                        Style::new().fg(theme::FG)
+                        Style::new().fg(t.fg)
                     };
                     let prefix = if selected { "▸ " } else { "  " };
                     ListItem::new(Line::from(Span::styled(format!("{prefix}{name}"), style)))
