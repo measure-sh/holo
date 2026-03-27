@@ -8,6 +8,7 @@ use crate::app::App;
 use crate::battery;
 use crate::database;
 use crate::files;
+use crate::issues::{self, CrashEntry, AnrEntry};
 use crate::logcat;
 use crate::monitor;
 use crate::permissions;
@@ -47,6 +48,9 @@ pub struct DataSources {
 
     trace_start_rx: Option<mpsc::Receiver<Result<(), String>>>,
     trace_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
+
+    crashes_rx: Option<mpsc::Receiver<Result<Vec<CrashEntry>, String>>>,
+    anrs_rx: Option<mpsc::Receiver<Result<Vec<AnrEntry>, String>>>,
 
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
@@ -107,6 +111,16 @@ impl DataSources {
             ),
             trace_start_rx: None,
             trace_pull_rx: None,
+            crashes_rx: Some(issues::spawn_crash_loader(
+                adb.clone(),
+                serial.to_string(),
+                package.to_string(),
+            )),
+            anrs_rx: Some(issues::spawn_anr_loader(
+                adb.clone(),
+                serial.to_string(),
+                package.to_string(),
+            )),
             initial_layout_bounds,
             initial_airplane_mode,
             initial_wifi_enabled,
@@ -231,6 +245,18 @@ impl DataSources {
                     ts.status_message = Some(format!("failed: {e}"));
                     ts.message_at = Some(std::time::Instant::now());
                 }
+            }
+        }
+        if let Some(result) = try_poll(&mut self.crashes_rx) {
+            match result {
+                Ok(crashes) => app.issues_state_mut().crashes = crashes,
+                Err(e) => app.issues_state_mut().error = Some(e),
+            }
+        }
+        if let Some(result) = try_poll(&mut self.anrs_rx) {
+            match result {
+                Ok(anrs) => app.issues_state_mut().anrs = anrs,
+                Err(e) => app.issues_state_mut().error = Some(e),
             }
         }
     }
