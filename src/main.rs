@@ -60,6 +60,7 @@ fn run_app(
     initial_device: Option<adb::Device>,
 ) -> Result<()> {
     let mut app = App::new(initial_device.clone(), None);
+    let (command_tx, command_rx) = std::sync::mpsc::channel();
     let mut ctx = DispatchContext {
         adb: adb.clone(),
         data: None,
@@ -67,6 +68,8 @@ fn run_app(
         devices_rx: None,
         packages_rx: None,
         pending_emulator_rx: None,
+        command_tx,
+        command_rx,
     };
 
     if let Some(device) = &initial_device {
@@ -75,6 +78,7 @@ fn run_app(
         app.toolbar_mut().receive_packages(packages);
         if let Some(pkg) = auto {
             app.toolbar_mut().package = Some(pkg.clone());
+            app.reset_for_new_app(&pkg);
             ctx.data = Some(dispatch::build_data(&adb, device, &pkg, &mut app));
             ctx.title = dispatch::build_title(ctx.data.as_ref().unwrap());
         } else {
@@ -107,7 +111,12 @@ fn run_app(
             ui::render_app(frame, &ctx.title, battery_level, &mut app, logcat_lines)
         })?;
 
-        if event::poll(Duration::from_secs(1))? {
+        let poll_timeout = if app.has_active_animation() {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_secs(1)
+        };
+        if event::poll(poll_timeout)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind != KeyEventKind::Press {
                     continue;
