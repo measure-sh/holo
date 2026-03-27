@@ -62,4 +62,6 @@ pub trait Adb: Send + Sync {
     fn set_pointer_location(&self, serial: &str, enabled: bool) -> Result<()>;
     fn get_gpu_rendering(&self, serial: &str) -> Result<bool>;
     fn set_gpu_rendering(&self, serial: &str, enabled: bool) -> Result<()>;
+    fn get_dropbox_crashes(&self, serial: &str) -> Result<String>;
+    fn get_dropbox_anrs(&self, serial: &str) -> Result<String>;
 }

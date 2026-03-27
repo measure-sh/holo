@@ -615,6 +615,28 @@ impl Adb for RealAdb {
             .output()?;
         Ok(())
     }
+
+    fn get_dropbox_crashes(&self, serial: &str) -> Result<String> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "dropbox", "--print", "data_app_crash"])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("dumpsys dropbox failed: {stderr}");
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    fn get_dropbox_anrs(&self, serial: &str) -> Result<String> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "dropbox", "--print", "data_app_anr"])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("dumpsys dropbox failed: {stderr}");
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {
