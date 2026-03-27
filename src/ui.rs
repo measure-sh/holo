@@ -40,17 +40,27 @@ pub fn panel_title(panel_number: u8, _focused: bool) -> Line<'static> {
         Style::new().fg(digit_color).add_modifier(Modifier::BOLD),
     ));
 
-    if def.is_focusable() {
-        let mut chars = def.name.chars();
-        let first = chars.next().unwrap();
-        spans.push(Span::styled(
-            String::from(first),
-            Style::new().fg(theme::KEY_HINT),
-        ));
-        spans.push(Span::styled(
-            format!("{} ", chars.as_str()),
-            Style::new().fg(theme::FG),
-        ));
+    if let Some(key) = def.focus_key {
+        if let Some(pos) = def.name.find(key) {
+            let before = &def.name[..pos];
+            let after = &def.name[pos + key.len_utf8()..];
+            if !before.is_empty() {
+                spans.push(Span::styled(before.to_string(), Style::new().fg(theme::FG)));
+            }
+            spans.push(Span::styled(
+                String::from(key),
+                Style::new().fg(theme::KEY_HINT),
+            ));
+            spans.push(Span::styled(
+                format!("{after} "),
+                Style::new().fg(theme::FG),
+            ));
+        } else {
+            spans.push(Span::styled(
+                format!("{} ", def.name),
+                Style::new().fg(theme::FG),
+            ));
+        }
     } else {
         spans.push(Span::styled(
             format!("{} ", def.name),

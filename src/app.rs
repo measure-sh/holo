@@ -623,9 +623,9 @@ mod tests {
     }
 
     #[test]
-    fn h_focuses_crashes_panel() {
+    fn e_focuses_crashes_panel() {
         let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('h')));
+        app.handle_key(key(KeyCode::Char('e')));
         assert_eq!(app.focused_panel(), Some(panel::CRASHES));
     }
 
