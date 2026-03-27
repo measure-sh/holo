@@ -52,26 +52,34 @@ impl CrashesState {
     }
 }
 
-pub fn spawn_loader(
+pub fn spawn_poller(
     adb: Arc<dyn Adb>,
     serial: String,
     package: String,
 ) -> mpsc::Receiver<Result<Vec<CrashEntry>, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let result = adb
-            .get_dropbox_crashes(&serial)
-            .map(|output| {
-                issues::parse_dropbox_entries(&output, "data_app_crash", &package)
-                    .into_iter()
-                    .map(|(timestamp, body)| {
-                        let exception = issues::extract_exception(&body);
-                        CrashEntry { timestamp, exception, full_text: body }
-                    })
-                    .collect()
-            })
-            .map_err(|e| e.to_string());
-        let _ = tx.send(result);
+        let interval = std::time::Duration::from_secs(5);
+        loop {
+            let result = adb
+                .get_dropbox_crashes(&serial)
+                .map(|output| {
+                    let mut entries: Vec<CrashEntry> = issues::parse_dropbox_entries(&output, "data_app_crash", &package)
+                        .into_iter()
+                        .map(|(timestamp, body)| {
+                            let exception = issues::extract_exception(&body);
+                            CrashEntry { timestamp, exception, full_text: body }
+                        })
+                        .collect();
+                    entries.reverse();
+                    entries
+                })
+                .map_err(|e| e.to_string());
+            if tx.send(result).is_err() {
+                return;
+            }
+            std::thread::sleep(interval);
+        }
     });
     rx
 }

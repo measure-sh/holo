@@ -50,8 +50,8 @@ pub struct DataSources {
     trace_start_rx: Option<mpsc::Receiver<Result<(), String>>>,
     trace_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
 
-    crashes_rx: Option<mpsc::Receiver<Result<Vec<crashes::CrashEntry>, String>>>,
-    anrs_rx: Option<mpsc::Receiver<Result<Vec<anrs::AnrEntry>, String>>>,
+    crashes_rx: mpsc::Receiver<Result<Vec<crashes::CrashEntry>, String>>,
+    anrs_rx: mpsc::Receiver<Result<Vec<anrs::AnrEntry>, String>>,
 
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
@@ -112,16 +112,16 @@ impl DataSources {
             ),
             trace_start_rx: None,
             trace_pull_rx: None,
-            crashes_rx: Some(crashes::spawn_loader(
+            crashes_rx: crashes::spawn_poller(
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
-            )),
-            anrs_rx: Some(anrs::spawn_loader(
+            ),
+            anrs_rx: anrs::spawn_poller(
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
-            )),
+            ),
             initial_layout_bounds,
             initial_airplane_mode,
             initial_wifi_enabled,
@@ -248,13 +248,13 @@ impl DataSources {
                 }
             }
         }
-        if let Some(result) = try_poll(&mut self.crashes_rx) {
+        while let Ok(result) = self.crashes_rx.try_recv() {
             match result {
                 Ok(crashes) => app.crashes_state_mut().crashes = crashes,
                 Err(e) => app.crashes_state_mut().error = Some(e),
             }
         }
-        if let Some(result) = try_poll(&mut self.anrs_rx) {
+        while let Ok(result) = self.anrs_rx.try_recv() {
             match result {
                 Ok(anrs) => app.anrs_state_mut().anrs = anrs,
                 Err(e) => app.anrs_state_mut().error = Some(e),
