@@ -19,7 +19,7 @@ pub fn render_files_panel(
 ) {
     let t = theme::current();
     let color = panel::by_number(panel::FILES).border_color(focused);
-    let accent = Style::new().fg(t.accent);
+    let accent = Style::new().fg(t.red);
     let muted = Style::new().fg(t.muted);
     let border_fg = Style::new().fg(color);
 

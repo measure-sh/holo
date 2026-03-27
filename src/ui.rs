@@ -252,7 +252,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     };
 
     let mut bottom_spans = vec![
-        Span::styled(" /", Style::new().fg(t.accent)),
+        Span::styled(" /", Style::new().fg(t.red)),
     ];
     if tb.filter.is_empty() {
         bottom_spans.push(Span::styled("search ", Style::new().fg(t.muted)));
@@ -260,9 +260,9 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
         bottom_spans.push(Span::styled(format!("{} ", tb.filter), Style::new().fg(t.fg)));
     }
     bottom_spans.extend([
-        Span::styled("↩", Style::new().fg(t.accent)),
+        Span::styled("↩", Style::new().fg(t.red)),
         Span::styled(" select ", Style::new().fg(t.muted)),
-        Span::styled("esc", Style::new().fg(t.accent)),
+        Span::styled("esc", Style::new().fg(t.red)),
         Span::styled(" close ", Style::new().fg(t.muted)),
     ]);
 
@@ -472,7 +472,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     if focused {
         let filter = &app.commands().filter;
         let filter_span = if filter.is_empty() {
-            Span::styled(" /", Style::new().fg(t.accent))
+            Span::styled(" /", Style::new().fg(t.red))
         } else {
             Span::styled(format!(" /{filter}"), Style::new().fg(t.fg))
         };
@@ -480,7 +480,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
             filter_span,
             Span::styled(" ", Style::new()),
             Span::styled("───", Style::new().fg(border_color)),
-            Span::styled(" ↩", Style::new().fg(t.accent)),
+            Span::styled(" ↩", Style::new().fg(t.red)),
             Span::styled(" run ", Style::new().fg(t.fg)),
         ]));
     }

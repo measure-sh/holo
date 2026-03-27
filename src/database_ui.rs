@@ -116,7 +116,7 @@ pub fn render_database_panel(
             height: inner.height.saturating_sub(1),
         };
 
-        let selected = Style::new().fg(t.yellow).add_modifier(Modifier::BOLD);
+        let selected = Style::new().fg(t.accent).add_modifier(Modifier::BOLD);
 
         if editing {
             frame.render_widget(Line::from(Span::styled("> ", selected)), prompt_area);

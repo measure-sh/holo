@@ -21,7 +21,7 @@ pub fn render_permissions_panel(
 
     let t = theme::current();
     let color = panel::by_number(panel::PERMISSIONS).border_color(focused);
-    let accent = Style::new().fg(t.accent);
+    let accent = Style::new().fg(t.red);
     let muted = Style::new().fg(t.muted);
     let border_fg = Style::new().fg(color);
 

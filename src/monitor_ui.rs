@@ -152,7 +152,7 @@ fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(t.fg)),
-            Span::styled(spark, Style::new().fg(t.green)),
+            Span::styled(spark, Style::new().fg(t.accent)),
             Span::styled(format!("  {:>7.1}%", current), Style::new().fg(t.fg)),
         ]),
     ];

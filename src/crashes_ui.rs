@@ -29,7 +29,7 @@ pub fn render_crashes_panel(
 
     if focused {
         block = block.title_bottom(Line::from(vec![
-            Span::styled(" ↩", Style::new().fg(t.accent)),
+            Span::styled(" ↩", Style::new().fg(t.red)),
             Span::styled(" open ", muted),
         ]));
     }
