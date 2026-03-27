@@ -8,7 +8,6 @@ use crate::issues;
 
 pub struct CrashEntry {
     pub timestamp: String,
-    pub process: String,
     pub exception: String,
     pub full_text: String,
 }
@@ -66,9 +65,8 @@ pub fn spawn_loader(
                 issues::parse_dropbox_entries(&output, "data_app_crash", &package)
                     .into_iter()
                     .map(|(timestamp, body)| {
-                        let process = issues::extract_field(&body, "Process: ").unwrap_or_default();
                         let exception = issues::extract_exception(&body);
-                        CrashEntry { timestamp, process, exception, full_text: body }
+                        CrashEntry { timestamp, exception, full_text: body }
                     })
                     .collect()
             })
@@ -86,8 +84,8 @@ mod tests {
     fn navigate_list() {
         let mut state = CrashesState::new();
         state.crashes = vec![
-            CrashEntry { timestamp: "t1".into(), process: "p".into(), exception: "e1".into(), full_text: "f1".into() },
-            CrashEntry { timestamp: "t2".into(), process: "p".into(), exception: "e2".into(), full_text: "f2".into() },
+            CrashEntry { timestamp: "t1".into(), exception: "e1".into(), full_text: "f1".into() },
+            CrashEntry { timestamp: "t2".into(), exception: "e2".into(), full_text: "f2".into() },
         ];
         assert_eq!(state.selected, 0);
         state.handle_key(KeyCode::Char('j'));
@@ -102,7 +100,7 @@ mod tests {
     fn enter_opens_in_editor() {
         let mut state = CrashesState::new();
         state.crashes = vec![
-            CrashEntry { timestamp: "t".into(), process: "p".into(), exception: "e".into(), full_text: "full".into() },
+            CrashEntry { timestamp: "t".into(), exception: "e".into(), full_text: "full".into() },
         ];
         let action = state.handle_key(KeyCode::Enter);
         assert!(matches!(action, Some(Action::OpenInEditor(ref s)) if s == "full"));
