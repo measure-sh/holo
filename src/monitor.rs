@@ -6,8 +6,7 @@ use crate::adb::Adb;
 use crate::panel;
 
 pub const POLL_SYSTEM: u8 = 1;
-pub const POLL_FRAMES: u8 = 2;
-pub const POLL_DISK: u8 = 4;
+pub const POLL_DISK: u8 = 2;
 
 const MAX_SAMPLES: usize = 60;
 
@@ -15,9 +14,6 @@ const MAX_SAMPLES: usize = 60;
 pub struct MonitorSample {
     pub rss_kb: u64,
     pub cpu_percent: f32,
-    pub total_frames: u64,
-    pub slow_frames: u64,
-    pub frozen_frames: u64,
     pub data_kb: u64,
     pub cache_kb: u64,
     pub debuggable: bool,
@@ -32,9 +28,6 @@ pub enum Trend {
 
 pub struct MonitorState {
     pub history: Vec<MonitorSample>,
-    pub frame_count_history: Vec<u64>,
-    pub slow_percent_history: Vec<f32>,
-    pub frozen_percent_history: Vec<f32>,
     pub debuggable: bool,
 }
 
@@ -42,38 +35,15 @@ impl MonitorState {
     pub fn new() -> Self {
         Self {
             history: Vec::new(),
-            frame_count_history: Vec::new(),
-            slow_percent_history: Vec::new(),
-            frozen_percent_history: Vec::new(),
             debuggable: true,
         }
     }
 
     pub fn push(&mut self, sample: MonitorSample) {
         self.debuggable = sample.debuggable;
-        if let Some(prev) = self.history.last() {
-            let frame_delta = sample.total_frames.saturating_sub(prev.total_frames);
-            let slow_delta = sample.slow_frames.saturating_sub(prev.slow_frames);
-            let frozen_delta = sample.frozen_frames.saturating_sub(prev.frozen_frames);
-            self.frame_count_history.push(frame_delta);
-            let pct = |delta: u64| -> f32 {
-                if frame_delta > 0 { delta as f32 / frame_delta as f32 * 100.0 } else { 0.0 }
-            };
-            self.slow_percent_history.push(pct(slow_delta));
-            self.frozen_percent_history.push(pct(frozen_delta));
-        }
         self.history.push(sample);
         if self.history.len() > MAX_SAMPLES {
             self.history.remove(0);
-        }
-        if self.frame_count_history.len() > MAX_SAMPLES {
-            self.frame_count_history.remove(0);
-        }
-        if self.slow_percent_history.len() > MAX_SAMPLES {
-            self.slow_percent_history.remove(0);
-        }
-        if self.frozen_percent_history.len() > MAX_SAMPLES {
-            self.frozen_percent_history.remove(0);
         }
     }
 
@@ -110,7 +80,6 @@ impl MonitorState {
 pub fn visibility_mask(vis: &[bool; 8]) -> u8 {
     let mut mask = 0u8;
     if vis[(panel::SYSTEM - 1) as usize] { mask |= POLL_SYSTEM; }
-    if vis[(panel::FRAMES - 1) as usize] { mask |= POLL_FRAMES; }
     if vis[(panel::DISK - 1) as usize] { mask |= POLL_DISK; }
     mask
 }
@@ -143,8 +112,6 @@ pub fn spawn_poller(
                     .then(|| s.spawn(|| adb.get_meminfo(&serial, &package)));
                 let cpu = (mask & POLL_SYSTEM != 0)
                     .then(|| s.spawn(|| adb.get_cpu_usage(&serial, &package)));
-                let gfx = (mask & POLL_FRAMES != 0)
-                    .then(|| s.spawn(|| adb.get_gfx_info(&serial, &package)));
                 let disk = poll_disk
                     .then(|| s.spawn(|| adb.get_disk_usage(&serial, &package)));
 
@@ -153,11 +120,6 @@ pub fn spawn_poller(
                 }
                 if let Some(Ok(Ok(cpu))) = cpu.map(|h| h.join()) {
                     sample.cpu_percent = cpu;
-                }
-                if let Some(Ok(Ok(gfx))) = gfx.map(|h| h.join()) {
-                    sample.total_frames = gfx.total_frames;
-                    sample.slow_frames = gfx.slow_frames;
-                    sample.frozen_frames = gfx.frozen_frames;
                 }
                 if let Some(Ok(Ok((data, cache)))) = disk.map(|h| h.join()) {
                     last_data_kb = data;
@@ -242,58 +204,6 @@ mod tests {
         state.push(sample(100));
         state.push(sample(120));
         assert_eq!(state.sparkline_u64(|m| m.rss_kb), vec![100, 120]);
-    }
-
-    #[test]
-    fn frame_history_computes_deltas() {
-        let mut state = MonitorState::new();
-        state.push(MonitorSample {
-            total_frames: 100,
-            slow_frames: 10,
-            frozen_frames: 2,
-            ..Default::default()
-        });
-        state.push(MonitorSample {
-            total_frames: 200,
-            slow_frames: 30,
-            frozen_frames: 5,
-            ..Default::default()
-        });
-        assert_eq!(state.frame_count_history, vec![100]);
-        assert_eq!(state.slow_percent_history, vec![20.0]);
-        assert_eq!(state.frozen_percent_history, vec![3.0]);
-    }
-
-    #[test]
-    fn frame_history_zero_delta_no_panic() {
-        let mut state = MonitorState::new();
-        state.push(MonitorSample {
-            total_frames: 50,
-            slow_frames: 5,
-            frozen_frames: 1,
-            ..Default::default()
-        });
-        state.push(MonitorSample {
-            total_frames: 50,
-            slow_frames: 5,
-            frozen_frames: 1,
-            ..Default::default()
-        });
-        assert_eq!(state.frame_count_history, vec![0]);
-        assert_eq!(state.slow_percent_history, vec![0.0]);
-        assert_eq!(state.frozen_percent_history, vec![0.0]);
-    }
-
-    #[test]
-    fn frame_history_empty_with_single_sample() {
-        let mut state = MonitorState::new();
-        state.push(MonitorSample {
-            total_frames: 100,
-            ..Default::default()
-        });
-        assert!(state.frame_count_history.is_empty());
-        assert!(state.slow_percent_history.is_empty());
-        assert!(state.frozen_percent_history.is_empty());
     }
 
     #[test]

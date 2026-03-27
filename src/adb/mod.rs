@@ -9,13 +9,6 @@ pub struct MemInfo {
     pub rss_kb: u64,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct GfxInfo {
-    pub total_frames: u64,
-    pub slow_frames: u64,
-    pub frozen_frames: u64,
-}
-
 #[derive(Debug, Clone)]
 pub struct Device {
     pub serial: String,
@@ -49,7 +42,6 @@ pub trait Adb: Send + Sync {
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()>;
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo>;
     fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32>;
-    fn get_gfx_info(&self, serial: &str, package: &str) -> Result<GfxInfo>;
     fn start_trace(&self, serial: &str, config: &str) -> Result<()>;
     fn stop_and_pull_trace(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
     fn take_screenshot(&self, serial: &str, dest: &std::path::Path) -> Result<()>;

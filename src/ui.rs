@@ -15,6 +15,7 @@ use crate::files_ui;
 use crate::logcat_ui;
 use crate::monitor_ui;
 use crate::panel;
+use crate::issues_ui;
 use crate::permissions_ui;
 use crate::theme;
 
@@ -345,10 +346,13 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let vis = app.panel_visibility();
     let commands_visible = app.commands().visible;
     let logcat_visible = vis[0];
-    let monitor_visible = vis[1] || vis[2] || vis[3];
+    let disk_visible = vis[1];
+    let system_visible = vis[2];
+    let permissions_visible = vis[3];
+    let monitor_visible = disk_visible || system_visible || permissions_visible;
     let trace_visible = vis[4];
-    let permissions_visible = vis[5];
-    let mid_visible = trace_visible || permissions_visible;
+    let issues_visible = vis[5];
+    let mid_visible = trace_visible || issues_visible;
     let bot_visible = vis[6] || vis[7];
 
     let top_visible = commands_visible || logcat_visible;
@@ -377,11 +381,11 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         idx += 1;
     }
     if monitor_visible {
-        render_monitor_section(frame, rows[idx], app);
+        render_monitor_section(frame, rows[idx], app, disk_visible, system_visible, permissions_visible);
         idx += 1;
     }
     if mid_visible {
-        render_mid_section(frame, rows[idx], app, trace_visible, permissions_visible);
+        render_mid_section(frame, rows[idx], app, trace_visible, issues_visible);
         idx += 1;
     }
     if bot_visible {
@@ -405,18 +409,18 @@ fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines
     }
 }
 
-fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, permissions_visible: bool) {
-    match (trace_visible, permissions_visible) {
+fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, issues_visible: bool) {
+    match (trace_visible, issues_visible) {
         (true, true) => {
             let cols = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
             crate::trace_ui::render_trace_panel(frame, cols[0], is_focused(app, panel::TRACE), app.trace_state());
-            permissions_ui::render_permissions_panel(frame, cols[1], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+            issues_ui::render_issues_panel(frame, cols[1], is_focused(app, panel::ISSUES), app.issues_state());
         }
         (true, false) => crate::trace_ui::render_trace_panel(frame, area, is_focused(app, panel::TRACE), app.trace_state()),
-        (false, true) => permissions_ui::render_permissions_panel(frame, area, is_focused(app, panel::PERMISSIONS), app.permissions_state()),
+        (false, true) => issues_ui::render_issues_panel(frame, area, is_focused(app, panel::ISSUES), app.issues_state()),
         (false, false) => {}
     }
 }
@@ -475,12 +479,28 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 
-fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App) {
-    let vis = app.panel_visibility();
+fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_visible: bool, system_visible: bool, permissions_visible: bool) {
+    let monitors_visible = disk_visible || system_visible;
+
+    match (monitors_visible, permissions_visible) {
+        (true, true) => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(area);
+            render_monitor_panels(frame, cols[0], app, disk_visible, system_visible);
+            permissions_ui::render_permissions_panel(frame, cols[1], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+        }
+        (true, false) => render_monitor_panels(frame, area, app, disk_visible, system_visible),
+        (false, true) => permissions_ui::render_permissions_panel(frame, area, is_focused(app, panel::PERMISSIONS), app.permissions_state()),
+        (false, false) => {}
+    }
+}
+
+fn render_monitor_panels(frame: &mut Frame, area: Rect, app: &mut App, disk_visible: bool, system_visible: bool) {
     let panels: Vec<u8> = [
-        (vis[1], panel::FRAMES),
-        (vis[2], panel::DISK),
-        (vis[3], panel::SYSTEM),
+        (disk_visible, panel::DISK),
+        (system_visible, panel::SYSTEM),
     ]
     .iter()
     .filter(|(v, _)| *v)
@@ -499,7 +519,6 @@ fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App) {
 
     for (i, &p) in panels.iter().enumerate() {
         match p {
-            panel::FRAMES => monitor_ui::render_frames_panel(frame, cols[i], false, app.monitor_state()),
             panel::DISK => monitor_ui::render_disk_panel(frame, cols[i], false, app.monitor_state()),
             panel::SYSTEM => monitor_ui::render_system_panel(frame, cols[i], false, app.monitor_state()),
             _ => {}

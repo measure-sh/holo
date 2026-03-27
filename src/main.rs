@@ -10,6 +10,8 @@ mod database_ui;
 mod dispatch;
 mod files;
 mod files_ui;
+mod issues;
+mod issues_ui;
 mod logcat;
 mod logcat_state;
 mod monitor;

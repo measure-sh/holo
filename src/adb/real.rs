@@ -4,7 +4,7 @@ use std::process::Command;
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
-use super::{Adb, Device, GfxInfo, MemInfo};
+use super::{Adb, Device, MemInfo};
 
 fn emulator_path() -> PathBuf {
     std::env::var_os("ANDROID_HOME")
@@ -334,20 +334,6 @@ impl Adb for RealAdb {
         let mut file = std::fs::File::create(dest)?;
         file.write_all(&output.stdout)?;
         Ok(())
-    }
-
-    fn get_gfx_info(&self, serial: &str, package: &str) -> Result<GfxInfo> {
-        let output = Command::new("adb")
-            .args(["-s", serial, "shell", "dumpsys", "gfxinfo", package])
-            .output()?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("dumpsys gfxinfo failed: {stderr}");
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_gfx_info(&stdout))
     }
 
     fn start_trace(&self, serial: &str, config: &str) -> Result<()> {
@@ -802,37 +788,6 @@ fn parse_proc_mem(output: &str) -> MemInfo {
     info
 }
 
-fn parse_gfx_info(output: &str) -> GfxInfo {
-    let mut info = GfxInfo::default();
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("Total frames rendered:") {
-            if let Ok(v) = rest.trim().parse::<u64>() {
-                info.total_frames = v;
-            }
-        } else if let Some(rest) = trimmed.strip_prefix("HISTOGRAM:") {
-            for token in rest.split_whitespace() {
-                if let Some((ms_str, count_str)) = token.split_once('=') {
-                    let ms: u64 = match ms_str.strip_suffix("ms").and_then(|s| s.parse().ok()) {
-                        Some(v) => v,
-                        None => continue,
-                    };
-                    let count: u64 = match count_str.parse() {
-                        Ok(v) => v,
-                        Err(_) => continue,
-                    };
-                    if ms > 700 {
-                        info.frozen_frames += count;
-                    } else if ms > 16 {
-                        info.slow_frames += count;
-                    }
-                }
-            }
-        }
-    }
-    info
-}
-
 pub fn parse_database_list(output: &str) -> Vec<String> {
     output
         .lines()
@@ -1126,42 +1081,6 @@ VmSwap:\t       0 kB
     fn top_cpu_no_partial_match() {
         let output = "  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS\n12345 u0_a123      20   0  12G  90M  60M S  5.2   3.1   1:23.45 com.example.app.debug\n";
         assert_eq!(parse_top_cpu(output, "com.example.app"), 0.0);
-    }
-
-    #[test]
-    fn parses_gfx_info_histogram() {
-        let output = "\
-Profile data in ms:
-
-Total frames rendered: 1000
-Janky frames: 123 (12.30%)
-50th percentile: 5ms
-HISTOGRAM: 5ms=500 10ms=300 16ms=100 17ms=50 32ms=30 700ms=15 701ms=3 1000ms=2
-";
-        let info = parse_gfx_info(output);
-        assert_eq!(info.total_frames, 1000);
-        assert_eq!(info.slow_frames, 95);
-        assert_eq!(info.frozen_frames, 5);
-    }
-
-    #[test]
-    fn gfx_info_empty_output() {
-        let info = parse_gfx_info("");
-        assert_eq!(info.total_frames, 0);
-        assert_eq!(info.slow_frames, 0);
-        assert_eq!(info.frozen_frames, 0);
-    }
-
-    #[test]
-    fn gfx_info_no_histogram() {
-        let output = "\
-Total frames rendered: 500
-Janky frames: 10 (2.00%)
-";
-        let info = parse_gfx_info(output);
-        assert_eq!(info.total_frames, 500);
-        assert_eq!(info.slow_frames, 0);
-        assert_eq!(info.frozen_frames, 0);
     }
 
     #[test]

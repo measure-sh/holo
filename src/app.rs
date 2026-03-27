@@ -4,6 +4,7 @@ use crate::adb::Device;
 use crate::commands::CommandsState;
 use crate::database::DatabaseState;
 use crate::files::FilesState;
+use crate::issues::IssuesState;
 use crate::logcat_state::LogcatState;
 use crate::monitor::MonitorState;
 use crate::panel;
@@ -69,6 +70,7 @@ pub struct App {
     gpu_rendering: bool,
     confirming_quit: bool,
     trace_state: TraceState,
+    issues_state: IssuesState,
     pub dialog: Option<String>,
     saved_visibility: Option<([bool; 8], bool)>,
 }
@@ -97,6 +99,7 @@ impl App {
             gpu_rendering: false,
             confirming_quit: false,
             trace_state: TraceState::new(pkg),
+            issues_state: IssuesState::new(),
             dialog: None,
             saved_visibility: None,
         }
@@ -209,6 +212,17 @@ impl App {
 
         if self.focused == Some(panel::TRACE) {
             if let Some(action) = self.trace_state.handle_key(code) {
+                if matches!(action, Action::Unfocus) {
+                    self.restore_zoom();
+                    self.focused = None;
+                    return Action::Noop;
+                }
+                return action;
+            }
+        }
+
+        if self.focused == Some(panel::ISSUES) {
+            if let Some(action) = self.issues_state.handle_key(code) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;
@@ -366,6 +380,14 @@ impl App {
         &mut self.files_state
     }
 
+    pub fn issues_state(&self) -> &IssuesState {
+        &self.issues_state
+    }
+
+    pub fn issues_state_mut(&mut self) -> &mut IssuesState {
+        &mut self.issues_state
+    }
+
     pub fn focused_panel(&self) -> Option<u8> {
         self.focused
     }
@@ -455,6 +477,7 @@ impl App {
         self.permissions_state = PermissionsState::new();
         self.monitor_state = MonitorState::new();
         self.trace_state = TraceState::new(package);
+        self.issues_state = IssuesState::new();
         self.focused = None;
     }
 
@@ -569,10 +592,17 @@ mod tests {
     fn handle_key_unknown_is_none() {
         let mut app = App::new(None, Some("com.test"));
         assert!(matches!(
-            app.handle_key(key(KeyCode::Char('x'))),
+            app.handle_key(key(KeyCode::Char('9'))),
             Action::Noop
         ));
         assert_eq!(app.panel_visibility(), &[true; 8]);
+    }
+
+    #[test]
+    fn x_focuses_issues_panel() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('x')));
+        assert_eq!(app.focused_panel(), Some(panel::ISSUES));
     }
 
     #[test]

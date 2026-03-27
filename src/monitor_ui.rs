@@ -162,49 +162,6 @@ fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     ListItem::new(lines)
 }
 
-fn percent_item(label: &str, data: &[f32], color: ratatui::style::Color, spark_width: usize) -> ListItem<'static> {
-    let current = data.last().copied().unwrap_or(0.0);
-    let (spark, min, max) = sparkline_str_f32(data, spark_width);
-
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(format!(" {:<12}", label), Style::new().fg(theme::FG)),
-            Span::styled(spark, Style::new().fg(color)),
-            Span::styled(format!("  {:>7.1}%", current), Style::new().fg(theme::FG)),
-        ]),
-    ];
-    if (max - min) >= 0.01 {
-        lines.push(Line::from(Span::styled(
-            format!(" {:>12}{:.1}-{:.1}%", "", min, max),
-            Style::new().fg(theme::MUTED),
-        )));
-    }
-    lines.push(Line::raw(""));
-    ListItem::new(lines)
-}
-
-fn frames_item(data: &[u64], spark_width: usize) -> ListItem<'static> {
-    let current = data.last().copied().unwrap_or(0);
-    let (spark, min, max) = sparkline_str(data, spark_width);
-
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(format!(" {:<12}", "Rendered"), Style::new().fg(theme::FG)),
-            Span::styled(spark, Style::new().fg(theme::MAGENTA)),
-            Span::styled(format!("  {:>8}", current), Style::new().fg(theme::FG)),
-        ]),
-    ];
-    if min != max {
-        lines.push(Line::from(Span::styled(
-            format!(" {:>12}{}-{}", "", min, max),
-            Style::new().fg(theme::MUTED),
-        )));
-    }
-    lines.push(Line::raw(""));
-    ListItem::new(lines)
-}
-
-
 fn render_monitor(
     frame: &mut Frame,
     area: Rect,
@@ -231,14 +188,6 @@ fn render_monitor(
 
     let spark_width = (inner.width as usize).saturating_sub(27).max(5);
     frame.render_widget(List::new(items_fn(spark_width, state)), inner);
-}
-
-pub fn render_frames_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
-    render_monitor(frame, area, panel::FRAMES, focused, state, |sw, st| vec![
-        percent_item("Slow", &st.slow_percent_history, theme::YELLOW, sw),
-        percent_item("Frozen", &st.frozen_percent_history, theme::RED, sw),
-        frames_item(&st.frame_count_history, sw),
-    ]);
 }
 
 pub fn render_disk_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
