@@ -49,17 +49,6 @@ pub fn render_database_panel(
         if !copied_active {
             db_state.copied_at = None;
         }
-        let pull_spans: Vec<Span> = if db_state.confirming_pull.is_some() {
-            vec![
-                Span::styled(" p", accent),
-                Span::styled(" to confirm ", Style::new().fg(t.fg)),
-            ]
-        } else {
-            vec![
-                Span::styled(" p", accent),
-                Span::styled("ull ", muted),
-            ]
-        };
         let copy_spans: Vec<Span> = if copied_active {
             vec![Span::styled(" copied! ", Style::new().fg(t.green))]
         } else {
@@ -74,15 +63,10 @@ pub fn render_database_panel(
             Span::styled("───", border_fg),
         ];
         bottom_spans.extend(copy_spans);
-        bottom_spans.push(Span::styled("───", border_fg));
-        bottom_spans.extend(pull_spans);
         bottom_spans.extend([
             Span::styled("───", border_fg),
             Span::styled(" r", accent),
             Span::styled("eset ", muted),
-            Span::styled("───", border_fg),
-            Span::styled(" esc", accent),
-            Span::styled(" back ", muted),
         ]);
 
         let color = panel::by_number(panel::DATABASE).border_color(focused);
