@@ -630,9 +630,9 @@ mod tests {
     }
 
     #[test]
-    fn n_focuses_anrs_panel() {
+    fn a_focuses_anrs_panel() {
         let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('n')));
+        app.handle_key(key(KeyCode::Char('a')));
         assert_eq!(app.focused_panel(), Some(panel::ANRS));
     }
 
