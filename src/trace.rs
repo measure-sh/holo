@@ -1,12 +1,16 @@
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 
 use crossterm::event::KeyCode;
 
 use crate::adb::Adb;
 use crate::app::Action;
+
+type FileMap = Arc<Mutex<HashMap<String, PathBuf>>>;
 
 pub struct TraceState {
     pub recording: bool,
@@ -15,6 +19,20 @@ pub struct TraceState {
     pub message_at: Option<std::time::Instant>,
     pub pulled_traces: Vec<PathBuf>,
     pub selected_index: usize,
+    server: Option<TraceServer>,
+}
+
+struct TraceServer {
+    port: u16,
+    files: FileMap,
+    shutdown: Arc<AtomicBool>,
+}
+
+impl Drop for TraceServer {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        let _ = std::net::TcpStream::connect(format!("127.0.0.1:{}", self.port));
+    }
 }
 
 impl TraceState {
@@ -38,6 +56,7 @@ impl TraceState {
             message_at: None,
             pulled_traces,
             selected_index: 0,
+            server: None,
         }
     }
 
@@ -70,8 +89,8 @@ impl TraceState {
                 Some(Action::Noop)
             }
             KeyCode::Enter if !self.recording => {
-                if let Some(path) = self.selected_path() {
-                    open_in_perfetto_ui(path);
+                if let Some(path) = self.selected_path().cloned() {
+                    self.open_trace(&path);
                 }
                 Some(Action::Noop)
             }
@@ -106,6 +125,24 @@ impl TraceState {
 
     pub fn selected_path(&self) -> Option<&PathBuf> {
         self.pulled_traces.get(self.selected_index)
+    }
+
+    pub fn open_trace(&mut self, path: &Path) {
+        if self.server.is_none() {
+            self.server = start_trace_server();
+        }
+        if let Some(server) = &self.server {
+            let fname = path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
+            server.files.lock().unwrap().insert(fname.clone(), path.to_path_buf());
+            let url = format!(
+                "https://ui.perfetto.dev/#!/?url=http://127.0.0.1:{}/{fname}",
+                server.port
+            );
+            let _ = open::that(&url);
+        }
     }
 }
 
@@ -238,31 +275,19 @@ pub fn spawn_stop_and_pull_trace(
     rx
 }
 
-pub fn open_in_perfetto_ui(path: &Path) {
-    let path = path.to_path_buf();
+fn start_trace_server() -> Option<TraceServer> {
+    let listener = TcpListener::bind("127.0.0.1:9001").ok()?;
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let flag = shutdown.clone();
+    let files: FileMap = Arc::new(Mutex::new(HashMap::new()));
+    let server_files = files.clone();
+
     std::thread::spawn(move || {
-        let fname = path.file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-
-        let listener = match TcpListener::bind("127.0.0.1:9001") {
-            Ok(l) => l,
-            Err(_) => return,
-        };
-
-        let url = format!(
-            "https://ui.perfetto.dev/#!/?url=http://127.0.0.1:9001/{fname}"
-        );
-        let _ = open::that(&url);
-
-        let trace_data = match std::fs::read(&path) {
-            Ok(d) => d,
-            Err(_) => return,
-        };
-
-        listener.set_nonblocking(false).ok();
         for stream in listener.incoming() {
+            if flag.load(Ordering::Relaxed) {
+                return;
+            }
+
             let Ok(mut stream) = stream else { break };
 
             let mut buf = [0u8; 4096];
@@ -283,23 +308,29 @@ pub fn open_in_perfetto_ui(path: &Path) {
                 continue;
             }
 
-            if requested_path != format!("/{fname}") {
-                let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
-                let _ = stream.write_all(response.as_bytes());
-                continue;
-            }
+            let fname = requested_path.trim_start_matches('/');
+            let file_path = server_files.lock().unwrap().get(fname).cloned();
 
-            let response = format!(
-                "HTTP/1.1 200 OK\r\n\
-                 Access-Control-Allow-Origin: https://ui.perfetto.dev\r\n\
-                 Content-Type: application/octet-stream\r\n\
-                 Cache-Control: no-cache\r\n\
-                 Content-Length: {}\r\n\r\n",
-                trace_data.len()
-            );
-            let _ = stream.write_all(response.as_bytes());
-            let _ = stream.write_all(&trace_data);
-            break;
+            match file_path.and_then(|p| std::fs::read(&p).ok()) {
+                Some(data) => {
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\n\
+                         Access-Control-Allow-Origin: https://ui.perfetto.dev\r\n\
+                         Content-Type: application/octet-stream\r\n\
+                         Cache-Control: no-cache\r\n\
+                         Content-Length: {}\r\n\r\n",
+                        data.len()
+                    );
+                    let _ = stream.write_all(response.as_bytes());
+                    let _ = stream.write_all(&data);
+                }
+                None => {
+                    let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+                    let _ = stream.write_all(response.as_bytes());
+                }
+            }
         }
     });
+
+    Some(TraceServer { port: 9001, files, shutdown })
 }
