@@ -39,10 +39,10 @@ pub struct DataSources {
     db_query_rx: Option<mpsc::Receiver<Result<String, String>>>,
     db_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
 
-    permissions_rx: Option<mpsc::Receiver<Result<Vec<(String, bool)>, String>>>,
+    permissions_rx: mpsc::Receiver<Result<Vec<(String, bool)>, String>>,
 
     files_list_rx: Option<mpsc::Receiver<Result<(String, Vec<(String, bool)>), String>>>,
-    files_pull_rx: Option<mpsc::Receiver<Result<(String, bool), String>>>,
+    files_pull_rx: Option<mpsc::Receiver<Result<String, String>>>,
 
     monitor_rx: mpsc::Receiver<MonitorSample>,
     monitor_visibility: Arc<AtomicU8>,
@@ -92,11 +92,11 @@ impl DataSources {
             )),
             db_query_rx: None,
             db_pull_rx: None,
-            permissions_rx: Some(permissions::spawn_permissions_loader(
+            permissions_rx: permissions::spawn_poller(
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
-            )),
+            ),
             files_list_rx: Some(files::spawn_list_dir(
                 adb.clone(),
                 serial.to_string(),
@@ -178,7 +178,7 @@ impl DataSources {
             }
         }
 
-        if let Some(result) = try_poll(&mut self.permissions_rx) {
+        while let Ok(result) = self.permissions_rx.try_recv() {
             match result {
                 Ok(perms) => app.permissions_state_mut().permissions = perms,
                 Err(e) => app.permissions_state_mut().error = Some(e),
@@ -216,10 +216,9 @@ impl DataSources {
         }
         if let Some(result) = try_poll(&mut self.files_pull_rx) {
             match result {
-                Ok((_, opened)) => {
-                    let label = if opened { "opening..." } else { "pulling..." };
+                Ok(_) => {
                     app.files_state_mut().action_flash =
-                        Some((label, std::time::Instant::now()));
+                        Some(("opening...", std::time::Instant::now()));
                 }
                 Err(e) => app.files_state_mut().error = Some(e),
             }
@@ -239,7 +238,7 @@ impl DataSources {
                 Ok(path) => {
                     ts.status_message = Some("done!".to_string());
                     ts.message_at = Some(std::time::Instant::now());
-                    trace::open_in_perfetto_ui(&path);
+                    ts.open_trace(&path);
                     ts.pulled_traces.push(path);
                 }
                 Err(e) => {
@@ -278,8 +277,8 @@ impl DataSources {
         self.files_list_rx = Some(files::spawn_list_dir(adb, serial, package, path));
     }
 
-    pub fn start_pull_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String, open_after: bool) {
-        self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path, open_after));
+    pub fn start_pull_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
+        self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path));
     }
 
     pub fn start_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {

@@ -71,17 +71,23 @@ impl PermissionsState {
     }
 }
 
-pub fn spawn_permissions_loader(
+pub fn spawn_poller(
     adb: Arc<dyn Adb>,
     serial: String,
     package: String,
 ) -> mpsc::Receiver<Result<Vec<(String, bool)>, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let result = adb
-            .list_permissions(&serial, &package)
-            .map_err(|e| e.to_string());
-        let _ = tx.send(result);
+        let interval = std::time::Duration::from_secs(5);
+        loop {
+            let result = adb
+                .list_permissions(&serial, &package)
+                .map_err(|e| e.to_string());
+            if tx.send(result).is_err() {
+                return;
+            }
+            std::thread::sleep(interval);
+        }
     });
     rx
 }

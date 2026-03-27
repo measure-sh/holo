@@ -12,6 +12,7 @@ All ADB commands used by msh, organized by feature area.
 | 1s | Memory | `adb shell 'PID=$(pidof -s <pkg>); [ -n "$PID" ] && cat /proc/$PID/status'` | `monitor.rs:137` |
 | 1s | Frames | `adb shell dumpsys gfxinfo <package>` | `monitor.rs:141` |
 | 5s | Disk | `adb shell run-as <package> du -s . ./cache` | `monitor.rs:134` |
+| 5s | Permissions | `adb shell dumpsys package <package>` | `permissions.rs:74` |
 | 30s | Battery | `adb shell dumpsys battery` | `battery.rs:41` |
 
 ## Commands by Feature
@@ -120,7 +121,7 @@ All ADB commands used by msh, organized by feature area.
 | `adb shell settings get system pointer_location` | Get pointer location state |
 | `adb shell settings put system pointer_location 1/0` | Toggle pointer location overlay |
 | `adb shell getprop debug.hwui.profile` | Get GPU rendering bars state |
-| `adb shell setprop debug.hwui.profile visual_bars/""` | Toggle GPU rendering bars overlay |
+| `adb shell setprop debug.hwui.profile visual_bars/false` | Toggle GPU rendering bars overlay |
 
 ### Wireless ADB
 
