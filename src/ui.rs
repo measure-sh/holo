@@ -157,14 +157,13 @@ pub fn render_app(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(3),
             Constraint::Min(0),
         ])
         .split(inner);
 
     render_toolbar(frame, chunks[0], app);
-    render_panels(frame, chunks[2], app, logcat_lines);
+    render_panels(frame, chunks[1], app, logcat_lines);
 
     if app.toolbar().open.is_some() {
         render_dim_overlay(frame, area);
@@ -186,36 +185,66 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let device_label = tb.device_label();
     let app_label = tb.app_label();
 
-    let (device_dot, device_fg, device_bg) = if has_device && tb.device_connected {
-        (t.cyan, t.fg, t.surface)
+    let (device_dot, device_fg) = if has_device && tb.device_connected {
+        (t.cyan, t.fg)
     } else if has_device {
-        (t.red, t.fg, t.surface)
+        (t.red, t.fg)
     } else {
-        (t.muted, t.muted, t.surface)
+        (t.muted, t.muted)
     };
     let app_dot = if has_app { t.green } else { t.muted };
     let app_fg = if has_app { t.fg } else { t.muted };
-    let app_bg = if has_app { t.surface } else { t.surface };
 
-    let line = Line::from(vec![
-        Span::styled("^D ", Style::new().fg(t.red)),
-        Span::styled(" \u{2022} ", Style::new().fg(device_dot).bg(device_bg)),
-        Span::styled(
-            format!("{device_label} \u{25BE} "),
-            Style::new().fg(device_fg).bg(device_bg),
-        ),
-        Span::styled("      ", Style::new()),
-        Span::styled("^A ", Style::new().fg(t.red)),
-        Span::styled(" \u{2022} ", Style::new().fg(app_dot).bg(app_bg)),
-        Span::styled(
-            format!("{app_label} \u{25BE} "),
-            Style::new().fg(app_fg).bg(app_bg),
-        ),
-    ]);
+    let device_content = format!(" \u{2022} {device_label} \u{25BE} ");
+    let app_content = format!(" \u{2022} {app_label} \u{25BE} ");
+    let device_w = device_content.chars().count() as u16 + 2;
+    let app_w = app_content.chars().count() as u16 + 2;
+    let gap = 4u16;
+    let total_w = device_w + gap + app_w;
+    let x_start = area.x + area.width.saturating_sub(total_w) / 2;
 
+    let device_area = Rect::new(x_start, area.y, device_w, 3);
+    let device_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(t.surface))
+        .title(Span::styled(" ^D ", Style::new().fg(t.red)));
+    let device_inner = device_block.inner(device_area);
+    frame.render_widget(device_block, device_area);
     frame.render_widget(
-        ratatui::widgets::Paragraph::new(line).alignment(Alignment::Center),
-        area,
+        ratatui::widgets::Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" \u{2022}"),
+                Style::new().fg(device_dot),
+            ),
+            Span::styled(
+                format!(" {device_label} \u{25BE} "),
+                Style::new().fg(device_fg),
+            ),
+        ])),
+        device_inner,
+    );
+
+    let app_area = Rect::new(x_start + device_w + gap, area.y, app_w, 3);
+    let app_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(t.surface))
+        .title(Span::styled(" ^A ", Style::new().fg(t.red)));
+    let app_inner = app_block.inner(app_area);
+    frame.render_widget(app_block, app_area);
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new(Line::from(vec![
+            Span::styled(
+                format!(" \u{2022}"),
+                Style::new().fg(app_dot),
+            ),
+            Span::styled(
+                format!(" {app_label} \u{25BE} "),
+                Style::new().fg(app_fg),
+            ),
+        ])),
+        app_inner,
     );
 }
 
@@ -230,7 +259,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let tb = app.toolbar();
     let Some(kind) = tb.open else { return };
 
-    let anchor_y = toolbar_area.y + 1;
+    let anchor_y = toolbar_area.y + toolbar_area.height;
 
     let screen = frame.area();
     let (width, max_items) = match kind {
@@ -269,10 +298,10 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(Line::from(Span::styled(title, Style::new().fg(t.accent).add_modifier(Modifier::BOLD))))
+        .title(Line::from(Span::styled(title, Style::new().fg(t.fg))))
         .title_bottom(Line::from(bottom_spans))
-        .border_style(Style::new().fg(t.accent))
-        .style(Style::new().bg(t.popup_bg));
+        .border_style(Style::new().fg(t.surface))
+        .style(Style::new().bg(t.bg));
 
     let inner = block.inner(dropdown_area);
     frame.render_widget(block, dropdown_area);
@@ -345,9 +374,9 @@ fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(t.accent))
+        .border_style(Style::new().fg(t.surface))
         .title_bottom(bottom)
-        .style(Style::new().bg(t.popup_bg));
+        .style(Style::new().bg(t.bg));
 
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
