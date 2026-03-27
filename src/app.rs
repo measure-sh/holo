@@ -1,10 +1,11 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::adb::Device;
+use crate::anrs::AnrsState;
 use crate::commands::CommandsState;
+use crate::crashes::CrashesState;
 use crate::database::DatabaseState;
 use crate::files::FilesState;
-use crate::issues::IssuesState;
 use crate::logcat_state::LogcatState;
 use crate::monitor::MonitorState;
 use crate::panel;
@@ -49,10 +50,11 @@ pub enum Action {
     ToggleShowTaps,
     TogglePointerLocation,
     ToggleGpuRendering,
+    OpenInEditor(String),
 }
 
 pub struct App {
-    panel_visible: [bool; 8],
+    panel_visible: [bool; 9],
     focused: Option<u8>,
     commands: CommandsState,
     logcat_state: LogcatState,
@@ -70,9 +72,10 @@ pub struct App {
     gpu_rendering: bool,
     confirming_quit: bool,
     trace_state: TraceState,
-    issues_state: IssuesState,
+    crashes_state: CrashesState,
+    anrs_state: AnrsState,
     pub dialog: Option<String>,
-    saved_visibility: Option<([bool; 8], bool)>,
+    saved_visibility: Option<([bool; 9], bool)>,
 }
 
 impl App {
@@ -81,7 +84,7 @@ impl App {
         let mut toolbar = ToolbarState::new(device);
         toolbar.package = package.map(String::from);
         Self {
-            panel_visible: [true; 8],
+            panel_visible: [true; 9],
             focused: None,
             commands: CommandsState::new(),
             logcat_state: LogcatState::new(),
@@ -99,7 +102,8 @@ impl App {
             gpu_rendering: false,
             confirming_quit: false,
             trace_state: TraceState::new(pkg),
-            issues_state: IssuesState::new(),
+            crashes_state: CrashesState::new(),
+            anrs_state: AnrsState::new(),
             dialog: None,
             saved_visibility: None,
         }
@@ -221,8 +225,19 @@ impl App {
             }
         }
 
-        if self.focused == Some(panel::ISSUES) {
-            if let Some(action) = self.issues_state.handle_key(code) {
+        if self.focused == Some(panel::CRASHES) {
+            if let Some(action) = self.crashes_state.handle_key(code) {
+                if matches!(action, Action::Unfocus) {
+                    self.restore_zoom();
+                    self.focused = None;
+                    return Action::Noop;
+                }
+                return action;
+            }
+        }
+
+        if self.focused == Some(panel::ANRS) {
+            if let Some(action) = self.anrs_state.handle_key(code) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;
@@ -253,7 +268,7 @@ impl App {
                 }
                 Action::Noop
             }
-            KeyCode::Char(c @ '1'..='8') => {
+            KeyCode::Char(c @ '1'..='9') => {
                 self.saved_visibility = None;
                 self.toggle_visibility(c as u8 - b'0');
                 Action::Noop
@@ -272,14 +287,14 @@ impl App {
         if n == panel::COMMANDS {
             return self.commands.visible;
         }
-        if !(1..=8).contains(&n) {
+        if !(1..=9).contains(&n) {
             return false;
         }
         self.panel_visible[(n - 1) as usize]
     }
 
     fn toggle_visibility(&mut self, n: u8) {
-        if !(1..=8).contains(&n) {
+        if !(1..=9).contains(&n) {
             return;
         }
         let idx = (n - 1) as usize;
@@ -299,10 +314,10 @@ impl App {
         } else if let Some(focused) = self.focused {
             self.saved_visibility = Some((self.panel_visible, self.commands.visible));
             if focused == panel::COMMANDS {
-                self.panel_visible = [false; 8];
+                self.panel_visible = [false; 9];
                 self.commands.visible = true;
             } else {
-                self.panel_visible = [false; 8];
+                self.panel_visible = [false; 9];
                 self.commands.visible = false;
                 let idx = (focused - 1) as usize;
                 self.panel_visible[idx] = true;
@@ -335,7 +350,7 @@ impl App {
         self.commands.cursor = 0;
     }
 
-    pub fn panel_visibility(&self) -> &[bool; 8] {
+    pub fn panel_visibility(&self) -> &[bool; 9] {
         &self.panel_visible
     }
 
@@ -380,12 +395,20 @@ impl App {
         &mut self.files_state
     }
 
-    pub fn issues_state(&self) -> &IssuesState {
-        &self.issues_state
+    pub fn crashes_state(&self) -> &CrashesState {
+        &self.crashes_state
     }
 
-    pub fn issues_state_mut(&mut self) -> &mut IssuesState {
-        &mut self.issues_state
+    pub fn crashes_state_mut(&mut self) -> &mut CrashesState {
+        &mut self.crashes_state
+    }
+
+    pub fn anrs_state(&self) -> &AnrsState {
+        &self.anrs_state
+    }
+
+    pub fn anrs_state_mut(&mut self) -> &mut AnrsState {
+        &mut self.anrs_state
     }
 
     pub fn focused_panel(&self) -> Option<u8> {
@@ -477,7 +500,8 @@ impl App {
         self.permissions_state = PermissionsState::new();
         self.monitor_state = MonitorState::new();
         self.trace_state = TraceState::new(package);
-        self.issues_state = IssuesState::new();
+        self.crashes_state = CrashesState::new();
+        self.anrs_state = AnrsState::new();
         self.focused = None;
     }
 
@@ -504,7 +528,7 @@ mod tests {
     #[test]
     fn new_app_all_panels_visible() {
         let app = App::new(None, Some("com.test"));
-        assert_eq!(app.panel_visibility(), &[true; 8]);
+        assert_eq!(app.panel_visibility(), &[true; 9]);
     }
 
     #[test]
@@ -519,7 +543,7 @@ mod tests {
         app.toggle_visibility(3);
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true, true, true]
+            &[true, true, false, true, true, true, true, true, true]
         );
     }
 
@@ -528,24 +552,24 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.toggle_visibility(3);
         app.toggle_visibility(3);
-        assert_eq!(app.panel_visibility(), &[true; 8]);
+        assert_eq!(app.panel_visibility(), &[true; 9]);
     }
 
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new(None, Some("com.test"));
         app.commands.visible = false;
-        for n in 2..=8 {
+        for n in 2..=9 {
             app.toggle_visibility(n);
         }
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false, false, false]
+            &[true, false, false, false, false, false, false, false, false]
         );
         app.toggle_visibility(1);
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false, false, false]
+            &[true, false, false, false, false, false, false, false, false]
         );
     }
 
@@ -553,9 +577,9 @@ mod tests {
     fn out_of_range_is_ignored() {
         let mut app = App::new(None, Some("com.test"));
         app.toggle_visibility(0);
-        app.toggle_visibility(9);
         app.toggle_visibility(10);
-        assert_eq!(app.panel_visibility(), &[true; 8]);
+        app.toggle_visibility(11);
+        assert_eq!(app.panel_visibility(), &[true; 9]);
     }
 
     #[test]
@@ -584,7 +608,7 @@ mod tests {
         ));
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true, true, true]
+            &[true, true, false, true, true, true, true, true, true]
         );
     }
 
@@ -592,17 +616,24 @@ mod tests {
     fn handle_key_unknown_is_none() {
         let mut app = App::new(None, Some("com.test"));
         assert!(matches!(
-            app.handle_key(key(KeyCode::Char('9'))),
+            app.handle_key(key(KeyCode::Tab)),
             Action::Noop
         ));
-        assert_eq!(app.panel_visibility(), &[true; 8]);
+        assert_eq!(app.panel_visibility(), &[true; 9]);
     }
 
     #[test]
-    fn x_focuses_issues_panel() {
+    fn h_focuses_crashes_panel() {
         let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('x')));
-        assert_eq!(app.focused_panel(), Some(panel::ISSUES));
+        app.handle_key(key(KeyCode::Char('h')));
+        assert_eq!(app.focused_panel(), Some(panel::CRASHES));
+    }
+
+    #[test]
+    fn n_focuses_anrs_panel() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('n')));
+        assert_eq!(app.focused_panel(), Some(panel::ANRS));
     }
 
     #[test]
@@ -1231,7 +1262,7 @@ mod tests {
 
         app.handle_key(key(KeyCode::Char('z')));
         assert!(app.is_zoomed());
-        assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false, false, false]);
+        assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false, false, false, false]);
         assert!(!app.commands().visible);
 
         app.handle_key(key(KeyCode::Char('z')));
@@ -1248,12 +1279,12 @@ mod tests {
 
         app.handle_key(key(KeyCode::Char('z')));
         assert!(app.is_zoomed());
-        assert_eq!(app.panel_visibility(), &[false; 8]);
+        assert_eq!(app.panel_visibility(), &[false; 9]);
         assert!(app.commands().visible);
 
         app.handle_key(key(KeyCode::Char('z')));
         assert!(!app.is_zoomed());
-        assert_eq!(app.panel_visibility(), &[true; 8]);
+        assert_eq!(app.panel_visibility(), &[true; 9]);
     }
 
     #[test]

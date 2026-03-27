@@ -77,7 +77,7 @@ impl MonitorState {
 
 }
 
-pub fn visibility_mask(vis: &[bool; 8]) -> u8 {
+pub fn visibility_mask(vis: &[bool; 9]) -> u8 {
     let mut mask = 0u8;
     if vis[(panel::SYSTEM - 1) as usize] { mask |= POLL_SYSTEM; }
     if vis[(panel::DISK - 1) as usize] { mask |= POLL_DISK; }

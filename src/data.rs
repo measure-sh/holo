@@ -7,8 +7,9 @@ use crate::monitor::MonitorSample;
 use crate::app::App;
 use crate::battery;
 use crate::database;
+use crate::anrs;
+use crate::crashes;
 use crate::files;
-use crate::issues::{self, CrashEntry, AnrEntry};
 use crate::logcat;
 use crate::monitor;
 use crate::permissions;
@@ -49,8 +50,8 @@ pub struct DataSources {
     trace_start_rx: Option<mpsc::Receiver<Result<(), String>>>,
     trace_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
 
-    crashes_rx: Option<mpsc::Receiver<Result<Vec<CrashEntry>, String>>>,
-    anrs_rx: Option<mpsc::Receiver<Result<Vec<AnrEntry>, String>>>,
+    crashes_rx: Option<mpsc::Receiver<Result<Vec<crashes::CrashEntry>, String>>>,
+    anrs_rx: Option<mpsc::Receiver<Result<Vec<anrs::AnrEntry>, String>>>,
 
     pub initial_layout_bounds: bool,
     pub initial_airplane_mode: bool,
@@ -66,7 +67,7 @@ pub struct DataSources {
 }
 
 impl DataSources {
-    pub fn new(adb: Arc<dyn Adb>, serial: &str, package: &str, panel_vis: &[bool; 8]) -> Self {
+    pub fn new(adb: Arc<dyn Adb>, serial: &str, package: &str, panel_vis: &[bool; 9]) -> Self {
         let initial_layout_bounds = adb.get_layout_bounds(serial).unwrap_or(false);
         let initial_airplane_mode = adb.get_airplane_mode(serial).unwrap_or(false);
         let initial_wifi_enabled = adb.get_wifi_enabled(serial).unwrap_or(false);
@@ -111,12 +112,12 @@ impl DataSources {
             ),
             trace_start_rx: None,
             trace_pull_rx: None,
-            crashes_rx: Some(issues::spawn_crash_loader(
+            crashes_rx: Some(crashes::spawn_loader(
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
             )),
-            anrs_rx: Some(issues::spawn_anr_loader(
+            anrs_rx: Some(anrs::spawn_loader(
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
@@ -135,7 +136,7 @@ impl DataSources {
         }
     }
 
-    pub fn update_monitor_visibility(&self, vis: &[bool; 8]) {
+    pub fn update_monitor_visibility(&self, vis: &[bool; 9]) {
         self.monitor_visibility.store(monitor::visibility_mask(vis), Ordering::Relaxed);
     }
 
@@ -249,14 +250,14 @@ impl DataSources {
         }
         if let Some(result) = try_poll(&mut self.crashes_rx) {
             match result {
-                Ok(crashes) => app.issues_state_mut().crashes = crashes,
-                Err(e) => app.issues_state_mut().error = Some(e),
+                Ok(crashes) => app.crashes_state_mut().crashes = crashes,
+                Err(e) => app.crashes_state_mut().error = Some(e),
             }
         }
         if let Some(result) = try_poll(&mut self.anrs_rx) {
             match result {
-                Ok(anrs) => app.issues_state_mut().anrs = anrs,
-                Err(e) => app.issues_state_mut().error = Some(e),
+                Ok(anrs) => app.anrs_state_mut().anrs = anrs,
+                Err(e) => app.anrs_state_mut().error = Some(e),
             }
         }
     }

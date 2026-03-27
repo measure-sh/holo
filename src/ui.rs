@@ -15,13 +15,14 @@ use crate::files_ui;
 use crate::logcat_ui;
 use crate::monitor_ui;
 use crate::panel;
-use crate::issues_ui;
+use crate::crashes_ui;
+use crate::anrs_ui;
 use crate::permissions_ui;
 use crate::theme;
 
 
-pub const SUPERSCRIPT_DIGITS: [char; 8] = [
-    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}',
+pub const SUPERSCRIPT_DIGITS: [char; 9] = [
+    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}', '\u{2079}',
 ];
 
 pub fn panel_title(panel_number: u8, _focused: bool) -> Line<'static> {
@@ -351,9 +352,10 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let permissions_visible = vis[3];
     let monitor_visible = disk_visible || system_visible || permissions_visible;
     let trace_visible = vis[4];
-    let issues_visible = vis[5];
-    let mid_visible = trace_visible || issues_visible;
-    let bot_visible = vis[6] || vis[7];
+    let crashes_visible = vis[5];
+    let anrs_visible = vis[6];
+    let mid_visible = trace_visible || crashes_visible || anrs_visible;
+    let bot_visible = vis[7] || vis[8];
 
     let top_visible = commands_visible || logcat_visible;
     let section_count = top_visible as u8 + monitor_visible as u8 + mid_visible as u8 + bot_visible as u8;
@@ -385,7 +387,7 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         idx += 1;
     }
     if mid_visible {
-        render_mid_section(frame, rows[idx], app, trace_visible, issues_visible);
+        render_mid_section(frame, rows[idx], app, trace_visible, crashes_visible, anrs_visible);
         idx += 1;
     }
     if bot_visible {
@@ -409,19 +411,34 @@ fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines
     }
 }
 
-fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, issues_visible: bool) {
-    match (trace_visible, issues_visible) {
-        (true, true) => {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            crate::trace_ui::render_trace_panel(frame, cols[0], is_focused(app, panel::TRACE), app.trace_state());
-            issues_ui::render_issues_panel(frame, cols[1], is_focused(app, panel::ISSUES), app.issues_state());
+fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, crashes_visible: bool, anrs_visible: bool) {
+    let panels: Vec<u8> = [
+        (trace_visible, panel::TRACE),
+        (crashes_visible, panel::CRASHES),
+        (anrs_visible, panel::ANRS),
+    ]
+    .iter()
+    .filter(|(v, _)| *v)
+    .map(|(_, p)| *p)
+    .collect();
+
+    if panels.is_empty() {
+        return;
+    }
+
+    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, &p) in panels.iter().enumerate() {
+        match p {
+            panel::TRACE => crate::trace_ui::render_trace_panel(frame, cols[i], is_focused(app, panel::TRACE), app.trace_state()),
+            panel::CRASHES => crashes_ui::render_crashes_panel(frame, cols[i], is_focused(app, panel::CRASHES), app.crashes_state()),
+            panel::ANRS => anrs_ui::render_anrs_panel(frame, cols[i], is_focused(app, panel::ANRS), app.anrs_state()),
+            _ => {}
         }
-        (true, false) => crate::trace_ui::render_trace_panel(frame, area, is_focused(app, panel::TRACE), app.trace_state()),
-        (false, true) => issues_ui::render_issues_panel(frame, area, is_focused(app, panel::ISSUES), app.issues_state()),
-        (false, false) => {}
     }
 }
 
@@ -480,27 +497,10 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 
 
 fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_visible: bool, system_visible: bool, permissions_visible: bool) {
-    let monitors_visible = disk_visible || system_visible;
-
-    match (monitors_visible, permissions_visible) {
-        (true, true) => {
-            let cols = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(area);
-            render_monitor_panels(frame, cols[0], app, disk_visible, system_visible);
-            permissions_ui::render_permissions_panel(frame, cols[1], is_focused(app, panel::PERMISSIONS), app.permissions_state());
-        }
-        (true, false) => render_monitor_panels(frame, area, app, disk_visible, system_visible),
-        (false, true) => permissions_ui::render_permissions_panel(frame, area, is_focused(app, panel::PERMISSIONS), app.permissions_state()),
-        (false, false) => {}
-    }
-}
-
-fn render_monitor_panels(frame: &mut Frame, area: Rect, app: &mut App, disk_visible: bool, system_visible: bool) {
     let panels: Vec<u8> = [
         (disk_visible, panel::DISK),
         (system_visible, panel::SYSTEM),
+        (permissions_visible, panel::PERMISSIONS),
     ]
     .iter()
     .filter(|(v, _)| *v)
@@ -521,6 +521,7 @@ fn render_monitor_panels(frame: &mut Frame, area: Rect, app: &mut App, disk_visi
         match p {
             panel::DISK => monitor_ui::render_disk_panel(frame, cols[i], false, app.monitor_state()),
             panel::SYSTEM => monitor_ui::render_system_panel(frame, cols[i], false, app.monitor_state()),
+            panel::PERMISSIONS => permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state()),
             _ => {}
         }
     }
@@ -528,8 +529,8 @@ fn render_monitor_panels(frame: &mut Frame, area: Rect, app: &mut App, disk_visi
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let files_visible = vis[6];
-    let database_visible = vis[7];
+    let files_visible = vis[7];
+    let database_visible = vis[8];
 
     match (files_visible, database_visible) {
         (true, true) => {

@@ -26,20 +26,22 @@ pub const DISK: u8 = 2;
 pub const SYSTEM: u8 = 3;
 pub const PERMISSIONS: u8 = 4;
 pub const TRACE: u8 = 5;
-pub const ISSUES: u8 = 6;
-pub const FILES: u8 = 7;
-pub const DATABASE: u8 = 8;
+pub const CRASHES: u8 = 6;
+pub const ANRS: u8 = 7;
+pub const FILES: u8 = 8;
+pub const DATABASE: u8 = 9;
 
-pub const PANELS: [PanelDef; 9] = [
+pub const PANELS: [PanelDef; 10] = [
     PanelDef { number: 0, name: "commands",     dim_color: theme::DIM_TEAL,    bright_color: theme::CYAN,    focus_key: Some('c') },
     PanelDef { number: 1, name: "logcat",       dim_color: theme::DIM_GREEN,   bright_color: theme::GREEN,   focus_key: Some('l') },
     PanelDef { number: 2, name: "disk",         dim_color: theme::DIM_ORANGE,  bright_color: theme::ORANGE,  focus_key: None },
     PanelDef { number: 3, name: "cpu & memory", dim_color: theme::DIM_ORANGE,  bright_color: theme::ORANGE,  focus_key: None },
     PanelDef { number: 4, name: "permissions",  dim_color: theme::DIM_CYAN,    bright_color: theme::CYAN,    focus_key: Some('p') },
     PanelDef { number: 5, name: "trace",        dim_color: theme::DIM_BLUE,    bright_color: theme::ACCENT,  focus_key: Some('t') },
-    PanelDef { number: 6, name: "issues",       dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: Some('x') },
-    PanelDef { number: 7, name: "files",        dim_color: theme::DIM_MAGENTA, bright_color: theme::MAGENTA, focus_key: Some('f') },
-    PanelDef { number: 8, name: "database",     dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: Some('d') },
+    PanelDef { number: 6, name: "crashes",      dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: Some('h') },
+    PanelDef { number: 7, name: "anrs",         dim_color: theme::DIM_RED,     bright_color: theme::RED,     focus_key: Some('n') },
+    PanelDef { number: 8, name: "files",        dim_color: theme::DIM_MAGENTA, bright_color: theme::MAGENTA, focus_key: Some('f') },
+    PanelDef { number: 9, name: "database",     dim_color: theme::DIM_YELLOW,  bright_color: theme::YELLOW,  focus_key: Some('d') },
 ];
 
 pub fn by_number(n: u8) -> &'static PanelDef {

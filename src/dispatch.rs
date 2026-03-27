@@ -307,6 +307,17 @@ impl DispatchContext {
                     }
                 }
             }
+            Action::OpenInEditor(text) => {
+                std::thread::spawn(move || {
+                    let dir = std::env::temp_dir().join("msh").join("issues");
+                    let _ = std::fs::create_dir_all(&dir);
+                    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                    let path = dir.join(format!("{timestamp}.txt"));
+                    if std::fs::write(&path, &text).is_ok() {
+                        let _ = open::that(&path);
+                    }
+                });
+            }
             Action::Noop | Action::Unfocus => {}
         }
         false
