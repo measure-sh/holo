@@ -314,7 +314,14 @@ impl DispatchContext {
                     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
                     let path = dir.join(format!("{timestamp}.txt"));
                     if std::fs::write(&path, &text).is_ok() {
-                        let _ = open::that(&path);
+                        if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
+                            let _ = std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg(format!("{} \"{}\"", editor, path.display()))
+                                .spawn();
+                        } else {
+                            let _ = open::that(&path);
+                        }
                     }
                 });
             }
