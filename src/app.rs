@@ -124,7 +124,7 @@ impl App {
             return Action::Noop;
         }
         if self.settings_open {
-            const SELECTABLE_COUNT: usize = 4;
+            const SELECTABLE_COUNT: usize = 3;
             match code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.settings_cursor = self.settings_cursor.saturating_sub(1);
@@ -141,21 +141,22 @@ impl App {
                     let prev = if cur == 0 { theme::theme_count() - 1 } else { cur - 1 };
                     theme::set_theme(prev);
                 }
-                KeyCode::Enter => {
+                KeyCode::Char('c') if self.settings_cursor == 1 => {
                     let dir = std::env::temp_dir().join("msh");
+                    let _ = std::fs::create_dir_all(&dir);
+                    crate::clipboard::copy_to_clipboard(&dir.to_string_lossy());
+                    self.settings_open = false;
+                    self.set_status_flash("Path copied!".into(), false);
+                }
+                KeyCode::Enter => {
                     match self.settings_cursor {
                         1 => {
-                            let _ = std::fs::create_dir_all(&dir);
-                            crate::clipboard::copy_to_clipboard(&dir.to_string_lossy());
-                            self.settings_open = false;
-                            self.set_status_flash("Path copied!".into(), false);
-                        }
-                        2 => {
+                            let dir = std::env::temp_dir().join("msh");
                             let _ = std::fs::create_dir_all(&dir);
                             let _ = open::that(&dir);
                             self.settings_open = false;
                         }
-                        3 => {
+                        2 => {
                             let _ = open::that("https://github.com/anthropics/msh");
                             self.settings_open = false;
                         }

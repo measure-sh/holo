@@ -370,7 +370,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     }
 }
 
-const SETTINGS_SELECTABLE: [usize; 4] = [1, 3, 4, 6];
+const SETTINGS_SELECTABLE: [usize; 3] = [1, 3, 5];
 
 fn settings_selectable_to_row(sel: usize) -> usize {
     SETTINGS_SELECTABLE[sel.min(SETTINGS_SELECTABLE.len() - 1)]
@@ -378,10 +378,11 @@ fn settings_selectable_to_row(sel: usize) -> usize {
 
 fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let t = theme::current();
-    let selected_row = settings_selectable_to_row(app.settings_cursor);
+    let cursor = app.settings_cursor;
+    let selected_row = settings_selectable_to_row(cursor);
 
     let width = 50u16.min(area.width.saturating_sub(4));
-    let height = 10u16.min(area.height.saturating_sub(2));
+    let height = 8u16.min(area.height.saturating_sub(2));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
@@ -389,19 +390,29 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Clear, dialog_area);
 
     let border_fg = Style::new().fg(t.surface);
-    let bottom = Line::from(vec![
-        Span::styled(" \u{2190}\u{2192}", Style::new().fg(t.danger)),
-        Span::styled(" change ", Style::new().fg(t.muted)),
-        Span::styled("───", border_fg),
-        Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
-        Span::styled(" select ", Style::new().fg(t.muted)),
-    ]);
+    let bottom_spans: Vec<Span> = match cursor {
+        0 => vec![
+            Span::styled(" \u{2190}\u{2192}", Style::new().fg(t.danger)),
+            Span::styled(" change ", Style::new().fg(t.muted)),
+        ],
+        1 => vec![
+            Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
+            Span::styled(" open ", Style::new().fg(t.muted)),
+            Span::styled("───", border_fg),
+            Span::styled(" c", Style::new().fg(t.danger)),
+            Span::styled("opy path ", Style::new().fg(t.muted)),
+        ],
+        _ => vec![
+            Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
+            Span::styled(" open in browser ", Style::new().fg(t.muted)),
+        ],
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(Span::styled(" settings ", Style::new().fg(t.fg)))
-        .title_bottom(bottom)
+        .title_bottom(Line::from(bottom_spans))
         .border_style(border_fg)
         .style(Style::new().bg(t.bg));
 
@@ -420,12 +431,7 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(format!("  \u{25c2} {name} \u{25b8}"), Style::new().fg(t.accent)),
         ]),
         Line::raw(""),
-        Line::from(vec![
-            Span::styled("   Copy downloads path", label),
-        ]),
-        Line::from(vec![
-            Span::styled("   Open downloads folder", label),
-        ]),
+        Line::from(Span::styled("   Downloads", label)),
         Line::raw(""),
         Line::from(vec![
             Span::styled("   About", label),
