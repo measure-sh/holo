@@ -1,6 +1,6 @@
 use std::sync::{mpsc, Arc};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::adb::Adb;
 use crate::app::Action;
@@ -20,7 +20,8 @@ impl PermissionsState {
         }
     }
 
-    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let code = key.code;
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.move_up();

@@ -176,7 +176,7 @@ impl App {
             return Action::Noop;
         }
         if self.logcat_state.editing.is_some() {
-            return self.logcat_state.handle_key(code).unwrap_or(Action::Noop);
+            return self.logcat_state.handle_key(key).unwrap_or(Action::Noop);
         }
 
         if self.database_state.editing_query {
@@ -250,7 +250,7 @@ impl App {
         }
 
         if self.focused == Some(panel::FILES) {
-            if let Some(action) = self.files_state.handle_key(code) {
+            if let Some(action) = self.files_state.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;
@@ -261,7 +261,7 @@ impl App {
         }
 
         if self.focused == Some(panel::PERMISSIONS) {
-            if let Some(action) = self.permissions_state.handle_key(code) {
+            if let Some(action) = self.permissions_state.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;
@@ -272,7 +272,7 @@ impl App {
         }
 
         if self.focused == Some(panel::LOGCAT) {
-            if let Some(action) = self.logcat_state.handle_key(code) {
+            if let Some(action) = self.logcat_state.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;
@@ -283,7 +283,7 @@ impl App {
         }
 
         if self.focused == Some(panel::TRACE) {
-            if let Some(action) = self.trace_state.handle_key(code) {
+            if let Some(action) = self.trace_state.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;
@@ -294,7 +294,7 @@ impl App {
         }
 
         if self.focused == Some(panel::CRASHES) {
-            if let Some(action) = self.crashes_state.handle_key(code) {
+            if let Some(action) = self.crashes_state.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;
@@ -305,7 +305,7 @@ impl App {
         }
 
         if self.focused == Some(panel::ANRS) {
-            if let Some(action) = self.anrs_state.handle_key(code) {
+            if let Some(action) = self.anrs_state.handle_key(key) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
                     self.focused = None;

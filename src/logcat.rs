@@ -2,7 +2,7 @@ use std::io::BufRead;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::app::Action;
 
@@ -158,7 +158,8 @@ impl LogcatState {
         }
     }
 
-    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let code = key.code;
         if let Some(target) = self.editing {
             match code {
                 KeyCode::Char(c) => match target {

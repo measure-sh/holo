@@ -1,6 +1,6 @@
 use std::sync::{mpsc, Arc};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::adb::Adb;
 use crate::app::Action;
@@ -27,7 +27,8 @@ impl AnrsState {
         }
     }
 
-    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let code = key.code;
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.selected = self.selected.saturating_sub(1);
@@ -89,6 +90,11 @@ pub fn spawn_poller(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyModifiers;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
 
     #[test]
     fn navigate_list() {
@@ -98,9 +104,9 @@ mod tests {
             AnrEntry { timestamp: "t2".into(), reason: "r2".into(), full_text: "f2".into() },
         ];
         assert_eq!(state.selected, 0);
-        state.handle_key(KeyCode::Char('j'));
+        state.handle_key(key(KeyCode::Char('j')));
         assert_eq!(state.selected, 1);
-        state.handle_key(KeyCode::Char('k'));
+        state.handle_key(key(KeyCode::Char('k')));
         assert_eq!(state.selected, 0);
     }
 
@@ -110,14 +116,14 @@ mod tests {
         state.anrs = vec![
             AnrEntry { timestamp: "t".into(), reason: "r".into(), full_text: "full".into() },
         ];
-        let action = state.handle_key(KeyCode::Enter);
+        let action = state.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Some(Action::OpenInEditor(ref s)) if s == "full"));
     }
 
     #[test]
     fn esc_unfocuses() {
         let mut state = AnrsState::new();
-        let action = state.handle_key(KeyCode::Esc);
+        let action = state.handle_key(key(KeyCode::Esc));
         assert!(matches!(action, Some(Action::Unfocus)));
     }
 }

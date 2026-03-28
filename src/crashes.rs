@@ -1,6 +1,6 @@
 use std::sync::{mpsc, Arc};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::adb::Adb;
 use crate::app::Action;
@@ -27,7 +27,8 @@ impl CrashesState {
         }
     }
 
-    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let code = key.code;
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.selected = self.selected.saturating_sub(1);
@@ -87,6 +88,11 @@ pub fn spawn_poller(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crossterm::event::KeyModifiers;
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::NONE)
+    }
 
     #[test]
     fn navigate_list() {
@@ -96,11 +102,11 @@ mod tests {
             CrashEntry { timestamp: "t2".into(), exception: "e2".into(), full_text: "f2".into() },
         ];
         assert_eq!(state.selected, 0);
-        state.handle_key(KeyCode::Char('j'));
+        state.handle_key(key(KeyCode::Char('j')));
         assert_eq!(state.selected, 1);
-        state.handle_key(KeyCode::Char('j'));
+        state.handle_key(key(KeyCode::Char('j')));
         assert_eq!(state.selected, 1);
-        state.handle_key(KeyCode::Char('k'));
+        state.handle_key(key(KeyCode::Char('k')));
         assert_eq!(state.selected, 0);
     }
 
@@ -110,14 +116,14 @@ mod tests {
         state.crashes = vec![
             CrashEntry { timestamp: "t".into(), exception: "e".into(), full_text: "full".into() },
         ];
-        let action = state.handle_key(KeyCode::Enter);
+        let action = state.handle_key(key(KeyCode::Enter));
         assert!(matches!(action, Some(Action::OpenInEditor(ref s)) if s == "full"));
     }
 
     #[test]
     fn esc_unfocuses() {
         let mut state = CrashesState::new();
-        let action = state.handle_key(KeyCode::Esc);
+        let action = state.handle_key(key(KeyCode::Esc));
         assert!(matches!(action, Some(Action::Unfocus)));
     }
 }

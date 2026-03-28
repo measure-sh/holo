@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::adb::Adb;
 use crate::app::Action;
@@ -60,7 +60,8 @@ impl TraceState {
         }
     }
 
-    pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        let code = key.code;
         match code {
             KeyCode::Char('s') => {
                 if self.recording {
