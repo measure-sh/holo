@@ -73,6 +73,7 @@ pub struct App {
     confirming_quit: bool,
     confirming_settings: bool,
     pub settings_open: bool,
+    pub settings_cursor: usize,
     trace_state: TraceState,
     crashes_state: CrashesState,
     anrs_state: AnrsState,
@@ -106,6 +107,7 @@ impl App {
             confirming_quit: false,
             confirming_settings: false,
             settings_open: false,
+            settings_cursor: 0,
             trace_state: TraceState::new(pkg),
             crashes_state: CrashesState::new(),
             anrs_state: AnrsState::new(),
@@ -122,15 +124,51 @@ impl App {
             return Action::Noop;
         }
         if self.settings_open {
+            const SETTINGS_ROWS: usize = 4;
             match code {
-                KeyCode::Right | KeyCode::Char('l') => {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.settings_cursor = self.settings_cursor.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.settings_cursor = (self.settings_cursor + 1).min(SETTINGS_ROWS - 1);
+                }
+                KeyCode::Right | KeyCode::Char('l') if self.settings_cursor == 0 => {
                     let next = (theme::current_index() + 1) % theme::theme_count();
                     theme::set_theme(next);
                 }
-                KeyCode::Left | KeyCode::Char('h') => {
+                KeyCode::Left | KeyCode::Char('h') if self.settings_cursor == 0 => {
                     let cur = theme::current_index();
                     let prev = if cur == 0 { theme::theme_count() - 1 } else { cur - 1 };
                     theme::set_theme(prev);
+                }
+                KeyCode::Enter => {
+                    match self.settings_cursor {
+                        1 => {
+                            let dir = std::env::temp_dir().join("msh");
+                            let _ = std::fs::create_dir_all(&dir);
+                            let _ = open::that(&dir);
+                            self.settings_open = false;
+                        }
+                        2 => {
+                            let keymap = std::env::current_exe()
+                                .ok()
+                                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                                .unwrap_or_default()
+                                .join("docs/keymap.md");
+                            let path = if keymap.exists() {
+                                keymap
+                            } else {
+                                std::path::PathBuf::from("docs/keymap.md")
+                            };
+                            let _ = open::that(&path);
+                            self.settings_open = false;
+                        }
+                        3 => {
+                            let _ = open::that("https://github.com/anthropics/msh");
+                            self.settings_open = false;
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {
                     self.settings_open = false;
