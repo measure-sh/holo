@@ -531,10 +531,10 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     if section_count == 0 { return; }
 
     let mut weights: Vec<u32> = Vec::new();
-    if top_visible { weights.push(5); }
-    if monitor_visible { weights.push(1); }
-    if mid_visible { weights.push(1); }
-    if bot_visible { weights.push(3); }
+    if top_visible { weights.push(50); }
+    if monitor_visible { weights.push(15); }
+    if mid_visible { weights.push(15); }
+    if bot_visible { weights.push(20); }
     let total: u32 = weights.iter().sum();
     let constraints: Vec<Constraint> = weights
         .iter()
