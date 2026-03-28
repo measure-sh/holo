@@ -375,7 +375,7 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let cursor = app.settings_cursor;
 
     let width = 44u16.min(area.width.saturating_sub(4));
-    let height = 5u16.min(area.height.saturating_sub(2));
+    let height = 6u16.min(area.height.saturating_sub(2));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
@@ -413,6 +413,10 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::from(vec![
             Span::styled(" Downloads        ", Style::new().fg(t.fg)),
+            Span::styled("copy path", Style::new().fg(t.muted)),
+        ]),
+        Line::from(vec![
+            Span::styled("                  ", Style::new().fg(t.fg)),
             Span::styled("open folder", Style::new().fg(t.muted)),
         ]),
         Line::from(vec![
