@@ -48,8 +48,14 @@ pub fn current() -> &'static Theme {
     THEMES[idx.min(THEMES.len() - 1)]
 }
 
-pub fn set_theme(id: u8) {
-    CURRENT.store(id, Ordering::Relaxed);
+pub fn toggle() {
+    let idx = CURRENT.load(Ordering::Relaxed);
+    let next = (idx + 1) % THEMES.len() as u8;
+    CURRENT.store(next, Ordering::Relaxed);
+}
+
+pub fn is_dark() -> bool {
+    CURRENT.load(Ordering::Relaxed) == 0
 }
 
 pub fn level_color(level: char) -> Color {

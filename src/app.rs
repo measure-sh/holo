@@ -9,6 +9,7 @@ use crate::files::FilesState;
 use crate::logcat_state::LogcatState;
 use crate::monitor::MonitorState;
 use crate::panel;
+use crate::theme;
 use crate::permissions::PermissionsState;
 use crate::toolbar::{ToolbarAction, ToolbarState};
 use crate::trace::TraceState;
@@ -70,6 +71,8 @@ pub struct App {
     pointer_location: bool,
     gpu_rendering: bool,
     confirming_quit: bool,
+    confirming_settings: bool,
+    pub settings_open: bool,
     trace_state: TraceState,
     crashes_state: CrashesState,
     anrs_state: AnrsState,
@@ -101,6 +104,8 @@ impl App {
             pointer_location: false,
             gpu_rendering: false,
             confirming_quit: false,
+            confirming_settings: false,
+            settings_open: false,
             trace_state: TraceState::new(pkg),
             crashes_state: CrashesState::new(),
             anrs_state: AnrsState::new(),
@@ -115,6 +120,19 @@ impl App {
         if self.dialog.is_some() {
             self.dialog = None;
             return Action::Noop;
+        }
+        if self.settings_open {
+            match code {
+                KeyCode::Enter => {
+                    theme::toggle();
+                    return Action::Noop;
+                }
+                KeyCode::Esc => {
+                    self.settings_open = false;
+                    return Action::Noop;
+                }
+                _ => return Action::Noop,
+            }
         }
         if self.logcat_state.editing.is_some() {
             return self.logcat_state.handle_key(code).unwrap_or(Action::Noop);
@@ -158,6 +176,14 @@ impl App {
                 KeyCode::Char('q') => Action::Quit,
                 _ => Action::Noop,
             };
+        }
+
+        if self.confirming_settings {
+            self.confirming_settings = false;
+            if code == KeyCode::Char('s') {
+                self.settings_open = true;
+            }
+            return Action::Noop;
         }
 
         if self.focused == Some(panel::COMMANDS) {
@@ -259,6 +285,10 @@ impl App {
         match code {
             KeyCode::Char('q') => {
                 self.confirming_quit = true;
+                Action::Noop
+            }
+            KeyCode::Char('s') => {
+                self.confirming_settings = true;
                 Action::Noop
             }
             KeyCode::Char('0') => {
@@ -484,6 +514,10 @@ impl App {
 
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
+    }
+
+    pub fn confirming_settings(&self) -> bool {
+        self.confirming_settings
     }
 
     pub fn commands(&self) -> &CommandsState {

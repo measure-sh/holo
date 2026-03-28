@@ -101,10 +101,17 @@ pub fn render_app(
             Span::styled(" q", Style::new().fg(t.red)),
             Span::styled(" to confirm ", Style::new().fg(t.fg)),
         ]
+    } else if app.confirming_settings() {
+        vec![
+            Span::styled(" s", Style::new().fg(t.red)),
+            Span::styled(" to confirm ", Style::new().fg(t.fg)),
+        ]
     } else {
         vec![
             Span::styled(" qq", Style::new().fg(t.red)),
             Span::styled("uit ", Style::new().fg(t.muted)),
+            Span::styled(" ss", Style::new().fg(t.red)),
+            Span::styled("ettings ", Style::new().fg(t.muted)),
         ]
     };
     if app.focused_panel().is_some() {
@@ -168,6 +175,11 @@ pub fn render_app(
     if app.toolbar().open.is_some() {
         render_dim_overlay(frame, area);
         render_dropdown_overlay(frame, chunks[0], app);
+    }
+
+    if app.settings_open {
+        render_dim_overlay(frame, area);
+        render_settings(frame, area);
     }
 
     if let Some(msg) = &app.dialog {
@@ -352,6 +364,51 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
             frame.render_stateful_widget(list, inner, &mut state);
         }
     }
+}
+
+fn render_settings(frame: &mut Frame, area: Rect) {
+    let t = theme::current();
+
+    let label = if theme::is_dark() {
+        "  Enable light mode"
+    } else {
+        "  Enable dark mode"
+    };
+
+    let width = 30u16.min(area.width.saturating_sub(4));
+    let height = 5u16.min(area.height.saturating_sub(2));
+    let x = area.x + (area.width.saturating_sub(width)) / 2;
+    let y = area.y + (area.height.saturating_sub(height)) / 2;
+    let dialog_area = Rect::new(x, y, width, height);
+
+    frame.render_widget(Clear, dialog_area);
+
+    let bottom = Line::from(vec![
+        Span::styled(" ↩", Style::new().fg(t.red)),
+        Span::styled(" toggle ", Style::new().fg(t.muted)),
+        Span::styled("esc", Style::new().fg(t.red)),
+        Span::styled(" close ", Style::new().fg(t.muted)),
+    ]);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(Span::styled(" settings ", Style::new().fg(t.fg)))
+        .title_bottom(bottom)
+        .border_style(Style::new().fg(t.surface))
+        .style(Style::new().bg(t.bg));
+
+    let inner = block.inner(dialog_area);
+    frame.render_widget(block, dialog_area);
+
+    let item = ListItem::new(Line::from(Span::styled(
+        label,
+        Style::new().fg(t.accent).add_modifier(Modifier::BOLD),
+    )));
+    frame.render_widget(
+        List::new(vec![item]).highlight_symbol(" \u{25b8}"),
+        inner,
+    );
 }
 
 fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {

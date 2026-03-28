@@ -5,7 +5,6 @@ use color_eyre::Result;
 use crate::adb::{Adb, Device};
 use crate::app::{Action, App};
 use crate::data::DataSources;
-use crate::theme;
 use crate::toolbar;
 
 pub struct CommandResult {
@@ -172,7 +171,6 @@ impl DispatchContext {
             Action::ToggleDarkMode => {
                 app.set_dark_mode(!app.dark_mode());
                 let enabled = app.dark_mode();
-                theme::set_theme(if enabled { 0 } else { 1 });
                 let label = if enabled { "Dark mode on" } else { "Dark mode off" };
                 app.set_status_flash(label.into(), false);
                 if let Some(s) = &serial {
@@ -476,7 +474,6 @@ pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut 
     app.set_airplane_mode(data.initial_airplane_mode);
     app.set_wifi_enabled(data.initial_wifi_enabled);
     app.set_dark_mode(data.initial_dark_mode);
-    theme::set_theme(if data.initial_dark_mode { 0 } else { 1 });
     app.set_show_taps(data.initial_show_taps);
     app.set_pointer_location(data.initial_pointer_location);
     app.set_gpu_rendering(data.initial_gpu_rendering);
