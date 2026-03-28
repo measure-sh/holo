@@ -164,7 +164,9 @@ impl App {
                             let _ = open::that("https://github.com/anthropics/msh");
                             self.settings_open = false;
                         }
-                        _ => {}
+                        _ => {
+                            self.settings_open = false;
+                        }
                     }
                 }
                 _ => {
