@@ -370,12 +370,18 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     }
 }
 
+const SETTINGS_SELECTABLE: [usize; 4] = [1, 3, 4, 6];
+
+fn settings_selectable_to_row(sel: usize) -> usize {
+    SETTINGS_SELECTABLE[sel.min(SETTINGS_SELECTABLE.len() - 1)]
+}
+
 fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let t = theme::current();
-    let cursor = app.settings_cursor;
+    let selected_row = settings_selectable_to_row(app.settings_cursor);
 
-    let width = 44u16.min(area.width.saturating_sub(4));
-    let height = 6u16.min(area.height.saturating_sub(2));
+    let width = 50u16.min(area.width.saturating_sub(4));
+    let height = 10u16.min(area.height.saturating_sub(2));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
@@ -384,14 +390,11 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
 
     let border_fg = Style::new().fg(t.surface);
     let bottom = Line::from(vec![
-        Span::styled(" j/k", Style::new().fg(t.danger)),
-        Span::styled(" navigate ", Style::new().fg(t.muted)),
-        Span::styled("───", border_fg),
         Span::styled(" \u{2190}\u{2192}", Style::new().fg(t.danger)),
         Span::styled(" change ", Style::new().fg(t.muted)),
         Span::styled("───", border_fg),
         Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
-        Span::styled(" open ", Style::new().fg(t.muted)),
+        Span::styled(" select ", Style::new().fg(t.muted)),
     ]);
 
     let block = Block::default()
@@ -405,31 +408,60 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
 
+    let header = Style::new().fg(t.muted);
+    let label = Style::new().fg(t.fg);
+    let value = Style::new().fg(t.muted);
     let name = theme::current().name;
-    let rows = [
+
+    let rows: Vec<Line> = vec![
+        Line::from(Span::styled(" Appearance", header)),
         Line::from(vec![
-            Span::styled(" Theme            ", Style::new().fg(t.fg)),
-            Span::styled(format!("\u{25c2} {name} \u{25b8}"), Style::new().fg(t.accent)),
+            Span::styled("   Theme", label),
+            Span::styled(format!("  \u{25c2} {name} \u{25b8}"), Style::new().fg(t.accent)),
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("   Copy downloads path", label),
         ]),
         Line::from(vec![
-            Span::styled(" Downloads        ", Style::new().fg(t.fg)),
-            Span::styled("copy path", Style::new().fg(t.muted)),
+            Span::styled("   Open downloads folder", label),
         ]),
+        Line::raw(""),
         Line::from(vec![
-            Span::styled("                  ", Style::new().fg(t.fg)),
-            Span::styled("open folder", Style::new().fg(t.muted)),
-        ]),
-        Line::from(vec![
-            Span::styled(" About            ", Style::new().fg(t.fg)),
-            Span::styled("open in browser \u{2197}", Style::new().fg(t.muted)),
+            Span::styled("   About", label),
+            Span::styled("  open in browser \u{2197}", value),
         ]),
     ];
 
-    let items: Vec<ListItem> = rows.into_iter().map(ListItem::new).collect();
-    let list = List::new(items)
-        .highlight_style(Style::new().fg(t.accent).add_modifier(Modifier::BOLD));
-    let mut state = ListState::default().with_selected(Some(cursor));
-    frame.render_stateful_widget(list, inner, &mut state);
+    for (i, row) in rows.iter().enumerate() {
+        let row_area = Rect {
+            x: inner.x,
+            y: inner.y + i as u16,
+            width: inner.width,
+            height: 1,
+        };
+        if row_area.y >= inner.y + inner.height {
+            break;
+        }
+        let style = if i == selected_row {
+            Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        let prefix = if i == selected_row { " \u{25b8}" } else { "  " };
+        let mut line = vec![Span::styled(prefix, style)];
+        for span in row.spans.iter() {
+            if i == selected_row {
+                line.push(Span::styled(span.content.clone(), style));
+            } else {
+                line.push(span.clone());
+            }
+        }
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(Line::from(line)),
+            row_area,
+        );
+    }
 }
 
 fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {

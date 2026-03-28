@@ -124,13 +124,13 @@ impl App {
             return Action::Noop;
         }
         if self.settings_open {
-            const SETTINGS_ROWS: usize = 4;
+            const SELECTABLE_COUNT: usize = 4;
             match code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.settings_cursor = self.settings_cursor.saturating_sub(1);
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    self.settings_cursor = (self.settings_cursor + 1).min(SETTINGS_ROWS - 1);
+                    self.settings_cursor = (self.settings_cursor + 1).min(SELECTABLE_COUNT - 1);
                 }
                 KeyCode::Right | KeyCode::Char('l') if self.settings_cursor == 0 => {
                     let next = (theme::current_index() + 1) % theme::theme_count();
