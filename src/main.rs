@@ -100,8 +100,18 @@ fn run_app(
 
         if let Some(d) = &mut ctx.data {
             if let (Some(s), Some(_)) = (&serial, &package) {
+                let was_connected = d.device_connected;
                 d.poll(&mut app, s);
                 app.toolbar_mut().device_connected = d.device_connected;
+                if !was_connected && d.device_connected {
+                    if let Some(device) = app.toolbar().device.clone() {
+                        if let Some(pkg) = package.clone() {
+                            app.reset_for_new_app(&pkg);
+                            ctx.data = Some(dispatch::build_data(&ctx.adb, &device, &pkg, &mut app));
+                            ctx.title = dispatch::build_title(ctx.data.as_ref().unwrap());
+                        }
+                    }
+                }
             }
         }
 
