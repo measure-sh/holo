@@ -77,7 +77,7 @@ const LIGHT: Theme = Theme {
     muted:     Color::Rgb(0x6b, 0x6b, 0x6b),
 };
 
-const THEMES: [&Theme; 4] = [&TOKYO_NIGHT, &AKAITO, &DARK, &LIGHT];
+const THEMES: [&Theme; 4] = [&DARK, &LIGHT, &TOKYO_NIGHT, &AKAITO];
 static CURRENT: AtomicU8 = AtomicU8::new(0);
 
 pub fn current() -> &'static Theme {
