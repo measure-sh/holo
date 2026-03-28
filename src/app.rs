@@ -227,92 +227,32 @@ impl App {
             return Action::Noop;
         }
 
-        if self.focused == Some(panel::COMMANDS) {
-            if let Some(action) = self.commands.handle_key(key) {
-                if matches!(action, Action::Unfocus) {
-                    self.restore_zoom();
-                    self.focused = None;
-                    return Action::Noop;
-                }
-                return action;
-            }
+        if let Some(action) = self.delegate_to_focused(panel::COMMANDS, key) {
+            return action;
         }
-
         if self.database_state.confirming_pull.is_some() || self.focused == Some(panel::DATABASE) {
-            if let Some(action) = self.database_state.handle_key(key) {
-                if matches!(action, Action::Unfocus) {
-                    self.restore_zoom();
-                    self.focused = None;
-                    return Action::Noop;
-                }
+            let result = self.database_state.handle_key(key);
+            if let Some(action) = self.dispatch_panel_key(result) {
                 return action;
             }
         }
-
-        if self.focused == Some(panel::FILES) {
-            if let Some(action) = self.files_state.handle_key(key) {
-                if matches!(action, Action::Unfocus) {
-                    self.restore_zoom();
-                    self.focused = None;
-                    return Action::Noop;
-                }
-                return action;
-            }
+        if let Some(action) = self.delegate_to_focused(panel::FILES, key) {
+            return action;
         }
-
-        if self.focused == Some(panel::PERMISSIONS) {
-            if let Some(action) = self.permissions_state.handle_key(key) {
-                if matches!(action, Action::Unfocus) {
-                    self.restore_zoom();
-                    self.focused = None;
-                    return Action::Noop;
-                }
-                return action;
-            }
+        if let Some(action) = self.delegate_to_focused(panel::PERMISSIONS, key) {
+            return action;
         }
-
-        if self.focused == Some(panel::LOGCAT) {
-            if let Some(action) = self.logcat_state.handle_key(key) {
-                if matches!(action, Action::Unfocus) {
-                    self.restore_zoom();
-                    self.focused = None;
-                    return Action::Noop;
-                }
-                return action;
-            }
+        if let Some(action) = self.delegate_to_focused(panel::LOGCAT, key) {
+            return action;
         }
-
-        if self.focused == Some(panel::TRACE) {
-            if let Some(action) = self.trace_state.handle_key(key) {
-                if matches!(action, Action::Unfocus) {
-                    self.restore_zoom();
-                    self.focused = None;
-                    return Action::Noop;
-                }
-                return action;
-            }
+        if let Some(action) = self.delegate_to_focused(panel::TRACE, key) {
+            return action;
         }
-
-        if self.focused == Some(panel::CRASHES) {
-            if let Some(action) = self.crashes_state.handle_key(key) {
-                if matches!(action, Action::Unfocus) {
-                    self.restore_zoom();
-                    self.focused = None;
-                    return Action::Noop;
-                }
-                return action;
-            }
+        if let Some(action) = self.delegate_to_focused(panel::CRASHES, key) {
+            return action;
         }
-
-        if self.focused == Some(panel::ANRS) {
-            if let Some(action) = self.anrs_state.handle_key(key) {
-                if matches!(action, Action::Unfocus) {
-                    self.restore_zoom();
-                    self.focused = None;
-                    return Action::Noop;
-                }
-                return action;
-            }
+        if let Some(action) = self.delegate_to_focused(panel::ANRS, key) {
+            return action;
         }
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -353,6 +293,33 @@ impl App {
             }
             _ => Action::Noop,
         }
+    }
+
+    fn delegate_to_focused(&mut self, panel_id: u8, key: KeyEvent) -> Option<Action> {
+        if self.focused != Some(panel_id) {
+            return None;
+        }
+        let result = match panel_id {
+            panel::COMMANDS => self.commands.handle_key(key),
+            panel::LOGCAT => self.logcat_state.handle_key(key),
+            panel::FILES => self.files_state.handle_key(key),
+            panel::PERMISSIONS => self.permissions_state.handle_key(key),
+            panel::TRACE => self.trace_state.handle_key(key),
+            panel::CRASHES => self.crashes_state.handle_key(key),
+            panel::ANRS => self.anrs_state.handle_key(key),
+            _ => None,
+        };
+        self.dispatch_panel_key(result)
+    }
+
+    fn dispatch_panel_key(&mut self, result: Option<Action>) -> Option<Action> {
+        let action = result?;
+        if matches!(action, Action::Unfocus) {
+            self.restore_zoom();
+            self.focused = None;
+            return Some(Action::Noop);
+        }
+        Some(action)
     }
 
     fn is_panel_visible(&self, n: u8) -> bool {
