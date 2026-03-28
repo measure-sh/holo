@@ -247,22 +247,7 @@ impl DispatchContext {
                         .cloned()
                         .collect::<Vec<_>>()
                         .join("\n");
-                    std::thread::spawn(move || {
-                        let dir = std::env::temp_dir().join("msh").join("logcat");
-                        let _ = std::fs::create_dir_all(&dir);
-                        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                        let path = dir.join(format!("{timestamp}.log"));
-                        if std::fs::write(&path, &text).is_ok() {
-                            if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
-                                let _ = std::process::Command::new("sh")
-                                    .arg("-c")
-                                    .arg(format!("{} \"{}\"", editor, path.display()))
-                                    .spawn();
-                            } else {
-                                let _ = open::that(&path);
-                            }
-                        }
-                    });
+                    open_in_editor(text, "logcat", "log");
                 }
             }
             Action::RunQuery(db, sql) => {
@@ -342,27 +327,33 @@ impl DispatchContext {
                 }
             }
             Action::OpenInEditor(text) => {
-                std::thread::spawn(move || {
-                    let dir = std::env::temp_dir().join("msh").join("issues");
-                    let _ = std::fs::create_dir_all(&dir);
-                    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                    let path = dir.join(format!("{timestamp}.txt"));
-                    if std::fs::write(&path, &text).is_ok() {
-                        if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
-                            let _ = std::process::Command::new("sh")
-                                .arg("-c")
-                                .arg(format!("{} \"{}\"", editor, path.display()))
-                                .spawn();
-                        } else {
-                            let _ = open::that(&path);
-                        }
-                    }
-                });
+                open_in_editor(text, "issues", "txt");
             }
             Action::Noop | Action::Unfocus => {}
         }
         false
     }
+}
+
+fn open_in_editor(text: String, subdir: &str, ext: &str) {
+    let subdir = subdir.to_string();
+    let ext = ext.to_string();
+    std::thread::spawn(move || {
+        let dir = std::env::temp_dir().join("msh").join(&subdir);
+        let _ = std::fs::create_dir_all(&dir);
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let path = dir.join(format!("{timestamp}.{ext}"));
+        if std::fs::write(&path, &text).is_ok() {
+            if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
+                let _ = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(format!("{} \"{}\"", editor, path.display()))
+                    .spawn();
+            } else {
+                let _ = open::that(&path);
+            }
+        }
+    });
 }
 
 fn dispatch_toggle(
