@@ -18,7 +18,7 @@ pub struct Theme {
 }
 
 const TOKYO_NIGHT: Theme = Theme {
-    name:      "Tokyo Night",
+    name:      "Tokyo Night (Omarchy)",
     bg:        Color::Rgb(0x00, 0x00, 0x00),
     overlay:   Color::Rgb(0x16, 0x16, 0x22),
     fg:        Color::Rgb(0xa9, 0xb1, 0xd6),
@@ -33,7 +33,7 @@ const TOKYO_NIGHT: Theme = Theme {
 };
 
 const AKAITO: Theme = Theme {
-    name:      "Akaito",
+    name:      "Akaito (Omarchy)",
     bg:        Color::Rgb(0xf3, 0xe4, 0xcb),
     overlay:   Color::Rgb(0xd8, 0xc8, 0xab),
     fg:        Color::Rgb(0x4d, 0x2e, 0x1a),
