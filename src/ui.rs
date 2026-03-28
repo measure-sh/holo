@@ -370,19 +370,12 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     }
 }
 
-const SETTINGS_SELECTABLE: [usize; 3] = [1, 3, 5];
-
-fn settings_selectable_to_row(sel: usize) -> usize {
-    SETTINGS_SELECTABLE[sel.min(SETTINGS_SELECTABLE.len() - 1)]
-}
-
 fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let t = theme::current();
     let cursor = app.settings_cursor;
-    let selected_row = settings_selectable_to_row(cursor);
 
     let width = 50u16.min(area.width.saturating_sub(4));
-    let height = 8u16.min(area.height.saturating_sub(2));
+    let height = 12u16.min(area.height.saturating_sub(2));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
@@ -419,55 +412,27 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
 
-    let header = Style::new().fg(t.muted);
-    let label = Style::new().fg(t.fg);
-    let value = Style::new().fg(t.muted);
     let name = theme::current().name;
 
-    let rows: Vec<Line> = vec![
-        Line::from(Span::styled(" Appearance", header)),
-        Line::from(vec![
-            Span::styled("   Theme", label),
+    let items = vec![
+        ListItem::new(Line::from(vec![
+            Span::styled(" Theme", Style::new().fg(t.fg)),
             Span::styled(format!("  \u{25c2} {name} \u{25b8}"), Style::new().fg(t.accent)),
-        ]),
-        Line::raw(""),
-        Line::from(Span::styled("   Downloads", label)),
-        Line::raw(""),
-        Line::from(vec![
-            Span::styled("   About", label),
-            Span::styled("  open in browser \u{2197}", value),
-        ]),
+        ])),
+        ListItem::new(Line::from(vec![
+            Span::styled(" Downloads", Style::new().fg(t.fg)),
+        ])),
+        ListItem::new(Line::from(vec![
+            Span::styled(" About", Style::new().fg(t.fg)),
+            Span::styled("  open in browser \u{2197}", Style::new().fg(t.muted)),
+        ])),
     ];
 
-    for (i, row) in rows.iter().enumerate() {
-        let row_area = Rect {
-            x: inner.x,
-            y: inner.y + i as u16,
-            width: inner.width,
-            height: 1,
-        };
-        if row_area.y >= inner.y + inner.height {
-            break;
-        }
-        let style = if i == selected_row {
-            Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
-        } else {
-            Style::default()
-        };
-        let prefix = if i == selected_row { " \u{25b8}" } else { "  " };
-        let mut line = vec![Span::styled(prefix, style)];
-        for span in row.spans.iter() {
-            if i == selected_row {
-                line.push(Span::styled(span.content.clone(), style));
-            } else {
-                line.push(span.clone());
-            }
-        }
-        frame.render_widget(
-            ratatui::widgets::Paragraph::new(Line::from(line)),
-            row_area,
-        );
-    }
+    let list = List::new(items)
+        .highlight_style(Style::new().fg(t.accent).add_modifier(Modifier::BOLD))
+        .highlight_symbol(" \u{25b8}");
+    let mut state = ListState::default().with_selected(Some(cursor));
+    frame.render_stateful_widget(list, inner, &mut state);
 }
 
 fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {
