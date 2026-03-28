@@ -266,7 +266,7 @@ impl DispatchContext {
             Action::CopyDbResult(text) => {
                 crate::clipboard::copy_to_clipboard(&text);
             }
-            Action::CopyLogcat => {
+            Action::OpenLogcat => {
                 if let Some(d) = &self.data {
                     let filter = &app.logcat_state().filter;
                     let text: String = d.logcat_lines
@@ -275,7 +275,22 @@ impl DispatchContext {
                         .cloned()
                         .collect::<Vec<_>>()
                         .join("\n");
-                    crate::clipboard::copy_to_clipboard(&text);
+                    std::thread::spawn(move || {
+                        let dir = std::env::temp_dir().join("msh").join("logcat");
+                        let _ = std::fs::create_dir_all(&dir);
+                        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                        let path = dir.join(format!("{timestamp}.log"));
+                        if std::fs::write(&path, &text).is_ok() {
+                            if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
+                                let _ = std::process::Command::new("sh")
+                                    .arg("-c")
+                                    .arg(format!("{} \"{}\"", editor, path.display()))
+                                    .spawn();
+                            } else {
+                                let _ = open::that(&path);
+                            }
+                        }
+                    });
                 }
             }
             Action::RunQuery(db, sql) => {

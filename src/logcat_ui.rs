@@ -26,12 +26,6 @@ pub fn render_logcat_panel(
     let t = theme::current();
     let editing = app.logcat_state().editing;
 
-    let copied_active = app.logcat_state().copied_at
-        .is_some_and(|ts| ts.elapsed() < std::time::Duration::from_secs(1));
-    if !copied_active {
-        app.logcat_state_mut().copied_at = None;
-    }
-
     let color = panel::by_number(panel::LOGCAT).border_color(focused);
     let mut block = Block::default()
         .borders(Borders::ALL)
@@ -39,7 +33,7 @@ pub fn render_logcat_panel(
         .title(panel_title(panel::LOGCAT, focused))
         .border_style(Style::new().fg(color));
     if focused {
-        block = block.title_bottom(logcat_filter_bar(&app.logcat_state().filter, editing, copied_active));
+        block = block.title_bottom(logcat_filter_bar(&app.logcat_state().filter, editing));
     }
     let inner = block.inner(area);
 
@@ -93,7 +87,7 @@ pub fn render_logcat_panel(
     }
 }
 
-fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, copied_active: bool) -> Line<'static> {
+fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>) -> Line<'static> {
     let t = theme::current();
     let accent = Style::new().fg(t.danger);
     let muted = Style::new().fg(t.muted);
@@ -151,12 +145,8 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
 
     spans.push(Span::styled("───", border));
 
-    if copied_active {
-        spans.push(Span::styled(" copied! ", Style::new().fg(t.success)));
-    } else {
-        spans.push(Span::styled(" c", accent));
-        spans.push(Span::styled("opy ", muted));
-    }
+    spans.push(Span::styled(" o", accent));
+    spans.push(Span::styled("pen ", muted));
 
     Line::from(spans)
 }

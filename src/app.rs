@@ -35,7 +35,7 @@ pub enum Action {
     ToggleLayoutBounds,
     ToggleAirplaneMode,
     TogglePermission(String, bool),
-    CopyLogcat,
+    OpenLogcat,
     RefreshFiles,
     ExpandDir(String),
     OpenFile(String),
@@ -1065,12 +1065,11 @@ mod tests {
     }
 
     #[test]
-    fn c_in_logcat_returns_copy_action() {
+    fn o_in_logcat_returns_open_action() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
-        let action = app.handle_key(key(KeyCode::Char('c')));
-        assert!(matches!(action, Action::CopyLogcat));
-        assert!(app.logcat_state().copied_at.is_some());
+        let action = app.handle_key(key(KeyCode::Char('o')));
+        assert!(matches!(action, Action::OpenLogcat));
     }
 
     #[test]

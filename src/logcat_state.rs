@@ -49,7 +49,6 @@ impl LogcatFilter {
 pub struct LogcatState {
     pub filter: LogcatFilter,
     pub scroll: usize,
-    pub copied_at: Option<std::time::Instant>,
     pub editing: Option<LogcatEditTarget>,
 }
 
@@ -58,7 +57,6 @@ impl LogcatState {
         Self {
             filter: LogcatFilter::new(),
             scroll: 0,
-            copied_at: None,
             editing: None,
         }
     }
@@ -114,9 +112,8 @@ impl LogcatState {
                 self.cycle_level(false);
                 Some(Action::Noop)
             }
-            KeyCode::Char('c') => {
-                self.copied_at = Some(std::time::Instant::now());
-                Some(Action::CopyLogcat)
+            KeyCode::Char('o') => {
+                Some(Action::OpenLogcat)
             }
             KeyCode::Char('r') => {
                 self.reset();

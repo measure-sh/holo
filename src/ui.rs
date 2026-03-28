@@ -460,7 +460,7 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
         );
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(
-                Span::styled("   Used to open crash logs and ANRs ($EDITOR)", Style::new().fg(t.muted)),
+                Span::styled("   Uses default editor to open files ($EDITOR)", Style::new().fg(t.muted)),
             )),
             line2_area,
         );
