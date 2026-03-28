@@ -370,9 +370,9 @@ fn render_settings(frame: &mut Frame, area: Rect) {
     let t = theme::current();
 
     let label = if theme::is_dark() {
-        "  Enable light mode"
+        "  Light mode"
     } else {
-        "  Enable dark mode"
+        "  Dark mode"
     };
 
     let width = 30u16.min(area.width.saturating_sub(4));
