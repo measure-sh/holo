@@ -8,19 +8,19 @@ use crate::theme;
 const COMMAND_LIST: &[(&str, char, fn() -> Action)] = &[
     ("open app", 'o', || Action::OpenApp),
     ("kill app", 'k', || Action::KillApp),
-    ("wakeup", 'w', || Action::WakeScreen),
-    ("mirror", 'r', || Action::MirrorDevice),
     ("clear data", 'x', || Action::ClearData),
-    ("dark mode", 'n', || Action::ToggleDarkMode),
+    ("wakeup", 'w', || Action::WakeScreen),
     ("screenshot", 's', || Action::Screenshot),
+    ("mirror", 'r', || Action::MirrorDevice),
+    ("dark mode", 'n', || Action::ToggleDarkMode),
     ("layout bounds", 'l', || Action::ToggleLayoutBounds),
+    ("show taps", 't', || Action::ToggleShowTaps),
+    ("pointer location", 'p', || Action::TogglePointerLocation),
+    ("gpu rendering", 'g', || Action::ToggleGpuRendering),
     ("wifi", 'f', || Action::ToggleWifi),
     ("airplane mode", 'e', || Action::ToggleAirplaneMode),
     ("wireless adb", 'b', || Action::WirelessAdb),
     ("uninstall", 'u', || Action::UninstallApp),
-    ("show taps", 't', || Action::ToggleShowTaps),
-    ("pointer location", 'p', || Action::TogglePointerLocation),
-    ("gpu rendering", 'g', || Action::ToggleGpuRendering),
 ];
 
 pub struct CommandsState {
