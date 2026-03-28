@@ -10,8 +10,7 @@ use ratatui::{
 };
 
 use crate::app::App;
-use crate::logcat;
-use crate::logcat_state::{LogcatEditTarget, LogcatFilter};
+use crate::logcat::{self, LogcatEditTarget, LogcatFilter};
 use crate::panel;
 use crate::theme;
 use crate::ui::panel_title;

@@ -4,7 +4,7 @@ use crossterm::event::KeyCode;
 
 use crate::adb::Adb;
 use crate::app::Action;
-use crate::issues;
+use crate::dropbox;
 
 pub struct CrashEntry {
     pub timestamp: String,
@@ -64,10 +64,10 @@ pub fn spawn_poller(
             let result = adb
                 .get_dropbox_crashes(&serial)
                 .map(|output| {
-                    let mut entries: Vec<CrashEntry> = issues::parse_dropbox_entries(&output, "data_app_crash", &package)
+                    let mut entries: Vec<CrashEntry> = dropbox::parse_dropbox_entries(&output, "data_app_crash", &package)
                         .into_iter()
                         .map(|(timestamp, body)| {
-                            let exception = issues::extract_exception(&body);
+                            let exception = dropbox::extract_exception(&body);
                             CrashEntry { timestamp, exception, full_text: body }
                         })
                         .collect();

@@ -6,7 +6,7 @@ use crate::commands::CommandsState;
 use crate::crashes::CrashesState;
 use crate::database::DatabaseState;
 use crate::files::FilesState;
-use crate::logcat_state::LogcatState;
+use crate::logcat::LogcatState;
 use crate::monitor::MonitorState;
 use crate::panel;
 use crate::theme;
@@ -612,7 +612,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logcat_state;
+    use crate::logcat;
     use crossterm::event::KeyModifiers;
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -817,7 +817,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
-        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Tag));
+        assert_eq!(app.logcat_state().editing, Some(logcat::LogcatEditTarget::Tag));
         assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
     }
 
@@ -826,7 +826,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('/')));
-        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
+        assert_eq!(app.logcat_state().editing, Some(logcat::LogcatEditTarget::Search));
         assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
     }
 
@@ -903,7 +903,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('/')));
-        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
+        assert_eq!(app.logcat_state().editing, Some(logcat::LogcatEditTarget::Search));
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.logcat_state().editing, None);
     }
@@ -1267,7 +1267,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('t')));
-        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Tag));
+        assert_eq!(app.logcat_state().editing, Some(logcat::LogcatEditTarget::Tag));
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('l')));
         assert_eq!(app.logcat_state().editing, None);
@@ -1278,7 +1278,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         app.handle_key(key(KeyCode::Char('/')));
-        assert_eq!(app.logcat_state().editing, Some(logcat_state::LogcatEditTarget::Search));
+        assert_eq!(app.logcat_state().editing, Some(logcat::LogcatEditTarget::Search));
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('l')));
         assert_eq!(app.logcat_state().editing, None);

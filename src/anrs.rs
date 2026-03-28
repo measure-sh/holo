@@ -4,7 +4,7 @@ use crossterm::event::KeyCode;
 
 use crate::adb::Adb;
 use crate::app::Action;
-use crate::issues;
+use crate::dropbox;
 
 pub struct AnrEntry {
     pub timestamp: String,
@@ -64,11 +64,11 @@ pub fn spawn_poller(
             let result = adb
                 .get_dropbox_anrs(&serial)
                 .map(|output| {
-                    let mut entries: Vec<AnrEntry> = issues::parse_dropbox_entries(&output, "data_app_anr", &package)
+                    let mut entries: Vec<AnrEntry> = dropbox::parse_dropbox_entries(&output, "data_app_anr", &package)
                         .into_iter()
                         .map(|(timestamp, body)| {
-                            let reason = issues::extract_field(&body, "Subject: ")
-                                .or_else(|| issues::extract_field(&body, "Reason: "))
+                            let reason = dropbox::extract_field(&body, "Subject: ")
+                                .or_else(|| dropbox::extract_field(&body, "Reason: "))
                                 .unwrap_or_default();
                             AnrEntry { timestamp, reason, full_text: body }
                         })
