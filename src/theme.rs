@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU8, Ordering};
 use ratatui::style::Color;
 
@@ -85,7 +86,32 @@ pub fn current() -> &'static Theme {
 }
 
 pub fn set_theme(id: usize) {
-    CURRENT.store(id.min(THEMES.len() - 1) as u8, Ordering::Relaxed);
+    let idx = id.min(THEMES.len() - 1);
+    CURRENT.store(idx as u8, Ordering::Relaxed);
+    save(idx);
+}
+
+fn cache_path() -> PathBuf {
+    dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("msh")
+        .join("theme")
+}
+
+fn save(idx: usize) {
+    let path = cache_path();
+    let _ = std::fs::create_dir_all(path.parent().unwrap());
+    let _ = std::fs::write(path, idx.to_string());
+}
+
+pub fn load_saved() {
+    if let Ok(s) = std::fs::read_to_string(cache_path()) {
+        if let Ok(idx) = s.trim().parse::<usize>() {
+            if idx < THEMES.len() {
+                CURRENT.store(idx as u8, Ordering::Relaxed);
+            }
+        }
+    }
 }
 
 pub fn current_index() -> usize {

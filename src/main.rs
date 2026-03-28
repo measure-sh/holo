@@ -59,6 +59,7 @@ fn run_app(
     adb: Arc<dyn Adb>,
     initial_device: Option<adb::Device>,
 ) -> Result<()> {
+    theme::load_saved();
     let mut app = App::new(initial_device.clone(), None);
     let (command_tx, command_rx) = std::sync::mpsc::channel();
     let mut ctx = DispatchContext {
