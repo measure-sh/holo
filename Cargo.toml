@@ -11,3 +11,4 @@ chrono = "0.4.44"
 tui-textarea = { version = "0.7", features = ["crossterm"] }
 open = "5.3.3"
 dirs = "6"
+arboard = { version = "3.6.1", default-features = false }
