@@ -2,7 +2,18 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 
 pub fn copy_to_clipboard(text: &str) {
-    if let Ok(mut child) = Command::new("pbcopy")
+    let (cmd, args): (&str, &[&str]) = if cfg!(target_os = "macos") {
+        ("pbcopy", &[])
+    } else if cfg!(target_os = "linux") {
+        ("xclip", &["-selection", "clipboard"])
+    } else if cfg!(target_os = "windows") {
+        ("clip", &[])
+    } else {
+        return;
+    };
+
+    if let Ok(mut child) = Command::new(cmd)
+        .args(args)
         .stdin(Stdio::piped())
         .spawn()
     {
