@@ -282,8 +282,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
 
     let screen = frame.area();
     let (width, max_items) = match kind {
-        DropdownKind::Device => (40u16, 8u16),
-        DropdownKind::App => (44u16, 16u16),
+        DropdownKind::Device | DropdownKind::App => (44u16, 16u16),
     };
     let width = width.min(screen.width.saturating_sub(2));
     let available = screen.height.saturating_sub(anchor_y);
