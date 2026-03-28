@@ -4,16 +4,18 @@ All ADB commands used by msh, organized by feature area.
 
 ## Polling Summary
 
-| Interval | Feature | Command | Source |
-|----------|---------|---------|--------|
-| Streaming | Logcat | `adb logcat --pid=<pid>` | `logcat.rs:104` |
-| 1s | Process PID | `adb shell pidof -s <package>` | `processes.rs:11` |
-| 1s | CPU | `adb shell top -b -n 1 -q` | `monitor.rs:139` |
-| 1s | Memory | `adb shell 'PID=$(pidof -s <pkg>); [ -n "$PID" ] && cat /proc/$PID/status'` | `monitor.rs:137` |
-| 1s | Frames | `adb shell dumpsys gfxinfo <package>` | `monitor.rs:141` |
-| 5s | Disk | `adb shell run-as <package> du -s . ./cache` | `monitor.rs:134` |
-| 5s | Permissions | `adb shell dumpsys package <package>` | `permissions.rs:74` |
-| 30s | Battery | `adb shell dumpsys battery` | `battery.rs:41` |
+| Interval | Feature | Command |
+|----------|---------|---------|
+| Streaming | Logcat | `adb logcat --pid=<pid>` |
+| 1s | Process PID | `adb shell pidof -s <package>` |
+| 1s | CPU | `adb shell top -b -n 1 -q` |
+| 1s | Memory | `adb shell cat /proc/<pid>/status` |
+| 5s | Disk | `adb shell run-as <package> du -s . ./cache` |
+| 5s | Connectivity | `adb get-state` |
+| 5s | Permissions | `adb shell dumpsys package <package>` |
+| 5s | Crashes | `adb shell dumpsys dropbox --print data_app_crash` |
+| 5s | ANRs | `adb shell dumpsys dropbox --print data_app_anr` |
+| 30s | Battery | `adb shell dumpsys battery` |
 
 ## Commands by Feature
 
@@ -22,7 +24,7 @@ All ADB commands used by msh, organized by feature area.
 | Command | Purpose |
 |---------|---------|
 | `adb devices -l` | List connected devices with details |
-| `adb -s <serial> get-state` | Get device connection state |
+| `adb -s <serial> get-state` | Check device connection state (polled every 5s) |
 
 ### App Management
 
@@ -33,44 +35,51 @@ All ADB commands used by msh, organized by feature area.
 | `adb shell am force-stop <package>` | Force stop app |
 | `adb shell pm clear <package>` | Clear app data and cache |
 | `adb uninstall <package>` | Uninstall app |
-| `adb shell dumpsys package <package>` | Get app version info |
+| `adb shell dumpsys package <package>` | Get app version info (versionName, versionCode) |
+| `adb shell run-as <package> id` | Check if app is debuggable |
 
 ### Battery
 
 | Command | Purpose |
 |---------|---------|
-| `adb shell dumpsys battery` | Read battery level, status, temperature |
+| `adb shell dumpsys battery` | Read battery level (polled every 30s) |
 
 ### Logcat
 
 | Command | Purpose |
 |---------|---------|
-| `adb shell pidof -s <package>` | Get app PID for log filtering |
+| `adb shell pidof -s <package>` | Get app PID for log filtering (polled every 1s) |
 | `adb logcat --pid=<pid>` | Stream logs filtered by PID |
 
-### Monitor (CPU, Memory, Frames, Disk)
+### Monitor (CPU, Memory, Disk)
 
 | Command | Purpose |
 |---------|---------|
-| `adb shell top -b -n 1 -q` | CPU usage snapshot |
-| `adb shell 'PID=$(pidof -s <pkg>); [ -n "$PID" ] && cat /proc/$PID/status'` | RSS memory from proc filesystem |
-| `adb shell dumpsys gfxinfo <package>` | Frame render times, slow/frozen frame counts |
-| `adb shell run-as <package> du -s . ./cache` | App data and cache size on disk |
+| `adb shell top -b -n 1 -q` | CPU usage snapshot (polled every 1s) |
+| `adb shell cat /proc/<pid>/status` | RSS memory from proc filesystem (polled every 1s) |
+| `adb shell run-as <package> du -s . ./cache` | App data and cache size on disk (polled every 5s) |
 
 ### Permissions
 
 | Command | Purpose |
 |---------|---------|
-| `adb shell dumpsys package <package>` | List declared vs granted permissions |
+| `adb shell dumpsys package <package>` | List declared vs granted permissions (polled every 5s) |
 | `adb shell pm grant <package> <permission>` | Grant a runtime permission |
 | `adb shell pm revoke <package> <permission>` | Revoke a runtime permission |
+
+### Crashes & ANRs
+
+| Command | Purpose |
+|---------|---------|
+| `adb shell dumpsys dropbox --print data_app_crash` | Get recent crash reports (polled every 5s) |
+| `adb shell dumpsys dropbox --print data_app_anr` | Get recent ANR reports (polled every 5s) |
 
 ### Files
 
 | Command | Purpose |
 |---------|---------|
 | `adb shell run-as <package> ls -p <path>` | List files in app's private storage |
-| `adb exec-out run-as <package> cat <path>` | Download/pull a file from app storage |
+| `adb exec-out run-as <package> cat <path>` | Pull a file from app storage |
 
 ### Database
 
@@ -79,15 +88,15 @@ All ADB commands used by msh, organized by feature area.
 | `adb shell run-as <package> ls databases/` | List app databases |
 | `adb shell run-as <package> sqlite3 databases/<db> '<sql>'` | Execute SQL query on app database |
 | `adb shell run-as <package> ls databases/<db>` | Check if db file exists before pull |
-| `adb exec-out run-as <package> cat databases/<db>` | Download database file (also -wal, -shm) |
+| `adb exec-out run-as <package> cat databases/<db>` | Pull database file (also -wal, -shm) |
 
 ### Trace (Perfetto)
 
 | Command | Purpose |
 |---------|---------|
 | `adb shell perfetto -d --txt -c - -o <path>` | Start system tracing with config via stdin |
-| `adb shell pkill -INT perfetto` | Stop tracing (waits 2s before pull) |
-| `adb pull <trace-path> <dest>` | Download trace file to host |
+| `adb shell pkill -INT perfetto` | Stop tracing (waits 2s for file to finalize) |
+| `adb -s <serial> pull <trace-path> <dest>` | Pull trace file to host |
 
 ### Screenshot
 
@@ -106,7 +115,7 @@ All ADB commands used by msh, organized by feature area.
 
 | Command | Purpose |
 |---------|---------|
-| `adb shell getprop debug.layout` | Get layout bounds toggle state |
+| `adb shell getprop debug.layout` | Get layout bounds state |
 | `adb shell setprop debug.layout true/false` | Toggle layout bounds |
 | `adb shell service call activity 1599295570` | Refresh system UI after setprop |
 | `adb shell settings get global airplane_mode_on` | Get airplane mode state |
@@ -121,7 +130,7 @@ All ADB commands used by msh, organized by feature area.
 | `adb shell settings get system pointer_location` | Get pointer location state |
 | `adb shell settings put system pointer_location 1/0` | Toggle pointer location overlay |
 | `adb shell getprop debug.hwui.profile` | Get GPU rendering bars state |
-| `adb shell setprop debug.hwui.profile visual_bars/false` | Toggle GPU rendering bars overlay |
+| `adb shell setprop debug.hwui.profile visual_bars/false` | Toggle GPU rendering bars |
 
 ### Wireless ADB
 
