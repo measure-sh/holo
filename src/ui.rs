@@ -421,7 +421,7 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let items = vec![
         ListItem::new(Line::from(vec![
             Span::styled(" Theme", Style::new().fg(t.fg)),
-            Span::styled(format!("  \u{25c2} {name} \u{25b8}"), Style::new().fg(t.accent)),
+            Span::styled(format!("  \u{25c2} {name} \u{25b8}"), Style::new().fg(t.muted)),
         ])),
         ListItem::new(Line::from(vec![
             Span::styled(" Downloads", Style::new().fg(t.fg)),
