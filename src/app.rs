@@ -37,7 +37,6 @@ pub enum Action {
     CopyLogcat,
     RefreshFiles,
     ExpandDir(String),
-    PullFile(String),
     OpenFile(String),
     StartTrace,
     StopTrace,
