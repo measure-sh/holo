@@ -447,16 +447,22 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let mut state = ListState::default().with_selected(Some(cursor));
     frame.render_stateful_widget(list, inner, &mut state);
 
-    let editor_y = inner.y + inner.height.saturating_sub(2);
-    if editor_y < inner.y + inner.height {
-        let editor_area = Rect { x: inner.x, y: editor_y, width: inner.width, height: 1 };
+    let editor_y = inner.y + inner.height.saturating_sub(3);
+    if editor_y + 1 < inner.y + inner.height {
+        let line1_area = Rect { x: inner.x, y: editor_y, width: inner.width, height: 1 };
+        let line2_area = Rect { x: inner.x, y: editor_y + 1, width: inner.width, height: 1 };
         frame.render_widget(
             ratatui::widgets::Paragraph::new(Line::from(vec![
-                Span::styled("   Editor ", Style::new().fg(t.muted)),
+                Span::styled("   Editor  ", Style::new().fg(t.muted)),
                 Span::styled(&editor, Style::new().fg(t.fg)),
-                Span::styled("  ($EDITOR)", Style::new().fg(t.muted)),
             ])),
-            editor_area,
+            line1_area,
+        );
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(Line::from(
+                Span::styled("   Used to open crash logs and ANRs ($EDITOR)", Style::new().fg(t.muted)),
+            )),
+            line2_area,
         );
     }
 }
