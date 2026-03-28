@@ -220,7 +220,10 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(t.surface))
-        .title(Span::styled(" ^D ", Style::new().fg(t.danger)));
+        .title(Line::from(vec![
+            Span::styled(" ^D", Style::new().fg(t.danger)),
+            Span::styled("evices ", Style::new().fg(t.muted)),
+        ]));
     let device_inner = device_block.inner(device_area);
     frame.render_widget(device_block, device_area);
     frame.render_widget(
@@ -242,7 +245,10 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(t.surface))
-        .title(Span::styled(" ^A ", Style::new().fg(t.danger)));
+        .title(Line::from(vec![
+            Span::styled(" ^A", Style::new().fg(t.danger)),
+            Span::styled("pps ", Style::new().fg(t.muted)),
+        ]));
     let app_inner = app_block.inner(app_area);
     frame.render_widget(app_block, app_area);
     frame.render_widget(
@@ -526,9 +532,9 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
 
     let mut weights: Vec<u32> = Vec::new();
     if top_visible { weights.push(5); }
-    if monitor_visible { weights.push(2); }
-    if mid_visible { weights.push(2); }
-    if bot_visible { weights.push(2); }
+    if monitor_visible { weights.push(1); }
+    if mid_visible { weights.push(1); }
+    if bot_visible { weights.push(3); }
     let total: u32 = weights.iter().sum();
     let constraints: Vec<Constraint> = weights
         .iter()
