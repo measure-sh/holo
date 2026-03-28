@@ -386,8 +386,6 @@ fn render_settings(frame: &mut Frame, area: Rect) {
     let bottom = Line::from(vec![
         Span::styled(" ↩", Style::new().fg(t.red)),
         Span::styled(" toggle ", Style::new().fg(t.muted)),
-        Span::styled("esc", Style::new().fg(t.red)),
-        Span::styled(" close ", Style::new().fg(t.muted)),
     ]);
 
     let block = Block::default()

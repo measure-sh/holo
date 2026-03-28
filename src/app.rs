@@ -125,13 +125,13 @@ impl App {
             match code {
                 KeyCode::Enter => {
                     theme::toggle();
-                    return Action::Noop;
-                }
-                KeyCode::Esc => {
                     self.settings_open = false;
                     return Action::Noop;
                 }
-                _ => return Action::Noop,
+                _ => {
+                    self.settings_open = false;
+                    return Action::Noop;
+                }
             }
         }
         if self.logcat_state.editing.is_some() {
