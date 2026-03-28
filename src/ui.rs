@@ -266,8 +266,8 @@ fn render_dim_overlay(frame: &mut Frame, area: Rect) {
     for y in area.y..area.y + area.height {
         for x in area.x..area.x + area.width {
             if let Some(cell) = buf.cell_mut((x, y)) {
-                cell.set_fg(t.muted);
-                cell.set_bg(t.bg);
+                cell.set_fg(t.surface);
+                cell.set_bg(t.overlay);
             }
         }
     }

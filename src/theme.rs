@@ -3,6 +3,7 @@ use ratatui::style::Color;
 
 pub struct Theme {
     pub bg: Color,
+    pub overlay: Color,
     pub surface: Color,
     pub fg: Color,
     pub muted: Color,
@@ -16,6 +17,7 @@ pub struct Theme {
 
 const DARK: Theme = Theme {
     bg:       Color::Rgb(0x00, 0x00, 0x00),
+    overlay:      Color::Rgb(0x16, 0x16, 0x22),
     fg:       Color::Rgb(0xa9, 0xb1, 0xd6),
     accent:   Color::Rgb(0x7a, 0xa2, 0xf7),
     red:      Color::Rgb(0xf7, 0x76, 0x8e),
@@ -29,6 +31,7 @@ const DARK: Theme = Theme {
 
 const LIGHT: Theme = Theme {
     bg:       Color::Rgb(0xf3, 0xe4, 0xcb),
+    overlay:      Color::Rgb(0xd8, 0xc8, 0xab),
     fg:       Color::Rgb(0x4d, 0x2e, 0x1a),
     accent:   Color::Rgb(0xa3, 0x2f, 0x1a),
     red:      Color::Rgb(0xa4, 0x37, 0x3c),
