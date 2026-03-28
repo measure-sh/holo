@@ -124,7 +124,7 @@ impl App {
             return Action::Noop;
         }
         if self.settings_open {
-            const SELECTABLE_COUNT: usize = 3;
+            const SELECTABLE_COUNT: usize = 4;
             match code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.settings_cursor = self.settings_cursor.saturating_sub(1);
@@ -157,6 +157,10 @@ impl App {
                             self.settings_open = false;
                         }
                         2 => {
+                            let _ = open::that("https://github.com/Genymobile/scrcpy/tree/master?tab=readme-ov-file");
+                            self.settings_open = false;
+                        }
+                        3 => {
                             let _ = open::that("https://github.com/anthropics/msh");
                             self.settings_open = false;
                         }

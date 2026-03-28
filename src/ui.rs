@@ -374,8 +374,8 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let t = theme::current();
     let cursor = app.settings_cursor;
 
-    let width = 50u16.min(area.width.saturating_sub(4));
-    let height = 12u16.min(area.height.saturating_sub(2));
+    let width = 56u16.min(area.width.saturating_sub(4));
+    let height = 16u16.min(area.height.saturating_sub(2));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
@@ -395,10 +395,11 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(" c", Style::new().fg(t.danger)),
             Span::styled("opy path ", Style::new().fg(t.muted)),
         ],
-        _ => vec![
+        2 | 3 => vec![
             Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
             Span::styled(" open in browser ", Style::new().fg(t.muted)),
         ],
+        _ => vec![],
     };
 
     let block = Block::default()
@@ -413,19 +414,31 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(block, dialog_area);
 
     let name = theme::current().name;
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "not set".into());
 
     let items = vec![
         ListItem::new(Line::from(vec![
             Span::styled(" Theme", Style::new().fg(t.fg)),
             Span::styled(format!("  \u{25c2} {name} \u{25b8}"), Style::new().fg(t.accent)),
         ])),
-        ListItem::new(Line::from(vec![
-            Span::styled(" Downloads", Style::new().fg(t.fg)),
-        ])),
-        ListItem::new(Line::from(vec![
-            Span::styled(" About", Style::new().fg(t.fg)),
-            Span::styled("  open in browser \u{2197}", Style::new().fg(t.muted)),
-        ])),
+        ListItem::new(vec![
+            Line::from(Span::styled(" Downloads", Style::new().fg(t.fg))),
+            Line::from(Span::styled("   Pulled files, databases, traces", Style::new().fg(t.muted))),
+        ]),
+        ListItem::new(vec![
+            Line::from(vec![
+                Span::styled(" Screen mirroring", Style::new().fg(t.fg)),
+                Span::styled("  requires scrcpy \u{2197}", Style::new().fg(t.muted)),
+            ]),
+        ]),
+        ListItem::new(vec![
+            Line::from(vec![
+                Span::styled(" About", Style::new().fg(t.fg)),
+                Span::styled("  open in browser \u{2197}", Style::new().fg(t.muted)),
+            ]),
+        ]),
     ];
 
     let list = List::new(items)
@@ -433,6 +446,19 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
         .highlight_symbol(" \u{25b8}");
     let mut state = ListState::default().with_selected(Some(cursor));
     frame.render_stateful_widget(list, inner, &mut state);
+
+    let editor_y = inner.y + inner.height.saturating_sub(2);
+    if editor_y < inner.y + inner.height {
+        let editor_area = Rect { x: inner.x, y: editor_y, width: inner.width, height: 1 };
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(Line::from(vec![
+                Span::styled("   Editor ", Style::new().fg(t.muted)),
+                Span::styled(&editor, Style::new().fg(t.fg)),
+                Span::styled("  ($EDITOR)", Style::new().fg(t.muted)),
+            ])),
+            editor_area,
+        );
+    }
 }
 
 fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {
