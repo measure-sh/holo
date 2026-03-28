@@ -262,8 +262,15 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
 
 fn render_dim_overlay(frame: &mut Frame, area: Rect) {
     let t = theme::current();
-    let dim = Block::default().style(Style::new().bg(t.bg).add_modifier(Modifier::DIM));
-    frame.render_widget(dim, area);
+    let buf = frame.buffer_mut();
+    for y in area.y..area.y + area.height {
+        for x in area.x..area.x + area.width {
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.set_fg(t.muted);
+                cell.set_bg(t.bg);
+            }
+        }
+    }
 }
 
 fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
