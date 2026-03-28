@@ -139,74 +139,46 @@ impl DispatchContext {
                 }
             }
             Action::ToggleLayoutBounds => {
-                app.set_layout_bounds(!app.layout_bounds());
-                let enabled = app.layout_bounds();
-                let label = if enabled { "Layout bounds on" } else { "Layout bounds off" };
-                app.set_status_flash(label.into(), false);
-                if let Some(s) = &serial {
-                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_layout_bounds(!enabled));
-                    spawn_app_action(&self.adb, s, "", "Failed to set layout bounds", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_layout_bounds(s, enabled));
-                }
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
+                    App::layout_bounds, App::set_layout_bounds,
+                    "Layout bounds", "Failed to set layout bounds",
+                    |adb, s, enabled| adb.set_layout_bounds(s, enabled));
             }
             Action::ToggleAirplaneMode => {
-                app.set_airplane_mode(!app.airplane_mode());
-                let enabled = app.airplane_mode();
-                let label = if enabled { "Airplane mode on" } else { "Airplane mode off" };
-                app.set_status_flash(label.into(), false);
-                if let Some(s) = &serial {
-                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_airplane_mode(!enabled));
-                    spawn_app_action(&self.adb, s, "", "Failed to toggle airplane mode", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_airplane_mode(s, enabled));
-                }
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
+                    App::airplane_mode, App::set_airplane_mode,
+                    "Airplane mode", "Failed to toggle airplane mode",
+                    |adb, s, enabled| adb.set_airplane_mode(s, enabled));
             }
             Action::ToggleWifi => {
-                app.set_wifi_enabled(!app.wifi_enabled());
-                let enabled = app.wifi_enabled();
-                let label = if enabled { "Wi-Fi on" } else { "Wi-Fi off" };
-                app.set_status_flash(label.into(), false);
-                if let Some(s) = &serial {
-                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_wifi_enabled(!enabled));
-                    spawn_app_action(&self.adb, s, "", "Failed to toggle Wi-Fi", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_wifi_enabled(s, enabled));
-                }
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
+                    App::wifi_enabled, App::set_wifi_enabled,
+                    "Wi-Fi", "Failed to toggle Wi-Fi",
+                    |adb, s, enabled| adb.set_wifi_enabled(s, enabled));
             }
             Action::ToggleDarkMode => {
-                app.set_dark_mode(!app.dark_mode());
-                let enabled = app.dark_mode();
-                let label = if enabled { "Dark mode on" } else { "Dark mode off" };
-                app.set_status_flash(label.into(), false);
-                if let Some(s) = &serial {
-                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_dark_mode(!enabled));
-                    spawn_app_action(&self.adb, s, "", "Failed to toggle dark mode", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_dark_mode(s, enabled));
-                }
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
+                    App::dark_mode, App::set_dark_mode,
+                    "Dark mode", "Failed to toggle dark mode",
+                    |adb, s, enabled| adb.set_dark_mode(s, enabled));
             }
             Action::ToggleShowTaps => {
-                app.set_show_taps(!app.show_taps());
-                let enabled = app.show_taps();
-                let label = if enabled { "Show taps on" } else { "Show taps off" };
-                app.set_status_flash(label.into(), false);
-                if let Some(s) = &serial {
-                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_show_taps(!enabled));
-                    spawn_app_action(&self.adb, s, "", "Failed to toggle show taps", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_show_taps(s, enabled));
-                }
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
+                    App::show_taps, App::set_show_taps,
+                    "Show taps", "Failed to toggle show taps",
+                    |adb, s, enabled| adb.set_show_taps(s, enabled));
             }
             Action::TogglePointerLocation => {
-                app.set_pointer_location(!app.pointer_location());
-                let enabled = app.pointer_location();
-                let label = if enabled { "Pointer location on" } else { "Pointer location off" };
-                app.set_status_flash(label.into(), false);
-                if let Some(s) = &serial {
-                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_pointer_location(!enabled));
-                    spawn_app_action(&self.adb, s, "", "Failed to toggle pointer location", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_pointer_location(s, enabled));
-                }
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
+                    App::pointer_location, App::set_pointer_location,
+                    "Pointer location", "Failed to toggle pointer location",
+                    |adb, s, enabled| adb.set_pointer_location(s, enabled));
             }
             Action::ToggleGpuRendering => {
-                app.set_gpu_rendering(!app.gpu_rendering());
-                let enabled = app.gpu_rendering();
-                let label = if enabled { "GPU rendering on" } else { "GPU rendering off" };
-                app.set_status_flash(label.into(), false);
-                if let Some(s) = &serial {
-                    let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| app.set_gpu_rendering(!enabled));
-                    spawn_app_action(&self.adb, s, "", "Failed to toggle GPU rendering", &self.command_tx, Some(rollback), move |adb, s, _| adb.set_gpu_rendering(s, enabled));
-                }
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
+                    App::gpu_rendering, App::set_gpu_rendering,
+                    "GPU rendering", "Failed to toggle GPU rendering",
+                    |adb, s, enabled| adb.set_gpu_rendering(s, enabled));
             }
             Action::WirelessAdb => {
                 if let Some(s) = &serial {
@@ -390,6 +362,34 @@ impl DispatchContext {
             Action::Noop | Action::Unfocus => {}
         }
         false
+    }
+}
+
+fn dispatch_toggle(
+    app: &mut App,
+    serial: &Option<String>,
+    adb: &Arc<dyn Adb>,
+    tx: &mpsc::Sender<CommandResult>,
+    get: fn(&App) -> bool,
+    set: fn(&mut App, bool),
+    label: &str,
+    error_msg: &str,
+    adb_fn: fn(&dyn Adb, &str, bool) -> Result<()>,
+) {
+    set(app, !get(app));
+    let enabled = get(app);
+    let flash = if enabled { format!("{label} on") } else { format!("{label} off") };
+    app.set_status_flash(flash, false);
+    if let Some(s) = serial {
+        let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| set(app, !enabled));
+        let adb = adb.clone();
+        let serial = s.clone();
+        let error_msg = error_msg.to_string();
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            let result = adb_fn(&*adb, &serial, enabled);
+            let _ = tx.send(CommandResult { error_msg, result, rollback: Some(rollback) });
+        });
     }
 }
 
