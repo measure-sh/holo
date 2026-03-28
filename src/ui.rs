@@ -309,8 +309,6 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     bottom_spans.extend([
         Span::styled("↩", Style::new().fg(t.danger)),
         Span::styled(" select ", Style::new().fg(t.muted)),
-        Span::styled("esc", Style::new().fg(t.danger)),
-        Span::styled(" close ", Style::new().fg(t.muted)),
     ]);
 
     let block = Block::default()
