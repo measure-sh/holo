@@ -29,7 +29,7 @@ pub fn render_crashes_panel(
 
     if focused {
         block = block.title_bottom(Line::from(vec![
-            Span::styled(" ↩", Style::new().fg(t.red)),
+            Span::styled(" ↩", Style::new().fg(t.danger)),
             Span::styled(" open ", muted),
         ]));
     }
@@ -40,7 +40,7 @@ pub fn render_crashes_panel(
     if let Some(ref err) = state.error {
         let item = ListItem::new(Line::from(Span::styled(
             err.as_str(),
-            Style::new().fg(t.red),
+            Style::new().fg(t.danger),
         )));
         frame.render_widget(List::new(vec![item]), inner);
         return;

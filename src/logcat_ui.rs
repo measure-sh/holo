@@ -65,7 +65,7 @@ pub fn render_logcat_panel(
                 ),
                 Span::styled(
                     " esc",
-                    Style::new().fg(t.red).add_modifier(Modifier::BOLD),
+                    Style::new().fg(t.danger).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(" resume ", Style::new().fg(t.muted)),
             ])
@@ -95,7 +95,7 @@ pub fn render_logcat_panel(
 
 fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, copied_active: bool) -> Line<'static> {
     let t = theme::current();
-    let accent = Style::new().fg(t.red);
+    let accent = Style::new().fg(t.danger);
     let muted = Style::new().fg(t.muted);
     let border = Style::new().fg(panel::by_number(panel::LOGCAT).border_color(true));
 
@@ -106,7 +106,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
         let search_text = if filter.search.is_empty() { String::new() } else { filter.search.clone() };
         spans.push(Span::styled(search_text, Style::new().fg(t.fg)));
         spans.push(Span::styled("_", Style::new().fg(t.fg)));
-        spans.push(Span::styled(" ↩ ", Style::new().fg(t.red)));
+        spans.push(Span::styled(" ↩ ", Style::new().fg(t.danger)));
     } else if filter.search.is_empty() {
         spans.push(Span::styled("search ", muted));
     } else {
@@ -129,7 +129,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
     spans.push(Span::styled(format!("{}", tag_display), Style::new().fg(t.fg)));
     if matches!(editing, Some(LogcatEditTarget::Tag)) {
         spans.push(Span::styled("_", Style::new().fg(t.fg)));
-        spans.push(Span::styled(" ↩ ", Style::new().fg(t.red)));
+        spans.push(Span::styled(" ↩ ", Style::new().fg(t.danger)));
     } else {
         spans.push(Span::styled(" ", muted));
     }
@@ -152,7 +152,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>, c
     spans.push(Span::styled("───", border));
 
     if copied_active {
-        spans.push(Span::styled(" copied! ", Style::new().fg(t.green)));
+        spans.push(Span::styled(" copied! ", Style::new().fg(t.success)));
     } else {
         spans.push(Span::styled(" c", accent));
         spans.push(Span::styled("opy ", muted));
@@ -190,7 +190,7 @@ fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
     } else {
         let highlight_style = Style::new()
             .fg(t.bg)
-            .bg(t.yellow)
+            .bg(t.warning)
             .add_modifier(Modifier::UNDERLINED);
         let lower_msg = msg_text.to_lowercase();
         let lower_search = search.to_lowercase();

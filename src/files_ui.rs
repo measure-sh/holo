@@ -19,7 +19,7 @@ pub fn render_files_panel(
 ) {
     let t = theme::current();
     let color = panel::by_number(panel::FILES).border_color(focused);
-    let accent = Style::new().fg(t.red);
+    let accent = Style::new().fg(t.danger);
     let muted = Style::new().fg(t.muted);
     let border_fg = Style::new().fg(color);
 
@@ -36,7 +36,7 @@ pub fn render_files_panel(
 
     let bottom_spans = if focused {
         let open_spans: Vec<Span> = if flash_label == Some("opening...") {
-            vec![Span::styled(" opening... ", Style::new().fg(t.green))]
+            vec![Span::styled(" opening... ", Style::new().fg(t.success))]
         } else {
             vec![
                 Span::styled(" ↩", accent),
@@ -79,7 +79,7 @@ pub fn render_files_panel(
     if let Some(ref err) = state.error {
         let item = ListItem::new(Line::from(Span::styled(
             err.as_str(),
-            Style::new().fg(t.red),
+            Style::new().fg(t.danger),
         )));
         frame.render_widget(List::new(vec![item]), tree_area);
         return;

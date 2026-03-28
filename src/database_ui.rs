@@ -21,14 +21,14 @@ pub fn render_database_panel(
     db_state: &mut DatabaseState,
 ) {
     let t = theme::current();
-    let accent = Style::new().fg(t.red);
+    let accent = Style::new().fg(t.danger);
     let muted = Style::new().fg(t.muted);
 
     if let Some(ref err) = db_state.error {
         let block = panel_block(panel::DATABASE, focused);
         let inner = block.inner(area);
         frame.render_widget(block, area);
-        let item = ListItem::new(Line::from(Span::styled(err.as_str(), Style::new().fg(t.red))));
+        let item = ListItem::new(Line::from(Span::styled(err.as_str(), Style::new().fg(t.danger))));
         frame.render_widget(List::new(vec![item]), inner);
         return;
     }
@@ -39,7 +39,7 @@ pub fn render_database_panel(
                 format!(" {} ", SUPERSCRIPT_DIGITS[(panel::DATABASE - 1) as usize]),
                 Style::new().fg(panel::by_number(panel::DATABASE).border_color(focused)).add_modifier(Modifier::BOLD),
             ),
-            Span::styled("d", Style::new().fg(t.red)),
+            Span::styled("d", Style::new().fg(t.danger)),
             Span::styled(format!("atabase: {} ", db_name), Style::new().fg(t.fg)),
         ]);
 
@@ -50,7 +50,7 @@ pub fn render_database_panel(
             db_state.copied_at = None;
         }
         let copy_spans: Vec<Span> = if copied_active {
-            vec![Span::styled(" copied! ", Style::new().fg(t.green))]
+            vec![Span::styled(" copied! ", Style::new().fg(t.success))]
         } else {
             vec![
                 Span::styled(" c", accent),
@@ -129,7 +129,7 @@ pub fn render_database_panel(
                         ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(t.fg))))
                     }
                     ReplLine::Error(s) => {
-                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(t.red))))
+                        ListItem::new(Line::from(Span::styled(s.as_str(), Style::new().fg(t.danger))))
                     }
                 }
             }).collect();

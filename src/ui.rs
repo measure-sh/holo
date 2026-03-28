@@ -49,7 +49,7 @@ pub fn panel_title(panel_number: u8, _focused: bool) -> Line<'static> {
             }
             spans.push(Span::styled(
                 String::from(key),
-                Style::new().fg(t.red),
+                Style::new().fg(t.danger),
             ));
             spans.push(Span::styled(
                 format!("{after} "),
@@ -98,31 +98,31 @@ pub fn render_app(
 
     let mut hint_spans = if app.confirming_quit() {
         vec![
-            Span::styled(" q", Style::new().fg(t.red)),
+            Span::styled(" q", Style::new().fg(t.danger)),
             Span::styled(" to confirm ", Style::new().fg(t.fg)),
         ]
     } else if app.confirming_settings() {
         vec![
-            Span::styled(" s", Style::new().fg(t.red)),
+            Span::styled(" s", Style::new().fg(t.danger)),
             Span::styled(" to confirm ", Style::new().fg(t.fg)),
         ]
     } else {
         vec![
-            Span::styled(" qq", Style::new().fg(t.red)),
+            Span::styled(" qq", Style::new().fg(t.danger)),
             Span::styled("uit ", Style::new().fg(t.muted)),
-            Span::styled(" ss", Style::new().fg(t.red)),
+            Span::styled(" ss", Style::new().fg(t.danger)),
             Span::styled("ettings ", Style::new().fg(t.muted)),
         ]
     };
     if app.focused_panel().is_some() {
         let label = if app.is_zoomed() { "oom out " } else { "oom in " };
-        hint_spans.push(Span::styled(" z", Style::new().fg(t.red)));
+        hint_spans.push(Span::styled(" z", Style::new().fg(t.danger)));
         hint_spans.push(Span::styled(label, Style::new().fg(t.muted)));
     }
     let hint_line = Line::from(hint_spans);
 
     let branding_line = if let Some((msg, is_error)) = app.status_flash_active() {
-        let color = if is_error { t.red } else { t.green };
+        let color = if is_error { t.danger } else { t.success };
         Line::from(Span::styled(
             format!(" {} ", msg),
             Style::new().fg(color),
@@ -130,7 +130,7 @@ pub fn render_app(
     } else {
         Line::from(vec![
             Span::styled("made with ", Style::new().fg(t.muted)),
-            Span::styled("\u{2665}", Style::new().fg(t.red)),
+            Span::styled("\u{2665}", Style::new().fg(t.danger)),
             Span::styled(" by ", Style::new().fg(t.muted)),
             Span::styled("measure.sh ", Style::new().fg(t.accent)),
         ]).alignment(Alignment::Center)
@@ -198,13 +198,13 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let app_label = tb.app_label();
 
     let (device_dot, device_fg) = if has_device && tb.device_connected {
-        (t.cyan, t.fg)
+        (t.info, t.fg)
     } else if has_device {
-        (t.red, t.fg)
+        (t.danger, t.fg)
     } else {
         (t.muted, t.muted)
     };
-    let app_dot = if has_app { t.green } else { t.muted };
+    let app_dot = if has_app { t.success } else { t.muted };
     let app_fg = if has_app { t.fg } else { t.muted };
 
     let device_content = format!(" \u{2022} {device_label} \u{25BE} ");
@@ -220,7 +220,7 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(t.surface))
-        .title(Span::styled(" ^D ", Style::new().fg(t.red)));
+        .title(Span::styled(" ^D ", Style::new().fg(t.danger)));
     let device_inner = device_block.inner(device_area);
     frame.render_widget(device_block, device_area);
     frame.render_widget(
@@ -242,7 +242,7 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(t.surface))
-        .title(Span::styled(" ^A ", Style::new().fg(t.red)));
+        .title(Span::styled(" ^A ", Style::new().fg(t.danger)));
     let app_inner = app_block.inner(app_area);
     frame.render_widget(app_block, app_area);
     frame.render_widget(
@@ -300,7 +300,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     };
 
     let mut bottom_spans = vec![
-        Span::styled(" /", Style::new().fg(t.red)),
+        Span::styled(" /", Style::new().fg(t.danger)),
     ];
     if tb.filter.is_empty() {
         bottom_spans.push(Span::styled("search ", Style::new().fg(t.muted)));
@@ -308,9 +308,9 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
         bottom_spans.push(Span::styled(format!("{} ", tb.filter), Style::new().fg(t.fg)));
     }
     bottom_spans.extend([
-        Span::styled("↩", Style::new().fg(t.red)),
+        Span::styled("↩", Style::new().fg(t.danger)),
         Span::styled(" select ", Style::new().fg(t.muted)),
-        Span::styled("esc", Style::new().fg(t.red)),
+        Span::styled("esc", Style::new().fg(t.danger)),
         Span::styled(" close ", Style::new().fg(t.muted)),
     ]);
 
@@ -387,7 +387,7 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Clear, dialog_area);
 
     let bottom = Line::from(vec![
-        Span::styled(" \u{21b5}", Style::new().fg(t.red)),
+        Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
         Span::styled(" select ", Style::new().fg(t.muted)),
     ]);
 
@@ -584,7 +584,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     if focused {
         let filter = &app.commands().filter;
         let filter_span = if filter.is_empty() {
-            Span::styled(" /", Style::new().fg(t.red))
+            Span::styled(" /", Style::new().fg(t.danger))
         } else {
             Span::styled(format!(" /{filter}"), Style::new().fg(t.fg))
         };
@@ -592,7 +592,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
             filter_span,
             Span::styled(" ", Style::new()),
             Span::styled("───", Style::new().fg(border_color)),
-            Span::styled(" ↩", Style::new().fg(t.red)),
+            Span::styled(" ↩", Style::new().fg(t.danger)),
             Span::styled(" run ", Style::new().fg(t.fg)),
         ]));
     }

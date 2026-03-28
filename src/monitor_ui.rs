@@ -30,8 +30,8 @@ fn format_mb_precise(kb: u64) -> String {
 fn trend_symbol(trend: Trend) -> (&'static str, ratatui::style::Color) {
     let t = theme::current();
     match trend {
-        Trend::Rising => ("▲", t.red),
-        Trend::Falling => ("▼", t.green),
+        Trend::Rising => ("▲", t.danger),
+        Trend::Falling => ("▼", t.success),
         Trend::Stable => ("─", t.muted),
     }
 }

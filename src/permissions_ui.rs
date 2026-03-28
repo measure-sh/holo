@@ -21,7 +21,7 @@ pub fn render_permissions_panel(
 
     let t = theme::current();
     let color = panel::by_number(panel::PERMISSIONS).border_color(focused);
-    let accent = Style::new().fg(t.red);
+    let accent = Style::new().fg(t.danger);
     let muted = Style::new().fg(t.muted);
     let border_fg = Style::new().fg(color);
 
@@ -42,7 +42,7 @@ pub fn render_permissions_panel(
     if let Some(ref err) = state.error {
         let item = ListItem::new(Line::from(Span::styled(
             err.as_str(),
-            Style::new().fg(t.red),
+            Style::new().fg(t.danger),
         )));
         frame.render_widget(List::new(vec![item]), inner);
         return;

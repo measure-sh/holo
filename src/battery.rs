@@ -13,9 +13,9 @@ use crate::theme;
 fn battery_color(level: u8) -> ratatui::style::Color {
     let t = theme::current();
     if level < 10 {
-        t.red
+        t.danger
     } else if level <= 25 {
-        t.yellow
+        t.warning
     } else {
         t.fg
     }
@@ -60,15 +60,15 @@ mod tests {
     #[test]
     fn battery_color_red_below_10() {
         let t = theme::current();
-        assert_eq!(battery_color(0), t.red);
-        assert_eq!(battery_color(9), t.red);
+        assert_eq!(battery_color(0), t.danger);
+        assert_eq!(battery_color(9), t.danger);
     }
 
     #[test]
     fn battery_color_yellow_10_to_25() {
         let t = theme::current();
-        assert_eq!(battery_color(10), t.yellow);
-        assert_eq!(battery_color(25), t.yellow);
+        assert_eq!(battery_color(10), t.warning);
+        assert_eq!(battery_color(25), t.warning);
     }
 
     #[test]

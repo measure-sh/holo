@@ -114,10 +114,10 @@ impl CommandsState {
         }
         let th = theme::current();
         if elapsed < HOLD_MS {
-            return Some(th.green);
+            return Some(th.success);
         }
         let ratio = (elapsed - HOLD_MS) as f32 / FADE_MS as f32;
-        let (Color::Rgb(sr, sg, sb), Color::Rgb(er, eg, eb)) = (th.green, th.fg) else {
+        let (Color::Rgb(sr, sg, sb), Color::Rgb(er, eg, eb)) = (th.success, th.fg) else {
             return None;
         };
         let lerp = |s: u8, e: u8| -> u8 {

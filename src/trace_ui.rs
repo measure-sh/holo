@@ -17,7 +17,7 @@ pub fn render_trace_panel(frame: &mut Frame, area: Rect, focused: bool, state: &
     let mut block = panel_block(panel::TRACE, focused);
 
     if focused {
-        let accent = Style::new().fg(t.red);
+        let accent = Style::new().fg(t.danger);
         let muted = Style::new().fg(t.muted);
         let border = Style::new().fg(panel::by_number(panel::TRACE).border_color(true));
         let mut spans = Vec::new();
@@ -75,7 +75,7 @@ pub fn render_trace_panel(frame: &mut Frame, area: Rect, focused: bool, state: &
     } else if flash_active {
         if let Some(msg) = &state.status_message {
             items.push(ListItem::new(Line::from(
-                Span::styled(msg.clone(), Style::new().fg(t.green)),
+                Span::styled(msg.clone(), Style::new().fg(t.success)),
             )));
         }
     } else if state.pulled_traces.is_empty() {
