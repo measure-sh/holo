@@ -423,10 +423,10 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
             Span::styled(" Theme", Style::new().fg(t.fg)),
             Span::styled(format!("  \u{25c2} {name} \u{25b8}"), Style::new().fg(t.accent)),
         ])),
-        ListItem::new(vec![
-            Line::from(Span::styled(" Downloads", Style::new().fg(t.fg))),
-            Line::from(Span::styled("   Pulled files, databases, traces", Style::new().fg(t.muted))),
-        ]),
+        ListItem::new(Line::from(vec![
+            Span::styled(" Downloads", Style::new().fg(t.fg)),
+            Span::styled("  files, databases, traces", Style::new().fg(t.muted)),
+        ])),
         ListItem::new(vec![
             Line::from(vec![
                 Span::styled(" Screen mirroring", Style::new().fg(t.fg)),
