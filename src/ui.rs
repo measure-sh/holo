@@ -373,13 +373,11 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     }
 }
 
-fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
+fn render_settings(frame: &mut Frame, area: Rect, _app: &App) {
     let t = theme::current();
-    let theme_open = app.settings_theme_open;
 
-    let content_rows = if theme_open { 1 + theme::theme_count() } else { 1 };
     let width = 34u16.min(area.width.saturating_sub(4));
-    let height = (content_rows as u16 + 2).min(area.height.saturating_sub(2));
+    let height = 3u16.min(area.height.saturating_sub(2));
     let x = area.x + (area.width.saturating_sub(width)) / 2;
     let y = area.y + (area.height.saturating_sub(height)) / 2;
     let dialog_area = Rect::new(x, y, width, height);
@@ -387,8 +385,8 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(Clear, dialog_area);
 
     let bottom = Line::from(vec![
-        Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
-        Span::styled(" select ", Style::new().fg(t.muted)),
+        Span::styled(" \u{2190}\u{2192}", Style::new().fg(t.danger)),
+        Span::styled(" change ", Style::new().fg(t.muted)),
     ]);
 
     let block = Block::default()
@@ -402,39 +400,15 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let inner = block.inner(dialog_area);
     frame.render_widget(block, dialog_area);
 
-    let arrow = if theme_open { "\u{25be}" } else { "\u{25b8}" };
-    let current_name = theme::current().name;
-    let theme_row = Line::from(vec![
+    let name = theme::current().name;
+    let row = Line::from(vec![
+        Span::styled(" Theme ", Style::new().fg(t.fg)),
         Span::styled(
-            format!(" {arrow} Theme "),
-            if theme_open { Style::new().fg(t.fg) } else { Style::new().fg(t.accent).add_modifier(Modifier::BOLD) },
+            format!("\u{25c2} {name} \u{25b8}"),
+            Style::new().fg(t.accent).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(current_name, Style::new().fg(t.muted)),
     ]);
-    frame.render_widget(ratatui::widgets::Paragraph::new(theme_row), inner);
-
-    if theme_open {
-        let sub_area = Rect {
-            x: inner.x,
-            y: inner.y + 1,
-            width: inner.width,
-            height: inner.height.saturating_sub(1),
-        };
-        let items: Vec<ListItem> = (0..theme::theme_count())
-            .map(|i| {
-                let active = i == theme::current_index();
-                let marker = if active { "\u{2022} " } else { "  " };
-                ListItem::new(Line::from(Span::styled(
-                    format!("    {marker}{}", theme::theme_name(i)),
-                    Style::new().fg(t.fg),
-                )))
-            })
-            .collect();
-        let list = List::new(items)
-            .highlight_style(Style::new().fg(t.accent).add_modifier(Modifier::BOLD));
-        let mut state = ListState::default().with_selected(Some(app.settings_theme_cursor));
-        frame.render_stateful_widget(list, sub_area, &mut state);
-    }
+    frame.render_widget(ratatui::widgets::Paragraph::new(row), inner);
 }
 
 fn render_dialog(frame: &mut Frame, area: Rect, message: &str) {

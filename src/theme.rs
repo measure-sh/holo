@@ -122,9 +122,6 @@ pub fn theme_count() -> usize {
     THEMES.len()
 }
 
-pub fn theme_name(idx: usize) -> &'static str {
-    THEMES[idx.min(THEMES.len() - 1)].name
-}
 
 pub fn level_color(level: char) -> Color {
     let t = current();

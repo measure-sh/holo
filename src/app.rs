@@ -73,8 +73,6 @@ pub struct App {
     confirming_quit: bool,
     confirming_settings: bool,
     pub settings_open: bool,
-    pub settings_theme_open: bool,
-    pub settings_theme_cursor: usize,
     trace_state: TraceState,
     crashes_state: CrashesState,
     anrs_state: AnrsState,
@@ -108,8 +106,6 @@ impl App {
             confirming_quit: false,
             confirming_settings: false,
             settings_open: false,
-            settings_theme_open: false,
-            settings_theme_cursor: 0,
             trace_state: TraceState::new(pkg),
             crashes_state: CrashesState::new(),
             anrs_state: AnrsState::new(),
@@ -126,32 +122,18 @@ impl App {
             return Action::Noop;
         }
         if self.settings_open {
-            if self.settings_theme_open {
-                match code {
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.settings_theme_cursor = self.settings_theme_cursor.saturating_sub(1);
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        let max = theme::theme_count().saturating_sub(1);
-                        self.settings_theme_cursor = (self.settings_theme_cursor + 1).min(max);
-                    }
-                    KeyCode::Enter => {
-                        theme::set_theme(self.settings_theme_cursor);
-                        self.settings_theme_open = false;
-                    }
-                    _ => {
-                        self.settings_theme_open = false;
-                    }
+            match code {
+                KeyCode::Right | KeyCode::Char('l') => {
+                    let next = (theme::current_index() + 1) % theme::theme_count();
+                    theme::set_theme(next);
                 }
-            } else {
-                match code {
-                    KeyCode::Enter => {
-                        self.settings_theme_open = true;
-                        self.settings_theme_cursor = theme::current_index();
-                    }
-                    _ => {
-                        self.settings_open = false;
-                    }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    let cur = theme::current_index();
+                    let prev = if cur == 0 { theme::theme_count() - 1 } else { cur - 1 };
+                    theme::set_theme(prev);
+                }
+                _ => {
+                    self.settings_open = false;
                 }
             }
             return Action::Noop;
