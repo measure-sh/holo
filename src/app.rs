@@ -124,7 +124,7 @@ impl App {
             return Action::Noop;
         }
         if self.settings_open {
-            const SETTINGS_ROWS: usize = 4;
+            const SETTINGS_ROWS: usize = 3;
             match code {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.settings_cursor = self.settings_cursor.saturating_sub(1);
@@ -150,20 +150,6 @@ impl App {
                             self.settings_open = false;
                         }
                         2 => {
-                            let keymap = std::env::current_exe()
-                                .ok()
-                                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-                                .unwrap_or_default()
-                                .join("docs/keymap.md");
-                            let path = if keymap.exists() {
-                                keymap
-                            } else {
-                                std::path::PathBuf::from("docs/keymap.md")
-                            };
-                            let _ = open::that(&path);
-                            self.settings_open = false;
-                        }
-                        3 => {
                             let _ = open::that("https://github.com/anthropics/msh");
                             self.settings_open = false;
                         }
