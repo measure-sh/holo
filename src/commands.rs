@@ -15,7 +15,7 @@ const COMMAND_LIST: &[(&str, char, fn() -> Action)] = &[
     ("screenshot", 's', || Action::Screenshot),
     ("layout bounds", 'l', || Action::ToggleLayoutBounds),
     ("wifi", 'f', || Action::ToggleWifi),
-    ("airplane mode", 'i', || Action::ToggleAirplaneMode),
+    ("airplane mode", 'e', || Action::ToggleAirplaneMode),
     ("wireless adb", 'b', || Action::WirelessAdb),
     ("uninstall", 'u', || Action::UninstallApp),
     ("show taps", 't', || Action::ToggleShowTaps),

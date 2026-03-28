@@ -737,9 +737,9 @@ mod tests {
     }
 
     #[test]
-    fn ctrl_i_toggles_airplane_mode() {
+    fn ctrl_e_toggles_airplane_mode() {
         let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(ctrl('i')), Action::ToggleAirplaneMode));
+        assert!(matches!(app.handle_key(ctrl('e')), Action::ToggleAirplaneMode));
     }
 
     #[test]
