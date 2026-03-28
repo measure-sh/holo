@@ -76,6 +76,7 @@ pub struct App {
     anrs_state: AnrsState,
     pub dialog: Option<String>,
     saved_visibility: Option<([bool; 9], bool)>,
+    status_flash: Option<(String, std::time::Instant, bool)>,
 }
 
 impl App {
@@ -106,6 +107,7 @@ impl App {
             anrs_state: AnrsState::new(),
             dialog: None,
             saved_visibility: None,
+            status_flash: None,
         }
     }
 
@@ -181,7 +183,7 @@ impl App {
             }
         }
 
-        if self.files_state.confirming.is_some() || self.focused == Some(panel::FILES) {
+        if self.focused == Some(panel::FILES) {
             if let Some(action) = self.files_state.handle_key(code) {
                 if matches!(action, Action::Unfocus) {
                     self.restore_zoom();
@@ -511,6 +513,24 @@ impl App {
 
     pub fn toolbar_mut(&mut self) -> &mut ToolbarState {
         &mut self.toolbar
+    }
+
+    pub fn set_status_flash(&mut self, msg: String, is_error: bool) {
+        self.status_flash = Some((msg, std::time::Instant::now(), is_error));
+    }
+
+    pub fn status_flash_active(&self) -> Option<(&str, bool)> {
+        let (msg, t, is_error) = self.status_flash.as_ref()?;
+        if t.elapsed() < std::time::Duration::from_secs(3) {
+            Some((msg.as_str(), *is_error))
+        } else {
+            None
+        }
+    }
+
+    pub fn has_active_animation(&self) -> bool {
+        self.commands.has_active_animation()
+            || self.status_flash_active().is_some()
     }
 
 }

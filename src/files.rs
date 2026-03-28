@@ -31,18 +31,11 @@ pub enum ToggleResult {
     Collapse,
 }
 
-#[derive(Clone, PartialEq)]
-pub enum FileConfirm {
-    Pull(String),
-    Open(String),
-}
-
 pub struct FilesState {
     pub package: String,
     pub root_children: Option<Vec<FileNode>>,
     pub selected_index: usize,
     pub error: Option<String>,
-    pub confirming: Option<FileConfirm>,
     pub action_flash: Option<(&'static str, std::time::Instant)>,
 }
 
@@ -53,35 +46,11 @@ impl FilesState {
             root_children: None,
             selected_index: 0,
             error: None,
-            confirming: None,
             action_flash: None,
         }
     }
 
     pub fn handle_key(&mut self, code: KeyCode) -> Option<Action> {
-        if self.confirming.is_some() {
-            return Some(match code {
-                KeyCode::Char('p') if matches!(self.confirming, Some(FileConfirm::Pull(_))) => {
-                    let confirm = self.confirming.take().unwrap();
-                    match confirm {
-                        FileConfirm::Pull(path) => Action::PullFile(path),
-                        _ => unreachable!(),
-                    }
-                }
-                KeyCode::Char('o') if matches!(self.confirming, Some(FileConfirm::Open(_))) => {
-                    let confirm = self.confirming.take().unwrap();
-                    match confirm {
-                        FileConfirm::Open(path) => Action::OpenFile(path),
-                        _ => unreachable!(),
-                    }
-                }
-                _ => {
-                    self.confirming = None;
-                    Action::Noop
-                }
-            });
-        }
-
         match code {
             KeyCode::Up => {
                 self.move_up();
@@ -93,33 +62,23 @@ impl FilesState {
                 Some(Action::Noop)
             }
             KeyCode::Enter | KeyCode::Right => {
-                if let Some(result) = self.toggle_selected() {
-                    Some(match result {
-                        ToggleResult::Expand(path) => Action::ExpandDir(path),
-                        ToggleResult::ExpandCached | ToggleResult::Collapse => Action::Noop,
-                    })
+                if self.selected_is_dir() {
+                    if let Some(result) = self.toggle_selected() {
+                        Some(match result {
+                            ToggleResult::Expand(path) => Action::ExpandDir(path),
+                            ToggleResult::ExpandCached | ToggleResult::Collapse => Action::Noop,
+                        })
+                    } else {
+                        Some(Action::Noop)
+                    }
+                } else if let Some(path) = self.selected_path() {
+                    Some(Action::OpenFile(path))
                 } else {
                     Some(Action::Noop)
                 }
             }
             KeyCode::Left => {
                 self.collapse_selected();
-                Some(Action::Noop)
-            }
-            KeyCode::Char('p') => {
-                if !self.selected_is_dir() {
-                    if let Some(path) = self.selected_path() {
-                        self.confirming = Some(FileConfirm::Pull(path));
-                    }
-                }
-                Some(Action::Noop)
-            }
-            KeyCode::Char('o') => {
-                if !self.selected_is_dir() {
-                    if let Some(path) = self.selected_path() {
-                        self.confirming = Some(FileConfirm::Open(path));
-                    }
-                }
                 Some(Action::Noop)
             }
             KeyCode::Char('r') => {
@@ -306,8 +265,7 @@ pub fn spawn_pull_file(
     serial: String,
     package: String,
     remote_path: String,
-    open_after: bool,
-) -> mpsc::Receiver<Result<(String, bool), String>> {
+) -> mpsc::Receiver<Result<String, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let file_name = std::path::Path::new(&remote_path)
@@ -323,18 +281,15 @@ pub fn spawn_pull_file(
         let result = adb
             .pull_file(&serial, &package, &remote_path, &dest)
             .map(|_| {
-                let path_str = format!("{}", dest.display());
-                if open_after {
-                    if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(format!("{} \"{}\"", editor, dest.display()))
-                            .spawn();
-                    } else {
-                        let _ = open::that(&dest);
-                    }
+                if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
+                    let _ = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("{} \"{}\"", editor, dest.display()))
+                        .spawn();
+                } else {
+                    let _ = open::that(&dest);
                 }
-                (path_str, open_after)
+                format!("{}", dest.display())
             })
             .map_err(|e| e.to_string());
         let _ = tx.send(result);

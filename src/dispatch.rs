@@ -300,7 +300,7 @@ impl DispatchContext {
                     d.start_list_dir(self.adb.clone(), s.clone(), p.clone(), path);
                 }
             }
-            Action::OpenFile(path) => {
+            Action::OpenFile(path) | Action::PullFile(path) => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
                     d.start_pull_file(self.adb.clone(), s.clone(), p.clone(), path);
                 }

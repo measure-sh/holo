@@ -602,7 +602,7 @@ impl Adb for RealAdb {
     }
 
     fn set_gpu_rendering(&self, serial: &str, enabled: bool) -> Result<()> {
-        let val = if enabled { "visual_bars" } else { "" };
+        let val = if enabled { "visual_bars" } else { "false" };
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "setprop", "debug.hwui.profile", val])
             .output()?;

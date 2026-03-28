@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::files::{FileConfirm, FilesState, FlatEntry};
+use crate::files::{FilesState, FlatEntry};
 use crate::panel;
 use crate::theme;
 use crate::ui::panel_title;
@@ -35,43 +35,20 @@ pub fn render_files_panel(
     };
 
     let bottom_spans = if focused {
-        let pull_spans: Vec<Span> = if matches!(&state.confirming, Some(FileConfirm::Pull(_))) {
-            vec![
-                Span::styled(" p", accent),
-                Span::styled(" to confirm ", Style::new().fg(t.fg)),
-            ]
-        } else if flash_label == Some("pulling...") {
-            vec![Span::styled(" pulling... ", Style::new().fg(t.green))]
-        } else {
-            vec![
-                Span::styled(" p", accent),
-                Span::styled("ull ", muted),
-            ]
-        };
-        let open_spans: Vec<Span> = if matches!(&state.confirming, Some(FileConfirm::Open(_))) {
-            vec![
-                Span::styled(" o", accent),
-                Span::styled(" to confirm ", Style::new().fg(t.fg)),
-            ]
-        } else if flash_label == Some("opening...") {
+        let open_spans: Vec<Span> = if flash_label == Some("opening...") {
             vec![Span::styled(" opening... ", Style::new().fg(t.green))]
         } else {
             vec![
-                Span::styled(" o", accent),
-                Span::styled("pen ", muted),
+                Span::styled(" ↩", accent),
+                Span::styled(" open ", muted),
             ]
         };
         let mut spans = Vec::new();
-        spans.extend(pull_spans);
-        spans.push(Span::styled("───", border_fg));
         spans.extend(open_spans);
         spans.extend([
             Span::styled("───", border_fg),
             Span::styled(" r", accent),
             Span::styled("efresh ", muted),
-            Span::styled("───", border_fg),
-            Span::styled(" esc", accent),
-            Span::styled(" back ", muted),
         ]);
         Some(spans)
     } else {
