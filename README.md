@@ -1,5 +1,9 @@
 # Holo
 
+[![CI](https://github.com/measure-sh/holo/actions/workflows/ci.yml/badge.svg)](https://github.com/measure-sh/holo/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/measure-sh/holo)](https://github.com/measure-sh/holo/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/measure-sh/holo)](LICENSE)
+
 > **Note:** Holo is experimental. It works, but expect rough edges.
 
 A terminal UI for Android. For developers who don't like leaving the terminal.
