@@ -161,7 +161,7 @@ impl App {
                             self.settings_open = false;
                         }
                         3 => {
-                            let _ = open::that("https://github.com/anthropics/holo");
+                            let _ = open::that("https://github.com/measure-sh/holo");
                             self.settings_open = false;
                         }
                         _ => {
