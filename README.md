@@ -38,6 +38,7 @@ See crash stack traces and ANR reasons as they happen.
 ### Prerequisites
 
 - [adb](https://developer.android.com/tools/adb) must be in your `PATH`
+- `$EDITOR` or `$VISUAL` set to your preferred editor (used to open files and logs)
 - [scrcpy](https://github.com/Genymobile/scrcpy) (optional, required for device mirroring)
 
 ### Install
