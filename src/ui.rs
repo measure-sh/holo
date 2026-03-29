@@ -90,7 +90,7 @@ pub fn render_app(
     let t = theme::current();
     let area = frame.area();
 
-    let title_line = Line::from(" msh ").style(
+    let title_line = Line::from(" holo ").style(
         Style::new()
             .fg(t.accent)
             .add_modifier(Modifier::BOLD),
@@ -531,8 +531,8 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     if section_count == 0 { return; }
 
     let mut weights: Vec<u32> = Vec::new();
-    if top_visible { weights.push(50); }
-    if monitor_visible { weights.push(15); }
+    if top_visible { weights.push(45); }
+    if monitor_visible { weights.push(20); }
     if mid_visible { weights.push(15); }
     if bot_visible { weights.push(20); }
     let total: u32 = weights.iter().sum();

@@ -285,7 +285,7 @@ pub fn spawn_pull_db(
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let dest = std::env::temp_dir().join("msh").join(&package).join("db").join(format!("{}_{}", timestamp, db));
+        let dest = std::env::temp_dir().join("holo").join(&package).join("db").join(format!("{}_{}", timestamp, db));
         let result = std::fs::create_dir_all(&dest)
             .map_err(|e| e.to_string())
             .and_then(|_| {

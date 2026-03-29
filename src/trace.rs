@@ -38,7 +38,7 @@ impl Drop for TraceServer {
 impl TraceState {
     pub fn new(package: &str) -> Self {
         let traces_dir = std::env::temp_dir()
-            .join("msh")
+            .join("holo")
             .join(package)
             .join("traces");
         let mut pulled_traces: Vec<PathBuf> = std::fs::read_dir(&traces_dir)
@@ -263,7 +263,7 @@ pub fn spawn_stop_and_pull_trace(
     std::thread::spawn(move || {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let dest = std::env::temp_dir()
-            .join("msh")
+            .join("holo")
             .join(&package)
             .join("traces")
             .join(format!("{timestamp}_trace.perfetto-trace"));

@@ -340,7 +340,7 @@ impl Adb for RealAdb {
         let mut child = Command::new("adb")
             .args([
                 "-s", serial, "shell", "perfetto", "-d", "--txt", "-c", "-",
-                "-o", "/data/misc/perfetto-traces/msh_trace.perfetto-trace",
+                "-o", "/data/misc/perfetto-traces/holo_trace.perfetto-trace",
             ])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -373,7 +373,7 @@ impl Adb for RealAdb {
         let output = Command::new("adb")
             .args([
                 "-s", serial, "pull",
-                "/data/misc/perfetto-traces/msh_trace.perfetto-trace",
+                "/data/misc/perfetto-traces/holo_trace.perfetto-trace",
                 &dest.to_string_lossy(),
             ])
             .output()?;

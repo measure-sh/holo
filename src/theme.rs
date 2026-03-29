@@ -15,6 +15,7 @@ pub struct Theme {
     pub warning: Color,
     pub info: Color,
     pub secondary: Color,
+    pub sparkline: Color,
 }
 
 const TOKYO_NIGHT: Theme = Theme {
@@ -30,6 +31,7 @@ const TOKYO_NIGHT: Theme = Theme {
     info:      Color::Rgb(0x0d, 0xb9, 0xd7),
     surface:   Color::Rgb(0x32, 0x34, 0x4a),
     muted:     Color::Rgb(0x56, 0x5f, 0x89),
+    sparkline: Color::Rgb(0x5a, 0x7e, 0xc0),
 };
 
 const AKAITO: Theme = Theme {
@@ -45,6 +47,7 @@ const AKAITO: Theme = Theme {
     info:      Color::Rgb(0x75, 0x58, 0x33),
     surface:   Color::Rgb(0xc8, 0xb4, 0x94),
     muted:     Color::Rgb(0x9f, 0x82, 0x53),
+    sparkline: Color::Rgb(0x8a, 0x3d, 0x2e),
 };
 
 const DARK: Theme = Theme {
@@ -60,6 +63,7 @@ const DARK: Theme = Theme {
     info:      Color::Rgb(0x22, 0xd3, 0xee),
     surface:   Color::Rgb(0x38, 0x38, 0x38),
     muted:     Color::Rgb(0x78, 0x78, 0x78),
+    sparkline: Color::Rgb(0xc8, 0xb0, 0x3a),
 };
 
 const LIGHT: Theme = Theme {
@@ -75,6 +79,7 @@ const LIGHT: Theme = Theme {
     info:      Color::Rgb(0x08, 0x91, 0xb2),
     surface:   Color::Rgb(0xd0, 0xd0, 0xd0),
     muted:     Color::Rgb(0x6b, 0x6b, 0x6b),
+    sparkline: Color::Rgb(0x88, 0x72, 0x1a),
 };
 
 const THEMES: [&Theme; 4] = [&DARK, &LIGHT, &TOKYO_NIGHT, &AKAITO];
@@ -94,7 +99,7 @@ pub fn set_theme(id: usize) {
 fn cache_path() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("msh")
+        .join("holo")
         .join("theme")
 }
 

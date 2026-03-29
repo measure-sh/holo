@@ -98,7 +98,7 @@ fn mem_item(
     let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
-            Span::styled(spark, Style::new().fg(t.accent)),
+            Span::styled(spark, Style::new().fg(t.sparkline)),
             Span::styled(format!("  {:>8}", format_mb(current)), Style::new().fg(t.fg)),
             Span::raw(" "),
             Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
@@ -128,7 +128,7 @@ fn disk_item(
     let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
-            Span::styled(spark, Style::new().fg(t.accent)),
+            Span::styled(spark, Style::new().fg(t.sparkline)),
             Span::styled(format!("  {:>8}", format_mb_precise(current)), Style::new().fg(t.fg)),
             Span::raw(" "),
             Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
@@ -152,7 +152,7 @@ fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     let mut lines = vec![
         Line::from(vec![
             Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(t.fg)),
-            Span::styled(spark, Style::new().fg(t.accent)),
+            Span::styled(spark, Style::new().fg(t.sparkline)),
             Span::styled(format!("  {:>7.1}%", current), Style::new().fg(t.fg)),
         ]),
     ];

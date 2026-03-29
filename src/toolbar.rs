@@ -9,7 +9,7 @@ use crate::selector;
 fn cache_path() -> PathBuf {
     dirs::cache_dir()
         .unwrap_or_else(|| PathBuf::from("."))
-        .join("msh")
+        .join("holo")
         .join("last_package")
 }
 

@@ -142,7 +142,7 @@ impl App {
                     theme::set_theme(prev);
                 }
                 KeyCode::Char('c') if self.settings_cursor == 1 => {
-                    let dir = std::env::temp_dir().join("msh");
+                    let dir = std::env::temp_dir().join("holo");
                     let _ = std::fs::create_dir_all(&dir);
                     crate::clipboard::copy_to_clipboard(&dir.to_string_lossy());
                     self.settings_open = false;
@@ -151,7 +151,7 @@ impl App {
                 KeyCode::Enter => {
                     match self.settings_cursor {
                         1 => {
-                            let dir = std::env::temp_dir().join("msh");
+                            let dir = std::env::temp_dir().join("holo");
                             let _ = std::fs::create_dir_all(&dir);
                             let _ = open::that(&dir);
                             self.settings_open = false;
@@ -161,7 +161,7 @@ impl App {
                             self.settings_open = false;
                         }
                         3 => {
-                            let _ = open::that("https://github.com/anthropics/msh");
+                            let _ = open::that("https://github.com/anthropics/holo");
                             self.settings_open = false;
                         }
                         _ => {
@@ -227,6 +227,14 @@ impl App {
             return Action::Noop;
         }
 
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            if let KeyCode::Char(ch) = code {
+                if let Some(action) = self.commands.action_for_shortcut(ch) {
+                    return action;
+                }
+            }
+        }
+
         if let Some(action) = self.delegate_to_focused(panel::COMMANDS, key) {
             return action;
         }
@@ -253,14 +261,6 @@ impl App {
         }
         if let Some(action) = self.delegate_to_focused(panel::ANRS, key) {
             return action;
-        }
-
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            if let KeyCode::Char(ch) = code {
-                if let Some(action) = self.commands.action_for_shortcut(ch) {
-                    return action;
-                }
-            }
         }
 
         match code {

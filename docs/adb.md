@@ -1,6 +1,6 @@
 # ADB Commands Reference
 
-All ADB commands used by msh, organized by feature area.
+All ADB commands used by holo, organized by feature area.
 
 ## Polling Summary
 

@@ -195,7 +195,7 @@ impl DispatchContext {
                     let tx = self.command_tx.clone();
                     std::thread::spawn(move || {
                         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                        let dest = std::env::temp_dir().join("msh")
+                        let dest = std::env::temp_dir().join("holo")
                             .join(&package)
                             .join("screenshots")
                             .join(format!("{timestamp}_screenshot.png"));
@@ -339,7 +339,7 @@ fn open_in_editor(text: String, subdir: &str, ext: &str) {
     let subdir = subdir.to_string();
     let ext = ext.to_string();
     std::thread::spawn(move || {
-        let dir = std::env::temp_dir().join("msh").join(&subdir);
+        let dir = std::env::temp_dir().join("holo").join(&subdir);
         let _ = std::fs::create_dir_all(&dir);
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let path = dir.join(format!("{timestamp}.{ext}"));
