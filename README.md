@@ -25,13 +25,13 @@ settings directly from the TUI with simple commands.
 **macOS (Homebrew)**
 
 ```sh
-brew install holo
+brew install measure-sh/tap/holo
 ```
 
 **Linux (Homebrew)**
 
 ```sh
-brew install holo
+brew install measure-sh/tap/holo
 ```
 
 **From source (any platform with Rust)**
