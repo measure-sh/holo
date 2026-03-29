@@ -2,6 +2,12 @@
 name = "holo"
 version = "0.1.0"
 edition = "2024"
+description = "A terminal UI for Android developers"
+license = "MIT"
+repository = "https://github.com/measure-sh/holo"
+homepage = "https://github.com/measure-sh/holo"
+keywords = ["android", "adb", "tui", "terminal"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 ratatui = "0.29"
