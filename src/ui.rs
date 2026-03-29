@@ -619,18 +619,24 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
     let mut block = panel_block(panel::COMMANDS, focused);
     if focused {
         let filter = &app.commands().filter;
-        let filter_span = if filter.is_empty() {
-            Span::styled(" /", Style::new().fg(t.danger))
+        let editing = app.commands().editing;
+        let mut spans = Vec::new();
+        spans.push(Span::styled(" /", Style::new().fg(t.danger)));
+        if editing {
+            if !filter.is_empty() {
+                spans.push(Span::styled(filter.clone(), Style::new().fg(t.fg)));
+            }
+            spans.push(Span::styled("_", Style::new().fg(t.fg)));
+            spans.push(Span::styled(" ↩ ", Style::new().fg(t.danger)));
+        } else if !filter.is_empty() {
+            spans.push(Span::styled(format!("{filter} "), Style::new().fg(t.fg)));
         } else {
-            Span::styled(format!(" /{filter}"), Style::new().fg(t.fg))
-        };
-        block = block.title_bottom(Line::from(vec![
-            filter_span,
-            Span::styled(" ", Style::new()),
-            Span::styled("───", Style::new().fg(border_color)),
-            Span::styled(" ↩", Style::new().fg(t.danger)),
-            Span::styled(" run ", Style::new().fg(t.fg)),
-        ]));
+            spans.push(Span::styled("search ", Style::new().fg(t.muted)));
+        }
+        spans.push(Span::styled("───", Style::new().fg(border_color)));
+        spans.push(Span::styled(" ↩", Style::new().fg(t.danger)));
+        spans.push(Span::styled(" run ", Style::new().fg(t.fg)));
+        block = block.title_bottom(Line::from(spans));
     }
 
     let inner = block.inner(area);

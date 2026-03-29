@@ -175,6 +175,9 @@ impl App {
             }
             return Action::Noop;
         }
+        if self.commands.editing {
+            return self.commands.handle_key(key).unwrap_or(Action::Noop);
+        }
         if self.logcat_state.editing.is_some() {
             return self.logcat_state.handle_key(key).unwrap_or(Action::Noop);
         }
@@ -308,7 +311,18 @@ impl App {
             panel::ANRS => self.anrs_state.handle_key(key),
             _ => None,
         };
-        self.dispatch_panel_key(result)
+        if let Some(action) = self.dispatch_panel_key(result) {
+            return Some(action);
+        }
+        match key.code {
+            KeyCode::Char(c) if panel::by_focus_key(c).is_some_and(|p| p.number == panel_id) => {
+                self.restore_zoom();
+                self.focused = None;
+                Some(Action::Noop)
+            }
+            KeyCode::Char('0'..='9') => None,
+            _ => Some(Action::Noop),
+        }
     }
 
     fn dispatch_panel_key(&mut self, result: Option<Action>) -> Option<Action> {

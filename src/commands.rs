@@ -29,6 +29,7 @@ pub struct CommandsState {
     pub visible: bool,
     pub cursor: usize,
     pub filter: String,
+    pub editing: bool,
     pub is_emulator: bool,
     pub triggered: Option<(char, std::time::Instant)>,
 }
@@ -39,6 +40,7 @@ impl CommandsState {
             visible: true,
             cursor: 0,
             filter: String::new(),
+            editing: false,
             is_emulator: false,
             triggered: None,
         }
@@ -50,6 +52,27 @@ impl CommandsState {
         {
             return self.action_for_shortcut(ch);
         }
+
+        if self.editing {
+            match key.code {
+                KeyCode::Char(ch) => {
+                    self.filter.push(ch);
+                    self.cursor = 0;
+                }
+                KeyCode::Backspace => {
+                    self.filter.pop();
+                    self.cursor = 0;
+                }
+                KeyCode::Enter | KeyCode::Esc => {
+                    self.editing = false;
+                    self.filter.clear();
+                    self.cursor = 0;
+                }
+                _ => {}
+            }
+            return Some(Action::Noop);
+        }
+
         match key.code {
             KeyCode::Up => {
                 self.cursor = self.cursor.saturating_sub(1);
@@ -74,14 +97,8 @@ impl CommandsState {
                 self.cursor = 0;
                 Some(Action::Unfocus)
             }
-            KeyCode::Backspace => {
-                self.filter.pop();
-                self.cursor = 0;
-                Some(Action::Noop)
-            }
-            KeyCode::Char(ch) => {
-                self.filter.push(ch);
-                self.cursor = 0;
+            KeyCode::Char('/') => {
+                self.editing = true;
                 Some(Action::Noop)
             }
             _ => Some(Action::Noop),
