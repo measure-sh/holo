@@ -48,30 +48,17 @@ $ holo
 
 ## Features
 
-### A beautiful logcat
-Filter by tag, search text, or log level. Scroll back through history or tail live. No more piping `adb logcat` through grep.
-
-### Query your SQLite databases
-Open any app database and run SQL queries right in the TUI. Browse results, scroll through history, or pull the whole db to your machine.
-
-### See memory and CPU stats
-Live CPU, memory, and disk usage with sparkline graphs. Spot leaks and runaway allocations at a glance.
-
-### Record Perfetto traces with one keystroke
-Start and stop system traces from the TUI. Holo spins up a local server so you can open them in ui.perfetto.dev with one keystroke.
-
-### Browse files, pull what you need
-Navigate your app's data directory as a tree. Pull any file to your machine with a single key.
-
-### Crashes and ANRs, front and center
-See crash stack traces and ANR reasons as they happen.
-
-### Lots more
-- **Permission management** — grant and revoke runtime permissions
-- **Quick commands** — open, kill, uninstall, screenshot, toggle dark mode, layout bounds, show taps, and more
-- **Device mirroring** via scrcpy
-- **Wireless ADB** setup
-- **Keyboard-driven** with vim-style navigation
+- **Logcat** — filter by tag, search text, or log level. Scroll back through history or tail live.
+- **SQLite databases** — open any app database and run SQL queries right in the TUI. Browse results or pull the whole db to your machine.
+- **Memory and CPU stats** — live CPU, memory, and disk usage with sparkline graphs. Spot leaks at a glance.
+- **Perfetto traces** — start and stop system traces from the TUI. Open them in ui.perfetto.dev with one keystroke.
+- **File browser** — navigate your app's data directory as a tree. Pull any file to your machine with a single key.
+- **Crashes and ANRs** — see crash stack traces and ANR reasons as they happen.
+- **Permission management** — grant and revoke runtime permissions.
+- **Quick commands** — open, kill, uninstall, screenshot, toggle dark mode, layout bounds, show taps, and more.
+- **Device mirroring** via scrcpy.
+- **Wireless ADB** setup.
+- **Keyboard-driven** with vim-style navigation.
 
 ## Themes
 
