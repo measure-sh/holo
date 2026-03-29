@@ -7,10 +7,12 @@ use crate::app::{Action, App};
 use crate::data::DataSources;
 use crate::toolbar;
 
+type Rollback = Box<dyn FnOnce(&mut App) + Send>;
+
 pub struct CommandResult {
     pub error_msg: String,
     pub result: Result<()>,
-    pub rollback: Option<Box<dyn FnOnce(&mut App) + Send>>,
+    pub rollback: Option<Rollback>,
 }
 
 pub struct DispatchContext {
@@ -26,29 +28,29 @@ pub struct DispatchContext {
 
 impl DispatchContext {
     pub fn poll_receivers(&mut self, app: &mut App) {
-        if let Some(rx) = &self.devices_rx {
-            if let Ok(devices) = rx.try_recv() {
-                app.toolbar_mut().receive_devices(devices);
-                self.devices_rx = None;
-            }
+        if let Some(rx) = &self.devices_rx
+            && let Ok(devices) = rx.try_recv()
+        {
+            app.toolbar_mut().receive_devices(devices);
+            self.devices_rx = None;
         }
-        if let Some(rx) = &self.packages_rx {
-            if let Ok(packages) = rx.try_recv() {
-                if let Some(auto_pkg) = app.toolbar_mut().receive_packages(packages) {
-                    app.toolbar_mut().package = Some(auto_pkg.clone());
-                    if let Some(device) = app.toolbar().device.clone() {
-                        self.data = Some(build_data(&self.adb, &device, &auto_pkg, app));
-                        self.title = build_title(self.data.as_ref().unwrap());
-                    }
+        if let Some(rx) = &self.packages_rx
+            && let Ok(packages) = rx.try_recv()
+        {
+            if let Some(auto_pkg) = app.toolbar_mut().receive_packages(packages) {
+                app.toolbar_mut().package = Some(auto_pkg.clone());
+                if let Some(device) = app.toolbar().device.clone() {
+                    self.data = Some(build_data(&self.adb, &device, &auto_pkg, app));
+                    self.title = build_title(self.data.as_ref().unwrap());
                 }
-                self.packages_rx = None;
             }
+            self.packages_rx = None;
         }
-        if let Some(rx) = &self.pending_emulator_rx {
-            if let Ok(device) = rx.try_recv() {
-                self.pending_emulator_rx = None;
-                self.dispatch(Action::ChangeDevice(device), app);
-            }
+        if let Some(rx) = &self.pending_emulator_rx
+            && let Ok(device) = rx.try_recv()
+        {
+            self.pending_emulator_rx = None;
+            self.dispatch(Action::ChangeDevice(device), app);
         }
         while let Ok(cr) = self.command_rx.try_recv() {
             if cr.result.is_err() {
@@ -139,46 +141,53 @@ impl DispatchContext {
                 }
             }
             Action::ToggleLayoutBounds => {
-                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
-                    App::layout_bounds, App::set_layout_bounds,
-                    "Layout bounds", "Failed to set layout bounds",
-                    |adb, s, enabled| adb.set_layout_bounds(s, enabled));
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx, ToggleOpts {
+                    get: App::layout_bounds, set: App::set_layout_bounds,
+                    label: "Layout bounds", error_msg: "Failed to set layout bounds",
+                    adb_fn: |adb, s, enabled| adb.set_layout_bounds(s, enabled),
+                });
             }
             Action::ToggleAirplaneMode => {
-                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
-                    App::airplane_mode, App::set_airplane_mode,
-                    "Airplane mode", "Failed to toggle airplane mode",
-                    |adb, s, enabled| adb.set_airplane_mode(s, enabled));
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx, ToggleOpts {
+                    get: App::airplane_mode, set: App::set_airplane_mode,
+                    label: "Airplane mode", error_msg: "Failed to toggle airplane mode",
+                    adb_fn: |adb, s, enabled| adb.set_airplane_mode(s, enabled),
+                });
             }
             Action::ToggleWifi => {
-                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
-                    App::wifi_enabled, App::set_wifi_enabled,
-                    "Wi-Fi", "Failed to toggle Wi-Fi",
-                    |adb, s, enabled| adb.set_wifi_enabled(s, enabled));
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx, ToggleOpts {
+                    get: App::wifi_enabled, set: App::set_wifi_enabled,
+                    label: "Wi-Fi", error_msg: "Failed to toggle Wi-Fi",
+                    adb_fn: |adb, s, enabled| adb.set_wifi_enabled(s, enabled),
+                });
             }
             Action::ToggleDarkMode => {
-                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
-                    App::dark_mode, App::set_dark_mode,
-                    "Dark mode", "Failed to toggle dark mode",
-                    |adb, s, enabled| adb.set_dark_mode(s, enabled));
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx, ToggleOpts {
+                    get: App::dark_mode, set: App::set_dark_mode,
+                    label: "Dark mode", error_msg: "Failed to toggle dark mode",
+                    adb_fn: |adb, s, enabled| adb.set_dark_mode(s, enabled),
+                });
             }
             Action::ToggleShowTaps => {
-                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
-                    App::show_taps, App::set_show_taps,
-                    "Show taps", "Failed to toggle show taps",
-                    |adb, s, enabled| adb.set_show_taps(s, enabled));
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx, ToggleOpts {
+                    get: App::show_taps, set: App::set_show_taps,
+                    label: "Show taps", error_msg: "Failed to toggle show taps",
+                    adb_fn: |adb, s, enabled| adb.set_show_taps(s, enabled),
+                });
             }
             Action::TogglePointerLocation => {
-                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
-                    App::pointer_location, App::set_pointer_location,
-                    "Pointer location", "Failed to toggle pointer location",
-                    |adb, s, enabled| adb.set_pointer_location(s, enabled));
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx, ToggleOpts {
+                    get: App::pointer_location, set: App::set_pointer_location,
+                    label: "Pointer location", error_msg: "Failed to toggle pointer location",
+                    adb_fn: |adb, s, enabled| adb.set_pointer_location(s, enabled),
+                });
             }
             Action::ToggleGpuRendering => {
-                dispatch_toggle(app, &serial, &self.adb, &self.command_tx,
-                    App::gpu_rendering, App::set_gpu_rendering,
-                    "GPU rendering", "Failed to toggle GPU rendering",
-                    |adb, s, enabled| adb.set_gpu_rendering(s, enabled));
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx, ToggleOpts {
+                    get: App::gpu_rendering, set: App::set_gpu_rendering,
+                    label: "GPU rendering", error_msg: "Failed to toggle GPU rendering",
+                    adb_fn: |adb, s, enabled| adb.set_gpu_rendering(s, enabled),
+                });
             }
             Action::WirelessAdb => {
                 if let Some(s) = &serial {
@@ -356,29 +365,33 @@ fn open_in_editor(text: String, subdir: &str, ext: &str) {
     });
 }
 
+struct ToggleOpts {
+    get: fn(&App) -> bool,
+    set: fn(&mut App, bool),
+    label: &'static str,
+    error_msg: &'static str,
+    adb_fn: fn(&dyn Adb, &str, bool) -> Result<()>,
+}
+
 fn dispatch_toggle(
     app: &mut App,
     serial: &Option<String>,
     adb: &Arc<dyn Adb>,
     tx: &mpsc::Sender<CommandResult>,
-    get: fn(&App) -> bool,
-    set: fn(&mut App, bool),
-    label: &str,
-    error_msg: &str,
-    adb_fn: fn(&dyn Adb, &str, bool) -> Result<()>,
+    opts: ToggleOpts,
 ) {
-    set(app, !get(app));
-    let enabled = get(app);
-    let flash = if enabled { format!("{label} on") } else { format!("{label} off") };
+    (opts.set)(app, !(opts.get)(app));
+    let enabled = (opts.get)(app);
+    let flash = if enabled { format!("{} on", opts.label) } else { format!("{} off", opts.label) };
     app.set_status_flash(flash, false);
     if let Some(s) = serial {
-        let rollback: Box<dyn FnOnce(&mut App) + Send> = Box::new(move |app| set(app, !enabled));
+        let rollback: Rollback = Box::new(move |app| (opts.set)(app, !enabled));
         let adb = adb.clone();
         let serial = s.clone();
-        let error_msg = error_msg.to_string();
+        let error_msg = opts.error_msg.to_string();
         let tx = tx.clone();
         std::thread::spawn(move || {
-            let result = adb_fn(&*adb, &serial, enabled);
+            let result = (opts.adb_fn)(&*adb, &serial, enabled);
             let _ = tx.send(CommandResult { error_msg, result, rollback: Some(rollback) });
         });
     }
@@ -390,7 +403,7 @@ fn spawn_app_action(
     package: &str,
     error_msg: &str,
     tx: &mpsc::Sender<CommandResult>,
-    rollback: Option<Box<dyn FnOnce(&mut App) + Send>>,
+    rollback: Option<Rollback>,
     f: impl FnOnce(Arc<dyn Adb>, &str, &str) -> Result<()> + Send + 'static,
 ) {
     let adb = adb.clone();
@@ -412,10 +425,10 @@ fn spawn_fetch_devices(adb: &Arc<dyn Adb>) -> mpsc::Receiver<Vec<Device>> {
 
         let mut running_avds = std::collections::HashSet::new();
         for d in &devices {
-            if d.serial.starts_with("emulator-") {
-                if let Ok(name) = adb.get_avd_name(&d.serial) {
-                    running_avds.insert(name);
-                }
+            if d.serial.starts_with("emulator-")
+                && let Ok(name) = adb.get_avd_name(&d.serial)
+            {
+                running_avds.insert(name);
             }
         }
 
@@ -460,13 +473,12 @@ fn spawn_await_emulator(adb: Arc<dyn Adb>, avd_name: String) -> mpsc::Receiver<D
                 Err(_) => continue,
             };
             for d in &devices {
-                if d.serial.starts_with("emulator-") {
-                    if let Ok(name) = adb.get_avd_name(&d.serial) {
-                        if name == avd_name {
-                            let _ = tx.send(d.clone());
-                            return;
-                        }
-                    }
+                if d.serial.starts_with("emulator-")
+                    && let Ok(name) = adb.get_avd_name(&d.serial)
+                    && name == avd_name
+                {
+                    let _ = tx.send(d.clone());
+                    return;
                 }
             }
         }

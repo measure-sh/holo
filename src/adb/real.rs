@@ -644,14 +644,14 @@ fn parse_du_output(output: &str) -> (u64, u64) {
     let mut cache_kb = 0u64;
     for line in output.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
-        if parts.len() >= 2 {
-            if let Ok(size) = parts[0].trim().parse::<u64>() {
-                let path = parts[1].trim();
-                if path == "./cache" {
-                    cache_kb = size;
-                } else if path == "." {
-                    data_kb = size;
-                }
+        if parts.len() >= 2
+            && let Ok(size) = parts[0].trim().parse::<u64>()
+        {
+            let path = parts[1].trim();
+            if path == "./cache" {
+                cache_kb = size;
+            } else if path == "." {
+                data_kb = size;
             }
         }
     }
@@ -688,10 +688,10 @@ fn parse_app_version(output: &str) -> (String, String) {
             if version_name.is_empty() {
                 version_name = val.to_string();
             }
-        } else if let Some(val) = trimmed.strip_prefix("versionCode=") {
-            if version_code.is_empty() {
-                version_code = val.split_whitespace().next().unwrap_or("").to_string();
-            }
+        } else if let Some(val) = trimmed.strip_prefix("versionCode=")
+            && version_code.is_empty()
+        {
+            version_code = val.split_whitespace().next().unwrap_or("").to_string();
         }
     }
 
@@ -778,10 +778,10 @@ fn parse_top_cpu(output: &str, package: &str) -> f32 {
         if cols.len() < 9 {
             continue;
         }
-        if let Some(last) = cols.last() {
-            if *last != package {
-                continue;
-            }
+        if let Some(last) = cols.last()
+            && *last != package
+        {
+            continue;
         }
         if let Ok(val) = cols[8].parse::<f32>() {
             return val;

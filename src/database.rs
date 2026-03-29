@@ -59,10 +59,10 @@ impl DatabaseState {
         if self.editing_query {
             match code {
                 KeyCode::Enter => {
-                    if let Some(db) = self.selected_db.clone() {
-                        if let Some(sql) = self.submit_query() {
-                            return Some(Action::RunQuery(db, sql));
-                        }
+                    if let Some(db) = self.selected_db.clone()
+                        && let Some(sql) = self.submit_query()
+                    {
+                        return Some(Action::RunQuery(db, sql));
                     }
                 }
                 KeyCode::Esc => self.editing_query = false,

@@ -229,7 +229,7 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(
         ratatui::widgets::Paragraph::new(Line::from(vec![
             Span::styled(
-                format!(" \u{2022}"),
+                " \u{2022}".to_string(),
                 Style::new().fg(device_dot),
             ),
             Span::styled(
@@ -254,7 +254,7 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(
         ratatui::widgets::Paragraph::new(Line::from(vec![
             Span::styled(
-                format!(" \u{2022}"),
+                " \u{2022}".to_string(),
                 Style::new().fg(app_dot),
             ),
             Span::styled(

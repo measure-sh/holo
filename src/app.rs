@@ -227,12 +227,11 @@ impl App {
             return Action::Noop;
         }
 
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            if let KeyCode::Char(ch) = code {
-                if let Some(action) = self.commands.action_for_shortcut(ch) {
-                    return action;
-                }
-            }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && let KeyCode::Char(ch) = code
+            && let Some(action) = self.commands.action_for_shortcut(ch)
+        {
+            return action;
         }
 
         if let Some(action) = self.delegate_to_focused(panel::COMMANDS, key) {

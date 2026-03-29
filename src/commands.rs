@@ -5,7 +5,9 @@ use crate::app::Action;
 use crate::apps;
 use crate::theme;
 
-const COMMAND_LIST: &[(&str, char, fn() -> Action)] = &[
+type CommandEntry = (&'static str, char, fn() -> Action);
+
+const COMMAND_LIST: &[CommandEntry] = &[
     ("open app", 'o', || Action::OpenApp),
     ("kill app", 'k', || Action::KillApp),
     ("clear data", 'x', || Action::ClearData),
@@ -43,10 +45,10 @@ impl CommandsState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            if let KeyCode::Char(ch) = key.code {
-                return self.action_for_shortcut(ch);
-            }
+        if key.modifiers.contains(KeyModifiers::CONTROL)
+            && let KeyCode::Char(ch) = key.code
+        {
+            return self.action_for_shortcut(ch);
         }
         match key.code {
             KeyCode::Up => {
@@ -132,7 +134,7 @@ impl CommandsState {
             .is_some_and(|(_, t)| t.elapsed().as_millis() < 2000)
     }
 
-    pub fn filtered_commands(&self) -> Vec<(&'static str, char, fn() -> Action)> {
+    pub fn filtered_commands(&self) -> Vec<CommandEntry> {
         COMMAND_LIST
             .iter()
             .filter(|(name, _, _)| {

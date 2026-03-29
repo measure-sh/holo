@@ -119,7 +119,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>) -
     };
     spans.push(Span::styled(" t", accent));
     spans.push(Span::styled("ag:", muted));
-    spans.push(Span::styled(format!("{}", tag_display), Style::new().fg(t.fg)));
+    spans.push(Span::styled(tag_display, Style::new().fg(t.fg)));
     if matches!(editing, Some(LogcatEditTarget::Tag)) {
         spans.push(Span::styled("_", Style::new().fg(t.fg)));
         spans.push(Span::styled(" ↩ ", Style::new().fg(t.danger)));

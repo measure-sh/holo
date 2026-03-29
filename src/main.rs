@@ -97,20 +97,19 @@ fn run_app(
             )
         };
 
-        if let Some(d) = &mut ctx.data {
-            if let (Some(s), Some(_)) = (&serial, &package) {
-                let was_connected = d.device_connected;
-                d.poll(&mut app, s);
-                app.toolbar_mut().device_connected = d.device_connected;
-                if !was_connected && d.device_connected {
-                    if let Some(device) = app.toolbar().device.clone() {
-                        if let Some(pkg) = package.clone() {
-                            app.reset_for_new_app(&pkg);
-                            ctx.data = Some(dispatch::build_data(&ctx.adb, &device, &pkg, &mut app));
-                            ctx.title = dispatch::build_title(ctx.data.as_ref().unwrap());
-                        }
-                    }
-                }
+        if let Some(d) = &mut ctx.data
+            && let (Some(s), Some(_)) = (&serial, &package)
+        {
+            let was_connected = d.device_connected;
+            d.poll(&mut app, s);
+            app.toolbar_mut().device_connected = d.device_connected;
+            if !was_connected && d.device_connected
+                && let Some(device) = app.toolbar().device.clone()
+                && let Some(pkg) = package.clone()
+            {
+                app.reset_for_new_app(&pkg);
+                ctx.data = Some(dispatch::build_data(&ctx.adb, &device, &pkg, &mut app));
+                ctx.title = dispatch::build_title(ctx.data.as_ref().unwrap());
             }
         }
 
@@ -126,18 +125,18 @@ fn run_app(
         } else {
             Duration::from_secs(1)
         };
-        if event::poll(poll_timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-                let action = app.handle_key(key);
-                if ctx.dispatch(action, &mut app) {
-                    return Ok(());
-                }
-                if let Some(d) = &ctx.data {
-                    d.update_monitor_visibility(app.panel_visibility());
-                }
+        if event::poll(poll_timeout)?
+            && let Event::Key(key) = event::read()?
+        {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            let action = app.handle_key(key);
+            if ctx.dispatch(action, &mut app) {
+                return Ok(());
+            }
+            if let Some(d) = &ctx.data {
+                d.update_monitor_visibility(app.panel_visibility());
             }
         }
     }

@@ -139,12 +139,11 @@ impl FilesState {
 
     pub fn collapse_selected(&mut self) {
         let flat = self.flatten_visible();
-        if let Some(entry) = flat.get(self.selected_index) {
-            if entry.is_dir && entry.expanded {
-                if let Some(node) = find_node_mut(self.root_children.as_mut().unwrap(), &entry.path) {
-                    node.expanded = false;
-                }
-            }
+        if let Some(entry) = flat.get(self.selected_index)
+            && entry.is_dir && entry.expanded
+            && let Some(node) = find_node_mut(self.root_children.as_mut().unwrap(), &entry.path)
+        {
+            node.expanded = false;
         }
     }
 
@@ -155,7 +154,7 @@ impl FilesState {
 
     pub fn selected_is_dir(&self) -> bool {
         let flat = self.flatten_visible();
-        flat.get(self.selected_index).map_or(false, |e| e.is_dir)
+        flat.get(self.selected_index).is_some_and(|e| e.is_dir)
     }
 
     pub fn set_root_children(&mut self, entries: Vec<(String, bool)>) {
@@ -175,26 +174,26 @@ impl FilesState {
     }
 
     pub fn set_children(&mut self, path: &str, entries: Vec<(String, bool)>) {
-        if let Some(root) = &mut self.root_children {
-            if let Some(node) = find_node_mut(root, path) {
-                node.loading = false;
-                node.children = Some(
-                    entries
-                        .into_iter()
-                        .map(|(name, is_dir)| {
-                            let child_path = format!("{}/{}", path, name);
-                            FileNode {
-                                name,
-                                path: child_path,
-                                is_dir,
-                                expanded: false,
-                                children: None,
-                                loading: false,
-                            }
-                        })
-                        .collect(),
-                );
-            }
+        if let Some(root) = &mut self.root_children
+            && let Some(node) = find_node_mut(root, path)
+        {
+            node.loading = false;
+            node.children = Some(
+                entries
+                    .into_iter()
+                    .map(|(name, is_dir)| {
+                        let child_path = format!("{}/{}", path, name);
+                        FileNode {
+                            name,
+                            path: child_path,
+                            is_dir,
+                            expanded: false,
+                            children: None,
+                            loading: false,
+                        }
+                    })
+                    .collect(),
+            );
         }
     }
 }
@@ -217,15 +216,15 @@ fn flatten_node(
         ancestor_is_last: ancestor_is_last.to_vec(),
     });
 
-    if node.expanded {
-        if let Some(children) = &node.children {
-            let mut next_ancestors = ancestor_is_last.to_vec();
-            next_ancestors.push(is_last);
-            let len = children.len();
-            for (i, child) in children.iter().enumerate() {
-                let child_is_last = i == len - 1;
-                flatten_node(child, depth + 1, child_is_last, &next_ancestors, out);
-            }
+    if node.expanded
+        && let Some(children) = &node.children
+    {
+        let mut next_ancestors = ancestor_is_last.to_vec();
+        next_ancestors.push(is_last);
+        let len = children.len();
+        for (i, child) in children.iter().enumerate() {
+            let child_is_last = i == len - 1;
+            flatten_node(child, depth + 1, child_is_last, &next_ancestors, out);
         }
     }
 }
@@ -235,21 +234,23 @@ fn find_node_mut<'a>(nodes: &'a mut [FileNode], path: &str) -> Option<&'a mut Fi
         if node.path == path {
             return Some(node);
         }
-        if path.starts_with(&node.path) && path[node.path.len()..].starts_with('/') {
-            if let Some(children) = &mut node.children {
-                return find_node_mut(children, path);
-            }
+        if path.starts_with(&node.path) && path[node.path.len()..].starts_with('/')
+            && let Some(children) = &mut node.children
+        {
+            return find_node_mut(children, path);
         }
     }
     None
 }
+
+pub type DirListResult = Result<(String, Vec<(String, bool)>), String>;
 
 pub fn spawn_list_dir(
     adb: Arc<dyn Adb>,
     serial: String,
     package: String,
     path: String,
-) -> mpsc::Receiver<Result<(String, Vec<(String, bool)>), String>> {
+) -> mpsc::Receiver<DirListResult> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let result = adb

@@ -42,10 +42,10 @@ pub fn spawn_poller(adb: Arc<dyn Adb>, serial: String) -> mpsc::Receiver<u8> {
     std::thread::spawn(move || {
         let interval = Duration::from_secs(30);
         loop {
-            if let Ok(level) = adb.get_battery_level(&serial) {
-                if tx.send(level).is_err() {
-                    return;
-                }
+            if let Ok(level) = adb.get_battery_level(&serial)
+                && tx.send(level).is_err()
+            {
+                return;
             }
             std::thread::sleep(interval);
         }

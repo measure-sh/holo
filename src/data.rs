@@ -41,7 +41,7 @@ pub struct DataSources {
 
     permissions_rx: mpsc::Receiver<Result<Vec<(String, bool)>, String>>,
 
-    files_list_rx: Option<mpsc::Receiver<Result<(String, Vec<(String, bool)>), String>>>,
+    files_list_rx: Option<mpsc::Receiver<files::DirListResult>>,
     files_pull_rx: Option<mpsc::Receiver<Result<String, String>>>,
 
     monitor_rx: mpsc::Receiver<MonitorSample>,
@@ -223,14 +223,14 @@ impl DataSources {
                 Err(e) => app.files_state_mut().error = Some(e),
             }
         }
-        if let Some(result) = try_poll(&mut self.trace_start_rx) {
-            if let Err(e) = result {
-                let ts = app.trace_state_mut();
-                ts.recording = false;
-                ts.started_at = None;
-                ts.status_message = Some(format!("failed: {e}"));
-                ts.message_at = Some(std::time::Instant::now());
-            }
+        if let Some(result) = try_poll(&mut self.trace_start_rx)
+            && let Err(e) = result
+        {
+            let ts = app.trace_state_mut();
+            ts.recording = false;
+            ts.started_at = None;
+            ts.status_message = Some(format!("failed: {e}"));
+            ts.message_at = Some(std::time::Instant::now());
         }
         if let Some(result) = try_poll(&mut self.trace_pull_rx) {
             let ts = app.trace_state_mut();

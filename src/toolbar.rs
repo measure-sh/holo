@@ -109,12 +109,11 @@ impl ToolbarState {
         if matches!(self.open, Some(DropdownKind::App)) {
             self.loading = false;
         }
-        if self.package.is_none() {
-            if let Some(last) = &self.last_package {
-                if self.packages.iter().any(|p| p == last) {
-                    return Some(last.clone());
-                }
-            }
+        if self.package.is_none()
+            && let Some(last) = &self.last_package
+            && self.packages.iter().any(|p| p == last)
+        {
+            return Some(last.clone());
         }
         None
     }

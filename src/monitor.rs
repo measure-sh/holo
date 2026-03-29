@@ -105,7 +105,7 @@ pub fn spawn_poller(
                 continue;
             }
             let mut sample = MonitorSample::default();
-            let poll_disk = mask & POLL_DISK != 0 && tick % 5 == 0;
+            let poll_disk = mask & POLL_DISK != 0 && tick.is_multiple_of(5);
 
             std::thread::scope(|s| {
                 let mem = (mask & POLL_SYSTEM != 0)

@@ -110,12 +110,11 @@ fn save(idx: usize) {
 }
 
 pub fn load_saved() {
-    if let Ok(s) = std::fs::read_to_string(cache_path()) {
-        if let Ok(idx) = s.trim().parse::<usize>() {
-            if idx < THEMES.len() {
-                CURRENT.store(idx as u8, Ordering::Relaxed);
-            }
-        }
+    if let Ok(s) = std::fs::read_to_string(cache_path())
+        && let Ok(idx) = s.trim().parse::<usize>()
+        && idx < THEMES.len()
+    {
+        CURRENT.store(idx as u8, Ordering::Relaxed);
     }
 }
 

@@ -8,10 +8,10 @@ pub fn spawn_poller(adb: Arc<dyn Adb>, serial: String, package: String) -> mpsc:
     std::thread::spawn(move || {
         let interval = Duration::from_secs(1);
         loop {
-            if let Ok(pid) = adb.pidof(&serial, &package) {
-                if tx.send(pid).is_err() {
-                    return;
-                }
+            if let Ok(pid) = adb.pidof(&serial, &package)
+                && tx.send(pid).is_err()
+            {
+                return;
             }
             std::thread::sleep(interval);
         }

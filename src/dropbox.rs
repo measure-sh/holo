@@ -32,7 +32,7 @@ pub fn parse_dropbox_entries(output: &str, tag: &str, package: &str) -> Vec<(Str
             body.lines().any(|l| {
                 l.trim()
                     .strip_prefix("Process: ")
-                    .map_or(false, |p| p.trim() == package)
+                    .is_some_and(|p| p.trim() == package)
             })
         })
         .collect()
