@@ -22,16 +22,10 @@ settings directly from the TUI with simple commands.
 
 ### Install
 
-**macOS (Homebrew)**
+**macOS / Linux**
 
 ```sh
-brew install measure-sh/tap/holo
-```
-
-**Linux (Homebrew)**
-
-```sh
-brew install measure-sh/tap/holo
+curl -sSL https://raw.githubusercontent.com/measure-sh/holo/main/install.sh | sh
 ```
 
 **From source (any platform with Rust)**
