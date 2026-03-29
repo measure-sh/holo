@@ -6,7 +6,7 @@
 
 > **Note:** Holo is experimental. It works, but expect rough edges.
 
-A terminal UI for Android. For developers who don't like leaving the terminal.
+A terminal UI for Android. Built for developers who don't like leaving the terminal.
 Manage app data, browse logs, record traces, run database queries, and control your device
 settings directly from the TUI with simple commands.
 
