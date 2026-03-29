@@ -77,8 +77,8 @@ Holo ships with 4 built-in themes. Switch themes from the settings menu.
 ### Light
 ![Light theme](screenshots/theme_light.png)
 
-### Tokyo Night
+### [Tokyo Night](https://omarchythemes.com/themes/tokyo-night)
 ![Tokyo Night theme](screenshots/theme_tokyo_night.png)
 
-### Akaito
+### [Akaito](https://omarchythemes.com/themes/akaito)
 ![Akaito theme](screenshots/theme_akaito.png)
