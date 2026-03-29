@@ -10,6 +10,8 @@ A terminal UI for Android. For developers who don't like leaving the terminal.
 Manage app data, browse logs, record traces, run database queries, and control your device
 settings directly from the TUI with simple commands.
 
+**Built by the team behind [Measure](https://github.com/measure-sh/measure), open source monitoring for mobile apps. Holo is the local dev companion we use every day.**
+
 ![holo screenshot](screenshots/hero.png)
 
 ## Setup
