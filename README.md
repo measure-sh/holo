@@ -4,13 +4,11 @@
 [![Release](https://img.shields.io/github/v/release/measure-sh/holo)](https://github.com/measure-sh/holo/releases/latest)
 
 
-> **Note:** Holo is experimental. It works, but expect rough edges.
-
 A terminal UI for Android. Built for developers who don't like leaving the terminal.
 Manage app data, browse logs, record traces, run database queries, and control your device
 settings directly from the TUI with simple commands.
 
-**Built by the team behind [Measure](https://github.com/measure-sh/measure), open source monitoring for mobile apps. Holo is the local dev companion we use every day.**
+**Built by the team behind [Measure](https://github.com/measure-sh/measure).**
 
 ![holo screenshot](screenshots/hero.png)
 
