@@ -256,7 +256,7 @@ impl DispatchContext {
                         .cloned()
                         .collect::<Vec<_>>()
                         .join("\n");
-                    open_in_editor(text, "logcat", "log");
+                    open_in_editor(text, package.as_deref(), "logcat", "log");
                 }
             }
             Action::RunQuery(db, sql) => {
@@ -336,7 +336,7 @@ impl DispatchContext {
                 }
             }
             Action::OpenInEditor(text) => {
-                open_in_editor(text, "issues", "txt");
+                open_in_editor(text, package.as_deref(), "issues", "txt");
             }
             Action::Noop | Action::Unfocus => {}
         }
@@ -344,11 +344,12 @@ impl DispatchContext {
     }
 }
 
-fn open_in_editor(text: String, subdir: &str, ext: &str) {
+fn open_in_editor(text: String, package: Option<&str>, subdir: &str, ext: &str) {
+    let package = package.unwrap_or("unknown").to_string();
     let subdir = subdir.to_string();
     let ext = ext.to_string();
     std::thread::spawn(move || {
-        let dir = std::env::temp_dir().join("holo").join(&subdir);
+        let dir = std::env::temp_dir().join("holo").join(&package).join(&subdir);
         let _ = std::fs::create_dir_all(&dir);
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
         let path = dir.join(format!("{timestamp}.{ext}"));
