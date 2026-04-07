@@ -78,13 +78,13 @@ pub fn render_issues_panel(
                 Style::new().fg(t.fg)
             };
             let prefix = if is_selected { "\u{25b8} " } else { "  " };
-            let (tag, tag_color) = match entry.kind {
-                IssueKind::Crash => ("CRASH", t.danger),
-                IssueKind::Anr => ("ANR", t.warning),
+            let tag = match entry.kind {
+                IssueKind::Crash => "CRASH",
+                IssueKind::Anr => "ANR  ",
             };
             ListItem::new(Line::from(vec![
                 Span::styled(prefix, style),
-                Span::styled(tag, Style::new().fg(tag_color).add_modifier(Modifier::BOLD)),
+                Span::styled(tag, Style::new().fg(t.muted)),
                 Span::styled(" ", Style::new()),
                 Span::styled(&entry.timestamp, Style::new().fg(t.muted)),
                 Span::styled(" ", Style::new()),
