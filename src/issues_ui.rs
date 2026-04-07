@@ -6,30 +6,30 @@ use ratatui::{
     Frame,
 };
 
-use crate::crashes::CrashesState;
+use crate::issues::{IssueKind, IssuesState};
 use crate::panel;
 use crate::theme;
 use crate::ui::panel_title;
 
-pub fn render_crashes_panel(
+pub fn render_issues_panel(
     frame: &mut Frame,
     area: Rect,
     focused: bool,
-    state: &CrashesState,
+    state: &IssuesState,
 ) {
     let t = theme::current();
-    let color = panel::by_number(panel::CRASHES).border_color(focused);
+    let color = panel::by_number(panel::ISSUES).border_color(focused);
     let muted = Style::new().fg(t.muted);
 
     let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .title(panel_title(panel::CRASHES, focused))
+        .title(panel_title(panel::ISSUES, focused))
         .border_style(Style::new().fg(color));
 
     if focused {
         block = block.title_bottom(Line::from(vec![
-            Span::styled(" ↩", Style::new().fg(t.danger)),
+            Span::styled(" \u{21a9}", Style::new().fg(t.danger)),
             Span::styled(" open ", muted),
         ]));
     }
@@ -37,18 +37,18 @@ pub fn render_crashes_panel(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if let Some(ref err) = state.error {
+    if let Some(err) = state.error() {
         let item = ListItem::new(Line::from(Span::styled(
-            err.as_str(),
+            err,
             Style::new().fg(t.danger),
         )));
         frame.render_widget(List::new(vec![item]), inner);
         return;
     }
 
-    if state.crashes.is_empty() {
+    if state.issues.is_empty() {
         let item = ListItem::new(Line::from(Span::styled(
-            " no crashes",
+            " no issues",
             muted,
         )));
         frame.render_widget(List::new(vec![item]), inner);
@@ -56,7 +56,7 @@ pub fn render_crashes_panel(
     }
 
     let visible_height = inner.height as usize;
-    let total = state.crashes.len();
+    let total = state.issues.len();
     let selected = state.selected;
 
     let start = if selected >= visible_height {
@@ -66,7 +66,7 @@ pub fn render_crashes_panel(
     };
     let end = (start + visible_height).min(total);
 
-    let items: Vec<ListItem> = state.crashes[start..end]
+    let items: Vec<ListItem> = state.issues[start..end]
         .iter()
         .enumerate()
         .map(|(i, entry)| {
@@ -77,12 +77,18 @@ pub fn render_crashes_panel(
             } else {
                 Style::new().fg(t.fg)
             };
-            let prefix = if is_selected { "▸ " } else { "  " };
+            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+            let (tag, tag_color) = match entry.kind {
+                IssueKind::Crash => ("CRASH", t.danger),
+                IssueKind::Anr => ("ANR", t.warning),
+            };
             ListItem::new(Line::from(vec![
                 Span::styled(prefix, style),
+                Span::styled(tag, Style::new().fg(tag_color).add_modifier(Modifier::BOLD)),
+                Span::styled(" ", Style::new()),
                 Span::styled(&entry.timestamp, Style::new().fg(t.muted)),
                 Span::styled(" ", Style::new()),
-                Span::styled(&entry.exception, style),
+                Span::styled(&entry.description, style),
             ]))
         })
         .collect();

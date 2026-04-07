@@ -249,14 +249,14 @@ impl DataSources {
         }
         while let Ok(result) = self.crashes_rx.try_recv() {
             match result {
-                Ok(crashes) => app.crashes_state_mut().crashes = crashes,
-                Err(e) => app.crashes_state_mut().error = Some(e),
+                Ok(crashes) => app.issues_state_mut().set_crashes(crashes),
+                Err(e) => app.issues_state_mut().set_crash_error(e),
             }
         }
         while let Ok(result) = self.anrs_rx.try_recv() {
             match result {
-                Ok(anrs) => app.anrs_state_mut().anrs = anrs,
-                Err(e) => app.anrs_state_mut().error = Some(e),
+                Ok(anrs) => app.issues_state_mut().set_anrs(anrs),
+                Err(e) => app.issues_state_mut().set_anr_error(e),
             }
         }
     }

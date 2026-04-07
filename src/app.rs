@@ -1,9 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::adb::Device;
-use crate::anrs::AnrsState;
 use crate::commands::CommandsState;
-use crate::crashes::CrashesState;
+use crate::issues::IssuesState;
 use crate::database::DatabaseState;
 use crate::files::FilesState;
 use crate::logcat::LogcatState;
@@ -75,8 +74,7 @@ pub struct App {
     pub settings_open: bool,
     pub settings_cursor: usize,
     trace_state: TraceState,
-    crashes_state: CrashesState,
-    anrs_state: AnrsState,
+    issues_state: IssuesState,
     pub dialog: Option<String>,
     saved_visibility: Option<([bool; 9], bool)>,
     status_flash: Option<(String, std::time::Instant, bool)>,
@@ -109,8 +107,7 @@ impl App {
             settings_open: false,
             settings_cursor: 0,
             trace_state: TraceState::new(pkg),
-            crashes_state: CrashesState::new(),
-            anrs_state: AnrsState::new(),
+            issues_state: IssuesState::new(),
             dialog: None,
             saved_visibility: None,
             status_flash: None,
@@ -258,10 +255,7 @@ impl App {
         if let Some(action) = self.delegate_to_focused(panel::TRACE, key) {
             return action;
         }
-        if let Some(action) = self.delegate_to_focused(panel::CRASHES, key) {
-            return action;
-        }
-        if let Some(action) = self.delegate_to_focused(panel::ANRS, key) {
+        if let Some(action) = self.delegate_to_focused(panel::ISSUES, key) {
             return action;
         }
 
@@ -307,8 +301,7 @@ impl App {
             panel::FILES => self.files_state.handle_key(key),
             panel::PERMISSIONS => self.permissions_state.handle_key(key),
             panel::TRACE => self.trace_state.handle_key(key),
-            panel::CRASHES => self.crashes_state.handle_key(key),
-            panel::ANRS => self.anrs_state.handle_key(key),
+            panel::ISSUES => self.issues_state.handle_key(key),
             _ => None,
         };
         if let Some(action) = self.dispatch_panel_key(result) {
@@ -447,20 +440,12 @@ impl App {
         &mut self.files_state
     }
 
-    pub fn crashes_state(&self) -> &CrashesState {
-        &self.crashes_state
+    pub fn issues_state(&self) -> &IssuesState {
+        &self.issues_state
     }
 
-    pub fn crashes_state_mut(&mut self) -> &mut CrashesState {
-        &mut self.crashes_state
-    }
-
-    pub fn anrs_state(&self) -> &AnrsState {
-        &self.anrs_state
-    }
-
-    pub fn anrs_state_mut(&mut self) -> &mut AnrsState {
-        &mut self.anrs_state
+    pub fn issues_state_mut(&mut self) -> &mut IssuesState {
+        &mut self.issues_state
     }
 
     pub fn focused_panel(&self) -> Option<u8> {
@@ -556,8 +541,7 @@ impl App {
         self.permissions_state = PermissionsState::new();
         self.monitor_state = MonitorState::new();
         self.trace_state = TraceState::new(package);
-        self.crashes_state = CrashesState::new();
-        self.anrs_state = AnrsState::new();
+        self.issues_state = IssuesState::new();
         self.focused = None;
     }
 
@@ -697,17 +681,10 @@ mod tests {
     }
 
     #[test]
-    fn e_focuses_crashes_panel() {
+    fn i_focuses_issues_panel() {
         let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('e')));
-        assert_eq!(app.focused_panel(), Some(panel::CRASHES));
-    }
-
-    #[test]
-    fn a_focuses_anrs_panel() {
-        let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('a')));
-        assert_eq!(app.focused_panel(), Some(panel::ANRS));
+        app.handle_key(key(KeyCode::Char('i')));
+        assert_eq!(app.focused_panel(), Some(panel::ISSUES));
     }
 
     #[test]

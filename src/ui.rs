@@ -15,8 +15,7 @@ use crate::files_ui;
 use crate::logcat_ui;
 use crate::monitor_ui;
 use crate::panel;
-use crate::crashes_ui;
-use crate::anrs_ui;
+use crate::issues_ui;
 use crate::permissions_ui;
 use crate::theme;
 
@@ -521,9 +520,8 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let permissions_visible = vis[3];
     let monitor_visible = disk_visible || system_visible || permissions_visible;
     let trace_visible = vis[4];
-    let crashes_visible = vis[5];
-    let anrs_visible = vis[6];
-    let mid_visible = trace_visible || crashes_visible || anrs_visible;
+    let issues_visible = vis[5];
+    let mid_visible = trace_visible || issues_visible;
     let bot_visible = vis[7] || vis[8];
 
     let top_visible = commands_visible || logcat_visible;
@@ -556,7 +554,7 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         idx += 1;
     }
     if mid_visible {
-        render_mid_section(frame, rows[idx], app, trace_visible, crashes_visible, anrs_visible);
+        render_mid_section(frame, rows[idx], app, trace_visible, issues_visible);
         idx += 1;
     }
     if bot_visible {
@@ -580,11 +578,10 @@ fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines
     }
 }
 
-fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, crashes_visible: bool, anrs_visible: bool) {
+fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, issues_visible: bool) {
     let panels: Vec<u8> = [
         (trace_visible, panel::TRACE),
-        (crashes_visible, panel::CRASHES),
-        (anrs_visible, panel::ANRS),
+        (issues_visible, panel::ISSUES),
     ]
     .iter()
     .filter(|(v, _)| *v)
@@ -604,8 +601,7 @@ fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visibl
     for (i, &p) in panels.iter().enumerate() {
         match p {
             panel::TRACE => crate::trace_ui::render_trace_panel(frame, cols[i], is_focused(app, panel::TRACE), app.trace_state()),
-            panel::CRASHES => crashes_ui::render_crashes_panel(frame, cols[i], is_focused(app, panel::CRASHES), app.crashes_state()),
-            panel::ANRS => anrs_ui::render_anrs_panel(frame, cols[i], is_focused(app, panel::ANRS), app.anrs_state()),
+            panel::ISSUES => issues_ui::render_issues_panel(frame, cols[i], is_focused(app, panel::ISSUES), app.issues_state()),
             _ => {}
         }
     }
