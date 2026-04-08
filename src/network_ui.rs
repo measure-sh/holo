@@ -19,16 +19,6 @@ fn format_latency(ms: u64) -> String {
     }
 }
 
-fn status_color(code: u16) -> ratatui::style::Color {
-    let t = theme::current();
-    match code {
-        200..=299 => t.info,
-        300..=399 => t.secondary,
-        400..=499 => t.warning,
-        _ => t.danger,
-    }
-}
-
 pub fn render_network_panel(
     frame: &mut Frame,
     area: Rect,
@@ -87,7 +77,7 @@ pub fn render_network_panel(
             Span::styled(prefix, style),
             Span::styled(format!("{:<12} ", &entry.timestamp), Style::new().fg(t.muted)),
             Span::styled(format!("{method} "), style),
-            Span::styled(status, Style::new().fg(status_color(entry.status_code))),
+            Span::styled(status, Style::new().fg(theme::status_color(entry.status_code))),
             Span::styled("  ", Style::new()),
             Span::styled(latency, style),
             Span::styled("  ", Style::new()),
@@ -98,10 +88,12 @@ pub fn render_network_panel(
     // Build display lines in chronological order (oldest first)
     let entry_lines: Vec<Line> = state.entries.iter().map(build_entry_line).collect();
 
+    // indent(2) + timestamp(13) + method(7) + status(3) + gap(2) + latency(6) + gap(2)
+    let network_pad = 2 + 13 + 7 + 3 + 2 + 6 + 2;
     let display_lines: Vec<ListItem> = if state.wrap {
         entry_lines
             .into_iter()
-            .flat_map(|line| wrap_line(line, width).into_iter().map(ListItem::new))
+            .flat_map(|line| wrap_line(line, width, network_pad).into_iter().map(ListItem::new))
             .collect()
     } else {
         entry_lines.into_iter().map(ListItem::new).collect()

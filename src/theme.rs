@@ -127,6 +127,16 @@ pub fn theme_count() -> usize {
 }
 
 
+pub fn status_color(code: u16) -> Color {
+    let t = current();
+    match code {
+        200..=299 => t.success,
+        300..=399 => t.info,
+        400..=499 => t.warning,
+        _ => t.danger,
+    }
+}
+
 pub fn level_color(level: char) -> Color {
     let t = current();
     match level {
