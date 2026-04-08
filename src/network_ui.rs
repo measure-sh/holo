@@ -113,6 +113,15 @@ pub fn render_network_panel(
         );
     }
 
+    if focused {
+        let accent = Style::new().fg(t.danger);
+        let action_muted = Style::new().fg(t.muted);
+        block = block.title_bottom(Line::from(vec![
+            Span::styled(" w", accent),
+            Span::styled("rap ", action_muted),
+        ]));
+    }
+
     let mut stats_spans = vec![
         Span::styled(format!(" {total} reqs "), Style::new().fg(t.muted)),
     ];
