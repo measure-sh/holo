@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, Scrollbar, ScrollbarOrientation, ScrollbarState},
@@ -33,22 +33,23 @@ pub fn render_network_panel(
     frame: &mut Frame,
     area: Rect,
     focused: bool,
-    state: &NetworkState,
+    state: &mut NetworkState,
+    measure_sdk_detected: bool,
 ) {
     let t = theme::current();
     let color = panel::by_number(panel::NETWORK).border_color(focused);
     let muted = Style::new().fg(t.muted);
 
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(panel_title(panel::NETWORK, focused))
         .border_style(Style::new().fg(color));
 
     let inner = block.inner(area);
-    frame.render_widget(block, area);
 
-    if !state.sdk_detected {
+    if !measure_sdk_detected {
+        frame.render_widget(block, area);
         let items = vec![
             ListItem::new(Line::from(Span::styled(
                 " requires Measure SDK",
@@ -64,6 +65,7 @@ pub fn render_network_panel(
     }
 
     if state.entries.is_empty() {
+        frame.render_widget(block, area);
         let item = ListItem::new(Line::from(Span::styled(" no requests", muted)));
         frame.render_widget(List::new(vec![item]), inner);
         return;
@@ -71,30 +73,48 @@ pub fn render_network_panel(
 
     let visible_height = inner.height as usize;
     let total = state.entries.len();
-    let selected = state.selected;
+    state.clamp_scroll(total, visible_height);
 
-    let start = if selected >= visible_height {
-        selected - visible_height + 1
-    } else {
-        0
-    };
-    let end = (start + visible_height).min(total);
+    if state.scroll > 0 {
+        block = block.title_top(
+            Line::from(vec![
+                Span::styled(
+                    format!(" ↑{} ", state.scroll),
+                    Style::new().fg(t.muted),
+                ),
+                Span::styled(
+                    " esc",
+                    Style::new().fg(t.danger).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" resume ", Style::new().fg(t.muted)),
+            ])
+            .alignment(Alignment::Right),
+        );
+    }
 
-    // Display newest first
+    let failures = state.failure_count;
+    let mut stats_spans = vec![
+        Span::styled(format!(" {total} reqs "), Style::new().fg(t.muted)),
+    ];
+    if failures > 0 {
+        stats_spans.push(Span::styled(format!("{failures} err "), Style::new().fg(t.danger)));
+    }
+    block = block.title_bottom(Line::from(stats_spans).alignment(Alignment::Right));
+
+    frame.render_widget(block, area);
+
+    // Display newest first (entries are stored oldest-first, reverse for display)
     let reversed: Vec<&_> = state.entries.iter().rev().collect();
+
+    let end = total.saturating_sub(state.scroll);
+    let start = end.saturating_sub(visible_height);
 
     let items: Vec<ListItem> = reversed[start..end]
         .iter()
         .enumerate()
-        .map(|(i, entry)| {
-            let actual = start + i;
-            let is_selected = actual == selected && focused;
-            let style = if is_selected {
-                Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
-            } else {
-                Style::new().fg(t.fg)
-            };
-            let prefix = if is_selected { "\u{25b8} " } else { "  " };
+        .map(|(_, entry)| {
+            let style = Style::new().fg(t.fg);
+            let prefix = "  ";
             let method = format!("{:<6}", entry.method.to_uppercase());
             let status = format!("{:<3}", entry.status_code);
             let latency = format!("{:>6}", format_latency(entry.latency_ms));

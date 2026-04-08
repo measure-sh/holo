@@ -39,6 +39,7 @@ impl DispatchContext {
         {
             if let Some(auto_pkg) = app.toolbar_mut().receive_packages(packages) {
                 app.toolbar_mut().package = Some(auto_pkg.clone());
+                app.reset_for_new_app(&auto_pkg);
                 if let Some(device) = app.toolbar().device.clone() {
                     self.data = Some(build_data(&self.adb, &device, &auto_pkg, app));
                     self.title = build_title(self.data.as_ref().unwrap());
@@ -504,6 +505,7 @@ pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut 
     app.set_pointer_location(data.initial_pointer_location);
     app.set_gpu_rendering(data.initial_gpu_rendering);
     app.set_talkback(data.initial_talkback);
+    app.set_measure_sdk_detected(data.has_measure_sdk);
     data
 }
 

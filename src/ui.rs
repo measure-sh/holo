@@ -699,7 +699,11 @@ fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_vis
         match p {
             panel::DISK => monitor_ui::render_disk_panel(frame, cols[i], false, app.monitor_state()),
             panel::SYSTEM => monitor_ui::render_system_panel(frame, cols[i], false, app.monitor_state()),
-            panel::NETWORK => network_ui::render_network_panel(frame, cols[i], is_focused(app, panel::NETWORK), app.network_state()),
+            panel::NETWORK => {
+                let focused = is_focused(app, panel::NETWORK);
+                let detected = app.measure_sdk_detected();
+                network_ui::render_network_panel(frame, cols[i], focused, app.network_state_mut(), detected);
+            }
             _ => {}
         }
     }

@@ -79,6 +79,7 @@ pub struct App {
     trace_state: TraceState,
     issues_state: IssuesState,
     network_state: NetworkState,
+    measure_sdk_detected: bool,
     pub dialog: Option<String>,
     saved_visibility: Option<([bool; 9], bool)>,
     status_flash: Option<(String, std::time::Instant, bool)>,
@@ -114,6 +115,7 @@ impl App {
             trace_state: TraceState::new(pkg),
             issues_state: IssuesState::new(),
             network_state: NetworkState::new(),
+            measure_sdk_detected: false,
             dialog: None,
             saved_visibility: None,
             status_flash: None,
@@ -544,6 +546,14 @@ impl App {
         self.talkback = v;
     }
 
+    pub fn measure_sdk_detected(&self) -> bool {
+        self.measure_sdk_detected
+    }
+
+    pub fn set_measure_sdk_detected(&mut self, v: bool) {
+        self.measure_sdk_detected = v;
+    }
+
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
     }
@@ -561,6 +571,10 @@ impl App {
     }
 
     pub fn reset_for_new_app(&mut self, package: &str) {
+        if self.saved_visibility.is_some() {
+            self.restore_zoom();
+        }
+
         self.logcat_state = LogcatState::new();
         self.database_state = DatabaseState::new();
         self.files_state = FilesState::new(package);
@@ -569,7 +583,18 @@ impl App {
         self.trace_state = TraceState::new(package);
         self.issues_state = IssuesState::new();
         self.network_state = NetworkState::new();
+        self.measure_sdk_detected = false;
+
+        self.commands.filter.clear();
+        self.commands.cursor = 0;
+        self.commands.editing = false;
+        self.commands.triggered = None;
+
         self.focused = None;
+        self.dialog = None;
+        self.confirming_quit = false;
+        self.confirming_settings = false;
+        self.settings_open = false;
     }
 
     pub fn toolbar(&self) -> &ToolbarState {

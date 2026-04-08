@@ -63,6 +63,7 @@ pub struct DataSources {
     pub initial_gpu_rendering: bool,
     pub initial_talkback: bool,
     pub app_version: Option<(String, String)>,
+    pub has_measure_sdk: bool,
 
     connectivity_rx: mpsc::Receiver<bool>,
     pub device_connected: bool,
@@ -79,6 +80,7 @@ impl DataSources {
         let initial_gpu_rendering = adb.get_gpu_rendering(serial).unwrap_or(false);
         let initial_talkback = adb.get_talkback_enabled(serial).unwrap_or(false);
         let app_version = adb.get_app_version(serial, package).ok();
+        let has_measure_sdk = adb.has_measure_sdk(serial, package);
         let monitor_visibility = Arc::new(AtomicU8::new(monitor::visibility_mask(panel_vis)));
         Self {
             battery_rx: battery::spawn_poller(adb.clone(), serial.to_string()),
@@ -134,6 +136,7 @@ impl DataSources {
             initial_gpu_rendering,
             initial_talkback,
             app_version,
+            has_measure_sdk,
             monitor_visibility,
             connectivity_rx: spawn_connectivity_poller(adb.clone(), serial.to_string()),
             device_connected: true,
@@ -170,11 +173,16 @@ impl DataSources {
 
         if let Some(handle) = &self.logcat_handle {
             let prev_len = self.logcat_lines.len();
+            let prev_network_len = app.network_state().entries.len();
             while let Ok(line) = handle.rx().try_recv() {
                 if let Some(entry) = network::parse_http_data(&line) {
                     app.network_state_mut().push(entry);
                 }
                 self.logcat_lines.push(line);
+            }
+            let new_network_count = app.network_state().entries.len() - prev_network_len;
+            if new_network_count > 0 {
+                app.network_state_mut().adjust_scroll_for_new_lines(new_network_count);
             }
             let new_count = self.logcat_lines.len() - prev_len;
             if new_count > 0 {

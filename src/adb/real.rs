@@ -681,6 +681,15 @@ impl Adb for RealAdb {
         }
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
+
+    fn has_measure_sdk(&self, serial: &str, package: &str) -> bool {
+        Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "package", package])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("sh.measure"))
+            .unwrap_or(false)
+    }
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {

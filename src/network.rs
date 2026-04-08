@@ -18,41 +18,69 @@ pub struct NetworkEntry {
 
 pub struct NetworkState {
     pub entries: Vec<NetworkEntry>,
-    pub sdk_detected: bool,
-    pub selected: usize,
+    pub scroll: usize,
+    pub failure_count: usize,
 }
 
 impl NetworkState {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
-            sdk_detected: false,
-            selected: 0,
+            scroll: 0,
+            failure_count: 0,
         }
     }
 
+    fn is_failure(entry: &NetworkEntry) -> bool {
+        entry.status_code >= 400 || entry.failure_reason.is_some()
+    }
+
     pub fn push(&mut self, entry: NetworkEntry) {
-        self.sdk_detected = true;
+        if Self::is_failure(&entry) {
+            self.failure_count += 1;
+        }
         self.entries.push(entry);
         if self.entries.len() > MAX_ENTRIES {
-            self.entries.drain(..self.entries.len() - MAX_ENTRIES);
+            let drained: Vec<_> = self.entries.drain(..self.entries.len() - MAX_ENTRIES).collect();
+            for e in &drained {
+                if Self::is_failure(e) {
+                    self.failure_count = self.failure_count.saturating_sub(1);
+                }
+            }
         }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                self.selected = self.selected.saturating_sub(1);
+                self.scroll += 1;
                 Some(Action::Noop)
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if !self.entries.is_empty() {
-                    self.selected = (self.selected + 1).min(self.entries.len() - 1);
-                }
+                self.scroll = self.scroll.saturating_sub(1);
+                Some(Action::Noop)
+            }
+            KeyCode::Char(' ') => {
+                self.scroll += 20;
+                Some(Action::Noop)
+            }
+            KeyCode::Esc if self.scroll > 0 => {
+                self.scroll = 0;
                 Some(Action::Noop)
             }
             KeyCode::Esc => Some(Action::Unfocus),
             _ => None,
+        }
+    }
+
+    pub fn clamp_scroll(&mut self, total: usize, visible_height: usize) {
+        let max = total.saturating_sub(visible_height);
+        self.scroll = self.scroll.min(max);
+    }
+
+    pub fn adjust_scroll_for_new_lines(&mut self, count: usize) {
+        if self.scroll > 0 {
+            self.scroll += count;
         }
     }
 }
@@ -173,14 +201,6 @@ mod tests {
     }
 
     #[test]
-    fn state_push_sets_sdk_detected() {
-        let mut state = NetworkState::new();
-        assert!(!state.sdk_detected);
-        state.push(make_entry(200, 100));
-        assert!(state.sdk_detected);
-    }
-
-    #[test]
     fn state_entry_count() {
         let mut state = NetworkState::new();
         state.push(make_entry(200, 100));
@@ -194,20 +214,60 @@ mod tests {
         state.push(make_entry(200, 100));
         state.push(make_entry(200, 200));
 
-        assert_eq!(state.selected, 0);
-        state.handle_key(key(KeyCode::Char('j')));
-        assert_eq!(state.selected, 1);
-        state.handle_key(key(KeyCode::Char('j')));
-        assert_eq!(state.selected, 1); // clamped
+        assert_eq!(state.scroll, 0);
         state.handle_key(key(KeyCode::Char('k')));
-        assert_eq!(state.selected, 0);
+        assert_eq!(state.scroll, 1);
+        state.handle_key(key(KeyCode::Char('k')));
+        assert_eq!(state.scroll, 2);
+        state.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(state.scroll, 1);
     }
 
     #[test]
-    fn handle_key_esc_unfocuses() {
+    fn handle_key_space_scrolls_page() {
+        let mut state = NetworkState::new();
+        state.handle_key(key(KeyCode::Char(' ')));
+        assert_eq!(state.scroll, 20);
+    }
+
+    #[test]
+    fn handle_key_esc_returns_to_bottom_first() {
+        let mut state = NetworkState::new();
+        state.scroll = 5;
+        let action = state.handle_key(key(KeyCode::Esc));
+        assert!(matches!(action, Some(Action::Noop)));
+        assert_eq!(state.scroll, 0);
+    }
+
+    #[test]
+    fn handle_key_esc_unfocuses_at_bottom() {
         let mut state = NetworkState::new();
         let action = state.handle_key(key(KeyCode::Esc));
         assert!(matches!(action, Some(Action::Unfocus)));
+    }
+
+    #[test]
+    fn clamp_scroll_limits_to_max() {
+        let mut state = NetworkState::new();
+        state.scroll = 100;
+        state.clamp_scroll(50, 20);
+        assert_eq!(state.scroll, 30);
+    }
+
+    #[test]
+    fn adjust_scroll_increments_when_scrolled() {
+        let mut state = NetworkState::new();
+        state.scroll = 5;
+        state.adjust_scroll_for_new_lines(3);
+        assert_eq!(state.scroll, 8);
+    }
+
+    #[test]
+    fn adjust_scroll_noop_when_at_bottom() {
+        let mut state = NetworkState::new();
+        state.scroll = 0;
+        state.adjust_scroll_for_new_lines(3);
+        assert_eq!(state.scroll, 0);
     }
 
     fn key(code: KeyCode) -> KeyEvent {
