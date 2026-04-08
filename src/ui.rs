@@ -16,6 +16,7 @@ use crate::logcat_ui;
 use crate::monitor_ui;
 use crate::panel;
 use crate::issues_ui;
+use crate::network_ui;
 use crate::permissions_ui;
 use crate::theme;
 
@@ -517,11 +518,12 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let logcat_visible = vis[0];
     let disk_visible = vis[1];
     let system_visible = vis[2];
-    let permissions_visible = vis[3];
-    let monitor_visible = disk_visible || system_visible || permissions_visible;
+    let network_visible = vis[3];
+    let monitor_visible = disk_visible || system_visible || network_visible;
     let trace_visible = vis[4];
     let issues_visible = vis[5];
-    let mid_visible = trace_visible || issues_visible;
+    let permissions_visible = vis[6];
+    let mid_visible = trace_visible || issues_visible || permissions_visible;
     let bot_visible = vis[7] || vis[8];
 
     let top_visible = commands_visible || logcat_visible;
@@ -550,11 +552,11 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         idx += 1;
     }
     if monitor_visible {
-        render_monitor_section(frame, rows[idx], app, disk_visible, system_visible, permissions_visible);
+        render_monitor_section(frame, rows[idx], app, disk_visible, system_visible, network_visible);
         idx += 1;
     }
     if mid_visible {
-        render_mid_section(frame, rows[idx], app, trace_visible, issues_visible);
+        render_mid_section(frame, rows[idx], app, trace_visible, issues_visible, permissions_visible);
         idx += 1;
     }
     if bot_visible {
@@ -578,10 +580,11 @@ fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines
     }
 }
 
-fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, issues_visible: bool) {
+fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, issues_visible: bool, permissions_visible: bool) {
     let panels: Vec<u8> = [
         (trace_visible, panel::TRACE),
         (issues_visible, panel::ISSUES),
+        (permissions_visible, panel::PERMISSIONS),
     ]
     .iter()
     .filter(|(v, _)| *v)
@@ -602,6 +605,7 @@ fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visibl
         match p {
             panel::TRACE => crate::trace_ui::render_trace_panel(frame, cols[i], is_focused(app, panel::TRACE), app.trace_state()),
             panel::ISSUES => issues_ui::render_issues_panel(frame, cols[i], is_focused(app, panel::ISSUES), app.issues_state()),
+            panel::PERMISSIONS => permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state()),
             _ => {}
         }
     }
@@ -670,11 +674,11 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 
-fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_visible: bool, system_visible: bool, permissions_visible: bool) {
+fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_visible: bool, system_visible: bool, network_visible: bool) {
     let panels: Vec<u8> = [
         (disk_visible, panel::DISK),
         (system_visible, panel::SYSTEM),
-        (permissions_visible, panel::PERMISSIONS),
+        (network_visible, panel::NETWORK),
     ]
     .iter()
     .filter(|(v, _)| *v)
@@ -695,7 +699,7 @@ fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_vis
         match p {
             panel::DISK => monitor_ui::render_disk_panel(frame, cols[i], false, app.monitor_state()),
             panel::SYSTEM => monitor_ui::render_system_panel(frame, cols[i], false, app.monitor_state()),
-            panel::PERMISSIONS => permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state()),
+            panel::NETWORK => network_ui::render_network_panel(frame, cols[i], is_focused(app, panel::NETWORK), app.network_state()),
             _ => {}
         }
     }

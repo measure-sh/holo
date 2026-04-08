@@ -12,6 +12,7 @@ use crate::crashes;
 use crate::files;
 use crate::logcat;
 use crate::monitor;
+use crate::network;
 use crate::permissions;
 use crate::processes;
 use crate::trace;
@@ -60,6 +61,7 @@ pub struct DataSources {
     pub initial_show_taps: bool,
     pub initial_pointer_location: bool,
     pub initial_gpu_rendering: bool,
+    pub initial_talkback: bool,
     pub app_version: Option<(String, String)>,
 
     connectivity_rx: mpsc::Receiver<bool>,
@@ -75,6 +77,7 @@ impl DataSources {
         let initial_show_taps = adb.get_show_taps(serial).unwrap_or(false);
         let initial_pointer_location = adb.get_pointer_location(serial).unwrap_or(false);
         let initial_gpu_rendering = adb.get_gpu_rendering(serial).unwrap_or(false);
+        let initial_talkback = adb.get_talkback_enabled(serial).unwrap_or(false);
         let app_version = adb.get_app_version(serial, package).ok();
         let monitor_visibility = Arc::new(AtomicU8::new(monitor::visibility_mask(panel_vis)));
         Self {
@@ -129,6 +132,7 @@ impl DataSources {
             initial_show_taps,
             initial_pointer_location,
             initial_gpu_rendering,
+            initial_talkback,
             app_version,
             monitor_visibility,
             connectivity_rx: spawn_connectivity_poller(adb.clone(), serial.to_string()),
@@ -167,6 +171,9 @@ impl DataSources {
         if let Some(handle) = &self.logcat_handle {
             let prev_len = self.logcat_lines.len();
             while let Ok(line) = handle.rx().try_recv() {
+                if let Some(entry) = network::parse_http_data(&line) {
+                    app.network_state_mut().push(entry);
+                }
                 self.logcat_lines.push(line);
             }
             let new_count = self.logcat_lines.len() - prev_len;

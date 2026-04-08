@@ -11,7 +11,7 @@ use crate::panel;
 use crate::theme;
 use crate::ui::panel_block;
 
-const SPARK_CHARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+pub(crate) const SPARK_CHARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
 fn format_mb(kb: u64) -> String {
     let mb = kb as f64 / 1024.0;
@@ -36,7 +36,7 @@ fn trend_symbol(trend: Trend) -> (&'static str, ratatui::style::Color) {
     }
 }
 
-fn sparkline_str(data: &[u64], width: usize) -> (String, u64, u64) {
+pub(crate) fn sparkline_str(data: &[u64], width: usize) -> (String, u64, u64) {
     if data.is_empty() {
         return (String::new(), 0, 0);
     }
@@ -60,7 +60,7 @@ fn sparkline_str(data: &[u64], width: usize) -> (String, u64, u64) {
     (s, min, max)
 }
 
-fn sparkline_str_f32(data: &[f32], width: usize) -> (String, f32, f32) {
+pub(crate) fn sparkline_str_f32(data: &[f32], width: usize) -> (String, f32, f32) {
     if data.is_empty() {
         return (String::new(), 0.0, 0.0);
     }

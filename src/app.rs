@@ -3,6 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::adb::Device;
 use crate::commands::CommandsState;
 use crate::issues::IssuesState;
+use crate::network::NetworkState;
 use crate::database::DatabaseState;
 use crate::files::FilesState;
 use crate::logcat::LogcatState;
@@ -49,6 +50,7 @@ pub enum Action {
     ToggleShowTaps,
     TogglePointerLocation,
     ToggleGpuRendering,
+    ToggleTalkback,
     OpenInEditor(String),
 }
 
@@ -69,12 +71,14 @@ pub struct App {
     show_taps: bool,
     pointer_location: bool,
     gpu_rendering: bool,
+    talkback: bool,
     confirming_quit: bool,
     confirming_settings: bool,
     pub settings_open: bool,
     pub settings_cursor: usize,
     trace_state: TraceState,
     issues_state: IssuesState,
+    network_state: NetworkState,
     pub dialog: Option<String>,
     saved_visibility: Option<([bool; 9], bool)>,
     status_flash: Option<(String, std::time::Instant, bool)>,
@@ -102,12 +106,14 @@ impl App {
             show_taps: false,
             pointer_location: false,
             gpu_rendering: false,
+            talkback: false,
             confirming_quit: false,
             confirming_settings: false,
             settings_open: false,
             settings_cursor: 0,
             trace_state: TraceState::new(pkg),
             issues_state: IssuesState::new(),
+            network_state: NetworkState::new(),
             dialog: None,
             saved_visibility: None,
             status_flash: None,
@@ -258,6 +264,9 @@ impl App {
         if let Some(action) = self.delegate_to_focused(panel::ISSUES, key) {
             return action;
         }
+        if let Some(action) = self.delegate_to_focused(panel::NETWORK, key) {
+            return action;
+        }
 
         match code {
             KeyCode::Char('q') => {
@@ -302,6 +311,7 @@ impl App {
             panel::PERMISSIONS => self.permissions_state.handle_key(key),
             panel::TRACE => self.trace_state.handle_key(key),
             panel::ISSUES => self.issues_state.handle_key(key),
+            panel::NETWORK => self.network_state.handle_key(key),
             _ => None,
         };
         if let Some(action) = self.dispatch_panel_key(result) {
@@ -448,6 +458,14 @@ impl App {
         &mut self.issues_state
     }
 
+    pub fn network_state(&self) -> &NetworkState {
+        &self.network_state
+    }
+
+    pub fn network_state_mut(&mut self) -> &mut NetworkState {
+        &mut self.network_state
+    }
+
     pub fn focused_panel(&self) -> Option<u8> {
         self.focused
     }
@@ -518,6 +536,14 @@ impl App {
         self.gpu_rendering = v;
     }
 
+    pub fn talkback(&self) -> bool {
+        self.talkback
+    }
+
+    pub fn set_talkback(&mut self, v: bool) {
+        self.talkback = v;
+    }
+
     pub fn confirming_quit(&self) -> bool {
         self.confirming_quit
     }
@@ -542,6 +568,7 @@ impl App {
         self.monitor_state = MonitorState::new();
         self.trace_state = TraceState::new(package);
         self.issues_state = IssuesState::new();
+        self.network_state = NetworkState::new();
         self.focused = None;
     }
 

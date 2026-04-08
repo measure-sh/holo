@@ -18,6 +18,8 @@ mod dropbox;
 mod logcat;
 mod monitor;
 mod monitor_ui;
+mod network;
+mod network_ui;
 mod logcat_ui;
 mod panel;
 mod permissions;

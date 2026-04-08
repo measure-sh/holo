@@ -132,6 +132,13 @@ All ADB commands used by holo, organized by feature area.
 | `adb shell getprop debug.hwui.profile` | Get GPU rendering bars state |
 | `adb shell setprop debug.hwui.profile visual_bars/false` | Toggle GPU rendering bars |
 
+### Accessibility
+
+| Command | Purpose |
+|---------|---------|
+| `adb shell settings get secure enabled_accessibility_services` | Check if TalkBack is enabled |
+| `adb shell settings put secure enabled_accessibility_services <value>` | Enable/disable TalkBack |
+
 ### Wireless ADB
 
 | Command | Purpose |

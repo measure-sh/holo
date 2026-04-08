@@ -616,6 +616,50 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn get_talkback_enabled(&self, serial: &str) -> Result<bool> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "get", "secure", "enabled_accessibility_services"])
+            .output()?;
+        let value = String::from_utf8_lossy(&output.stdout);
+        Ok(value.to_lowercase().contains("talkback"))
+    }
+
+    fn set_talkback_enabled(&self, serial: &str, enabled: bool) -> Result<()> {
+        const TALKBACK: &str = "com.google.android.marvin.talkback/com.google.android.marvin.talkback.TalkBackService";
+
+        let current = {
+            let output = Command::new("adb")
+                .args(["-s", serial, "shell", "settings", "get", "secure", "enabled_accessibility_services"])
+                .output()?;
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        };
+
+        let services: Vec<&str> = current
+            .split(':')
+            .filter(|s| !s.is_empty() && *s != "null")
+            .filter(|s| !s.to_lowercase().contains("talkback"))
+            .collect();
+
+        let new_value = if enabled {
+            let mut with_tb = services.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+            with_tb.push(TALKBACK.to_string());
+            with_tb.join(":")
+        } else if services.is_empty() {
+            "null".to_string()
+        } else {
+            services.join(":")
+        };
+
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "settings", "put", "secure", "enabled_accessibility_services", &new_value])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("settings put enabled_accessibility_services failed: {stderr}");
+        }
+        Ok(())
+    }
+
     fn get_dropbox_crashes(&self, serial: &str) -> Result<String> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "dropbox", "--print", "data_app_crash"])

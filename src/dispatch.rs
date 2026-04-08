@@ -189,6 +189,13 @@ impl DispatchContext {
                     adb_fn: |adb, s, enabled| adb.set_gpu_rendering(s, enabled),
                 });
             }
+            Action::ToggleTalkback => {
+                dispatch_toggle(app, &serial, &self.adb, &self.command_tx, ToggleOpts {
+                    get: App::talkback, set: App::set_talkback,
+                    label: "TalkBack", error_msg: "Failed to toggle TalkBack",
+                    adb_fn: |adb, s, enabled| adb.set_talkback_enabled(s, enabled),
+                });
+            }
             Action::WirelessAdb => {
                 if let Some(s) = &serial {
                     app.set_status_flash("Enabling wireless ADB...".into(), false);
@@ -496,6 +503,7 @@ pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut 
     app.set_show_taps(data.initial_show_taps);
     app.set_pointer_location(data.initial_pointer_location);
     app.set_gpu_rendering(data.initial_gpu_rendering);
+    app.set_talkback(data.initial_talkback);
     data
 }
 

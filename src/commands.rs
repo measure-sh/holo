@@ -21,6 +21,7 @@ const COMMAND_LIST: &[CommandEntry] = &[
     ("gpu rendering", 'g', || Action::ToggleGpuRendering),
     ("wifi", 'f', || Action::ToggleWifi),
     ("airplane mode", 'e', || Action::ToggleAirplaneMode),
+    ("talkback", 'y', || Action::ToggleTalkback),
     ("wireless adb", 'b', || Action::WirelessAdb),
     ("uninstall", 'u', || Action::UninstallApp),
 ];
