@@ -13,7 +13,7 @@ use crate::app::App;
 use crate::logcat::{self, LogcatEditTarget, LogcatFilter};
 use crate::panel;
 use crate::theme;
-use crate::ui::panel_title;
+use crate::ui::{panel_title, wrap_line};
 
 pub fn render_logcat_panel(
     frame: &mut Frame,
@@ -44,22 +44,34 @@ pub fn render_logcat_panel(
         .collect();
 
     let visible_height = inner.height as usize;
-    app.logcat_state_mut().clamp_scroll(filtered.len(), visible_height);
+    let width = inner.width as usize;
+    let is_wrap = app.logcat_state().wrap;
+
+    let display_lines: Vec<ListItem> = if is_wrap {
+        filtered
+            .iter()
+            .flat_map(|l| {
+                wrap_line(style_logcat_line(l, &search), width)
+                    .into_iter()
+                    .map(ListItem::new)
+            })
+            .collect()
+    } else {
+        filtered
+            .iter()
+            .map(|l| ListItem::new(style_logcat_line(l, &search)))
+            .collect()
+    };
+
+    let total_display = display_lines.len();
+    app.logcat_state_mut().clamp_scroll(total_display, visible_height);
     let logcat_scroll = app.logcat_state().scroll;
-    let end = filtered.len().saturating_sub(logcat_scroll);
-    let start = end.saturating_sub(visible_height);
 
     if logcat_scroll > 0 {
         block = block.title_top(
             Line::from(vec![
-                Span::styled(
-                    format!(" ↑{} ", logcat_scroll),
-                    Style::new().fg(t.muted),
-                ),
-                Span::styled(
-                    " esc",
-                    Style::new().fg(t.danger).add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(format!(" ↑{} ", logcat_scroll), Style::new().fg(t.muted)),
+                Span::styled(" esc", Style::new().fg(t.danger).add_modifier(Modifier::BOLD)),
                 Span::styled(" resume ", Style::new().fg(t.muted)),
             ])
             .alignment(Alignment::Right),
@@ -68,17 +80,14 @@ pub fn render_logcat_panel(
 
     frame.render_widget(block, area);
 
-    let items: Vec<ListItem> = filtered[start..end]
-        .iter()
-        .map(|l| ListItem::new(style_logcat_line(l, &search)))
-        .collect();
+    let end = total_display.saturating_sub(logcat_scroll);
+    let start = end.saturating_sub(visible_height);
+    let items: Vec<ListItem> = display_lines.into_iter().skip(start).take(end - start).collect();
+    frame.render_widget(List::new(items), inner);
 
-    let list = List::new(items);
-    frame.render_widget(list, inner);
-
-    if filtered.len() > visible_height {
+    if total_display > visible_height {
         let mut scrollbar_state =
-            ScrollbarState::new(filtered.len().saturating_sub(visible_height)).position(start);
+            ScrollbarState::new(total_display.saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .thumb_style(Style::new().fg(t.muted))
             .track_style(Style::new().fg(t.surface));
@@ -147,8 +156,15 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>) -
     spans.push(Span::styled(" o", accent));
     spans.push(Span::styled("pen ", muted));
 
+    spans.push(Span::styled("───", border));
+
+    spans.push(Span::styled(" w", accent));
+    spans.push(Span::styled("rap ", muted));
+
     Line::from(spans)
 }
+
+const TAG_WIDTH: usize = 20;
 
 fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
     let t = theme::current();
@@ -166,14 +182,17 @@ fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
 
     let timestamp = Span::styled(parsed.timestamp, Style::new().fg(t.muted));
 
-    let tag = Span::styled(parsed.tag, Style::new().fg(t.muted));
+    let tag_str = if parsed.tag.len() > TAG_WIDTH {
+        &parsed.tag[..TAG_WIDTH]
+    } else {
+        parsed.tag
+    };
+    let tag = Span::styled(format!("{:<TAG_WIDTH$}", tag_str), Style::new().fg(t.muted));
 
     let msg_text = parsed.message.replace('\t', "  ");
-    let msg_prefix = Span::styled(": ", Style::new().fg(t.fg));
-
-    let mut spans = vec![label, sep.clone(), timestamp, sep, tag];
-    spans.push(msg_prefix);
     let msg_style = Style::new().fg(t.fg);
+
+    let mut spans = vec![label, sep.clone(), timestamp, sep.clone(), tag, sep];
     if search.is_empty() {
         spans.push(Span::styled(msg_text, msg_style));
     } else {

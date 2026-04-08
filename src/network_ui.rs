@@ -9,7 +9,7 @@ use ratatui::{
 use crate::network::NetworkState;
 use crate::panel;
 use crate::theme;
-use crate::ui::panel_title;
+use crate::ui::{panel_title, wrap_line};
 
 fn format_latency(ms: u64) -> String {
     if ms >= 1000 {
@@ -72,89 +72,78 @@ pub fn render_network_panel(
     }
 
     let visible_height = inner.height as usize;
+    let width = inner.width as usize;
     let total = state.entries.len();
-    state.clamp_scroll(total, visible_height);
+    let failures = state.failure_count;
+
+    let build_entry_line = |entry: &crate::network::NetworkEntry| -> Line {
+        let style = Style::new().fg(t.fg);
+        let prefix = "  ";
+        let method = format!("{:<6}", entry.method.to_uppercase());
+        let status = format!("{:<3}", entry.status_code);
+        let latency = format!("{:>6}", format_latency(entry.latency_ms));
+
+        Line::from(vec![
+            Span::styled(prefix, style),
+            Span::styled(format!("{:<12} ", &entry.timestamp), Style::new().fg(t.muted)),
+            Span::styled(format!("{method} "), style),
+            Span::styled(status, Style::new().fg(status_color(entry.status_code))),
+            Span::styled("  ", Style::new()),
+            Span::styled(latency, style),
+            Span::styled("  ", Style::new()),
+            Span::styled(entry.url.clone(), style),
+        ])
+    };
+
+    // Build display lines in chronological order (oldest first)
+    let entry_lines: Vec<Line> = state.entries.iter().map(build_entry_line).collect();
+
+    let display_lines: Vec<ListItem> = if state.wrap {
+        entry_lines
+            .into_iter()
+            .flat_map(|line| wrap_line(line, width).into_iter().map(ListItem::new))
+            .collect()
+    } else {
+        entry_lines.into_iter().map(ListItem::new).collect()
+    };
+
+    let total_display = display_lines.len();
+    state.clamp_scroll(total_display, visible_height);
 
     if state.scroll > 0 {
         block = block.title_top(
             Line::from(vec![
-                Span::styled(
-                    format!(" ↑{} ", state.scroll),
-                    Style::new().fg(t.muted),
-                ),
-                Span::styled(
-                    " esc",
-                    Style::new().fg(t.danger).add_modifier(Modifier::BOLD),
-                ),
+                Span::styled(format!(" ↑{} ", state.scroll), Style::new().fg(t.muted)),
+                Span::styled(" esc", Style::new().fg(t.danger).add_modifier(Modifier::BOLD)),
                 Span::styled(" resume ", Style::new().fg(t.muted)),
             ])
             .alignment(Alignment::Right),
         );
     }
 
-    let failures = state.failure_count;
     let mut stats_spans = vec![
         Span::styled(format!(" {total} reqs "), Style::new().fg(t.muted)),
     ];
     if failures > 0 {
         stats_spans.push(Span::styled(format!("{failures} err "), Style::new().fg(t.danger)));
     }
+    if state.wrap {
+        stats_spans.push(Span::styled("wrap ", Style::new().fg(t.secondary)));
+    }
     block = block.title_bottom(Line::from(stats_spans).alignment(Alignment::Right));
-
     frame.render_widget(block, area);
 
-    // Display newest first (entries are stored oldest-first, reverse for display)
-    let reversed: Vec<&_> = state.entries.iter().rev().collect();
-
-    let end = total.saturating_sub(state.scroll);
+    let end = total_display.saturating_sub(state.scroll);
     let start = end.saturating_sub(visible_height);
-
-    let items: Vec<ListItem> = reversed[start..end]
-        .iter()
-        .enumerate()
-        .map(|(_, entry)| {
-            let style = Style::new().fg(t.fg);
-            let prefix = "  ";
-            let method = format!("{:<6}", entry.method.to_uppercase());
-            let status = format!("{:<3}", entry.status_code);
-            let latency = format!("{:>6}", format_latency(entry.latency_ms));
-            let fixed_cols = 37usize;
-            let url_width = (inner.width as usize).saturating_sub(fixed_cols);
-
-            ListItem::new(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::styled(format!("{:<12} ", &entry.timestamp), Style::new().fg(t.muted)),
-                Span::styled(format!("{method} "), style),
-                Span::styled(status, Style::new().fg(status_color(entry.status_code))),
-                Span::styled("  ", Style::new()),
-                Span::styled(latency, style),
-                Span::styled("  ", Style::new()),
-                Span::styled(truncate_url(&entry.url, url_width), style),
-            ]))
-        })
-        .collect();
-
+    let items: Vec<ListItem> = display_lines.into_iter().skip(start).take(end - start).collect();
     frame.render_widget(List::new(items), inner);
 
-    if total > visible_height {
+    if total_display > visible_height {
         let mut scrollbar_state =
-            ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
+            ScrollbarState::new(total_display.saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .thumb_style(Style::new().fg(t.muted))
             .track_style(Style::new().fg(t.surface));
         frame.render_stateful_widget(scrollbar, inner, &mut scrollbar_state);
-    }
-}
-
-fn truncate_url(url: &str, max_width: usize) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-    if url.len() <= max_width {
-        url.to_string()
-    } else if max_width > 3 {
-        format!("{}...", &url[..max_width - 3])
-    } else {
-        url[..max_width].to_string()
     }
 }

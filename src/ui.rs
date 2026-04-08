@@ -80,6 +80,42 @@ pub fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
         .border_style(Style::new().fg(color))
 }
 
+pub fn wrap_line(line: Line<'_>, width: usize) -> Vec<Line<'_>> {
+    if width == 0 {
+        return vec![line];
+    }
+    let total_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
+    if total_width <= width {
+        return vec![line];
+    }
+
+    let mut result: Vec<Line> = Vec::new();
+    let mut current_spans: Vec<Span> = Vec::new();
+    let mut current_width = 0;
+
+    for span in line.spans {
+        let content = span.content.to_string();
+        let style = span.style;
+        let mut pos = 0;
+        while pos < content.len() {
+            let remaining_in_line = width - current_width;
+            let chunk_end = (pos + remaining_in_line).min(content.len());
+            let chunk = &content[pos..chunk_end];
+            current_spans.push(Span::styled(chunk.to_string(), style));
+            current_width += chunk.len();
+            pos = chunk_end;
+            if current_width >= width {
+                result.push(Line::from(std::mem::take(&mut current_spans)));
+                current_width = 0;
+            }
+        }
+    }
+    if !current_spans.is_empty() {
+        result.push(Line::from(current_spans));
+    }
+    result
+}
+
 pub fn render_app(
     frame: &mut Frame,
     title: &str,

@@ -19,6 +19,7 @@ pub struct NetworkEntry {
 pub struct NetworkState {
     pub entries: Vec<NetworkEntry>,
     pub scroll: usize,
+    pub wrap: bool,
     pub failure_count: usize,
 }
 
@@ -27,6 +28,7 @@ impl NetworkState {
         Self {
             entries: Vec::new(),
             scroll: 0,
+            wrap: false,
             failure_count: 0,
         }
     }
@@ -62,6 +64,10 @@ impl NetworkState {
             }
             KeyCode::Char(' ') => {
                 self.scroll += 20;
+                Some(Action::Noop)
+            }
+            KeyCode::Char('w') => {
+                self.wrap = !self.wrap;
                 Some(Action::Noop)
             }
             KeyCode::Esc if self.scroll > 0 => {
