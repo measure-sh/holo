@@ -47,11 +47,13 @@ pub fn render_logcat_panel(
     let width = inner.width as usize;
     let is_wrap = app.logcat_state().wrap;
 
+    // level(1) + sep(1) + timestamp(~12) + sep(1) + tag(TAG_WIDTH) + sep(1)
+    let logcat_pad = 1 + 1 + 12 + 1 + TAG_WIDTH + 1;
     let display_lines: Vec<ListItem> = if is_wrap {
         filtered
             .iter()
             .flat_map(|l| {
-                wrap_line(style_logcat_line(l, &search), width)
+                wrap_line(style_logcat_line(l, &search), width, logcat_pad)
                     .into_iter()
                     .map(ListItem::new)
             })

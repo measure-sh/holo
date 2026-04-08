@@ -80,7 +80,7 @@ pub fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
         .border_style(Style::new().fg(color))
 }
 
-pub fn wrap_line(line: Line<'_>, width: usize) -> Vec<Line<'_>> {
+pub fn wrap_line(line: Line<'_>, width: usize, pad: usize) -> Vec<Line<'_>> {
     if width == 0 {
         return vec![line];
     }
@@ -106,7 +106,10 @@ pub fn wrap_line(line: Line<'_>, width: usize) -> Vec<Line<'_>> {
             pos = chunk_end;
             if current_width >= width {
                 result.push(Line::from(std::mem::take(&mut current_spans)));
-                current_width = 0;
+                current_width = pad;
+                if pad > 0 && pad < width {
+                    current_spans.push(Span::raw(" ".repeat(pad)));
+                }
             }
         }
     }
