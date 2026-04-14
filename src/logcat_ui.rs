@@ -166,7 +166,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>) -
     Line::from(spans)
 }
 
-const TAG_WIDTH: usize = 20;
+const TAG_WIDTH: usize = 10;
 
 fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
     let t = theme::current();
@@ -184,12 +184,14 @@ fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
 
     let timestamp = Span::styled(parsed.timestamp, Style::new().fg(t.muted));
 
-    let tag_str = if parsed.tag.len() > TAG_WIDTH {
-        &parsed.tag[..TAG_WIDTH]
+    let tag_display = if parsed.tag.len() > TAG_WIDTH {
+        let left = (TAG_WIDTH - 1) / 2;
+        let right = TAG_WIDTH - 1 - left;
+        format!("{}\u{2026}{}", &parsed.tag[..left], &parsed.tag[parsed.tag.len() - right..])
     } else {
-        parsed.tag
+        format!("{:<TAG_WIDTH$}", parsed.tag)
     };
-    let tag = Span::styled(format!("{:<TAG_WIDTH$}", tag_str), Style::new().fg(t.muted));
+    let tag = Span::styled(tag_display, Style::new().fg(t.muted));
 
     let msg_text = parsed.message.replace('\t', "  ");
     let msg_style = Style::new().fg(t.fg);
