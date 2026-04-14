@@ -267,6 +267,24 @@ impl DispatchContext {
                     open_in_editor(text, package.as_deref(), "logcat", "log");
                 }
             }
+            Action::OpenNetwork => {
+                let entries = &app.network_state().entries;
+                let text: String = entries
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{} {:<6} {} {:>6}  {}",
+                            e.timestamp,
+                            e.method.to_uppercase(),
+                            e.status_code,
+                            crate::network_ui::format_latency(e.latency_ms),
+                            e.url,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                open_in_editor(text, package.as_deref(), "network", "log");
+            }
             Action::RunQuery(db, sql) => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
                     d.start_query(self.adb.clone(), s.clone(), p.clone(), db, sql);

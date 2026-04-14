@@ -36,6 +36,7 @@ pub enum Action {
     ToggleAirplaneMode,
     TogglePermission(String, bool),
     OpenLogcat,
+    OpenNetwork,
     RefreshFiles,
     ExpandDir(String),
     OpenFile(String),

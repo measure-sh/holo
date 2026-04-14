@@ -66,6 +66,9 @@ impl NetworkState {
                 self.scroll += 20;
                 Some(Action::Noop)
             }
+            KeyCode::Char('o') => {
+                Some(Action::OpenNetwork)
+            }
             KeyCode::Char('w') => {
                 self.wrap = !self.wrap;
                 Some(Action::Noop)

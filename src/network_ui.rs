@@ -11,7 +11,7 @@ use crate::panel;
 use crate::theme;
 use crate::ui::{panel_title, wrap_line};
 
-fn format_latency(ms: u64) -> String {
+pub fn format_latency(ms: u64) -> String {
     if ms >= 1000 {
         format!("{:.1}s", ms as f64 / 1000.0)
     } else {
@@ -117,6 +117,9 @@ pub fn render_network_panel(
         let accent = Style::new().fg(t.danger);
         let action_muted = Style::new().fg(t.muted);
         block = block.title_bottom(Line::from(vec![
+            Span::styled(" o", accent),
+            Span::styled("pen ", action_muted),
+            Span::styled("───", Style::new().fg(color)),
             Span::styled(" w", accent),
             Span::styled("rap ", action_muted),
         ]));
@@ -127,9 +130,6 @@ pub fn render_network_panel(
     ];
     if failures > 0 {
         stats_spans.push(Span::styled(format!("{failures} err "), Style::new().fg(t.danger)));
-    }
-    if state.wrap {
-        stats_spans.push(Span::styled("wrap ", Style::new().fg(t.secondary)));
     }
     block = block.title_bottom(Line::from(stats_spans).alignment(Alignment::Right));
     frame.render_widget(block, area);
