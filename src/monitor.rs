@@ -17,6 +17,24 @@ pub struct MonitorSample {
     pub data_kb: u64,
     pub cache_kb: u64,
     pub debuggable: bool,
+    // Measure SDK fields
+    pub java_max_heap_kb: u64,
+    pub java_total_heap_kb: u64,
+    pub java_free_heap_kb: u64,
+    pub total_pss_kb: u64,
+    pub native_total_heap_kb: u64,
+    pub native_free_heap_kb: u64,
+    pub num_cores: u8,
+}
+
+pub struct MeasureMemory {
+    pub java_max_heap_kb: u64,
+    pub java_total_heap_kb: u64,
+    pub java_free_heap_kb: u64,
+    pub total_pss_kb: u64,
+    pub rss_kb: u64,
+    pub native_total_heap_kb: u64,
+    pub native_free_heap_kb: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -29,6 +47,8 @@ pub enum Trend {
 pub struct MonitorState {
     pub history: Vec<MonitorSample>,
     pub debuggable: bool,
+    pub disk_kb: u64,
+    pub cache_kb: u64,
 }
 
 impl MonitorState {
@@ -36,6 +56,8 @@ impl MonitorState {
         Self {
             history: Vec::new(),
             debuggable: true,
+            disk_kb: 0,
+            cache_kb: 0,
         }
     }
 
@@ -75,6 +97,34 @@ impl MonitorState {
         self.history.iter().map(extract).collect()
     }
 
+    pub fn push_measure_cpu(&mut self, percent: f32, num_cores: u8) {
+        let mut sample = self.history.last().copied().unwrap_or_default();
+        sample.cpu_percent = percent;
+        sample.num_cores = num_cores;
+        sample.data_kb = self.disk_kb;
+        sample.cache_kb = self.cache_kb;
+        self.history.push(sample);
+        if self.history.len() > MAX_SAMPLES {
+            self.history.remove(0);
+        }
+    }
+
+    pub fn update_disk(&mut self, data_kb: u64, cache_kb: u64) {
+        self.disk_kb = data_kb;
+        self.cache_kb = cache_kb;
+    }
+
+    pub fn push_measure_memory(&mut self, mem: MeasureMemory) {
+        if let Some(last) = self.history.last_mut() {
+            last.rss_kb = mem.rss_kb;
+            last.java_max_heap_kb = mem.java_max_heap_kb;
+            last.java_total_heap_kb = mem.java_total_heap_kb;
+            last.java_free_heap_kb = mem.java_free_heap_kb;
+            last.total_pss_kb = mem.total_pss_kb;
+            last.native_total_heap_kb = mem.native_total_heap_kb;
+            last.native_free_heap_kb = mem.native_free_heap_kb;
+        }
+    }
 }
 
 pub fn visibility_mask(vis: &[bool; 8]) -> u8 {
@@ -90,6 +140,7 @@ pub fn spawn_poller(
     serial: String,
     package: String,
     visibility: Arc<AtomicU8>,
+    has_measure_sdk: bool,
 ) -> mpsc::Receiver<MonitorSample> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -106,12 +157,13 @@ pub fn spawn_poller(
                 continue;
             }
             let mut sample = MonitorSample::default();
+            let poll_system = !has_measure_sdk && mask & POLL_SYSTEM != 0;
             let poll_disk = mask & POLL_DISK != 0 && tick.is_multiple_of(5);
 
             std::thread::scope(|s| {
-                let mem = (mask & POLL_SYSTEM != 0)
+                let mem = poll_system
                     .then(|| s.spawn(|| adb.get_meminfo(&serial, &package)));
-                let cpu = (mask & POLL_SYSTEM != 0)
+                let cpu = poll_system
                     .then(|| s.spawn(|| adb.get_cpu_usage(&serial, &package)));
                 let disk = poll_disk
                     .then(|| s.spawn(|| adb.get_disk_usage(&serial, &package)));
@@ -132,6 +184,12 @@ pub fn spawn_poller(
             sample.cache_kb = last_cache_kb;
             sample.debuggable = debuggable;
 
+            if has_measure_sdk && !poll_disk {
+                std::thread::sleep(interval);
+                tick += 1;
+                continue;
+            }
+
             if tx.send(sample).is_err() {
                 return;
             }
@@ -140,6 +198,48 @@ pub fn spawn_poller(
         }
     });
     rx
+}
+
+// Measure SDK logcat parsing
+
+use crate::logcat;
+
+fn extract_field<'a>(data: &'a str, key: &str) -> Option<&'a str> {
+    let start = data.find(key)? + key.len();
+    let end = data[start..].find(|c: char| c == ',' || c == ')').map(|i| start + i).unwrap_or(data.len());
+    Some(data[start..end].trim())
+}
+
+pub fn parse_cpu_usage(line: &str) -> Option<(f32, u8)> {
+    let parsed = logcat::parse(line)?;
+    if parsed.tag != "Measure" {
+        return None;
+    }
+    let marker = "EventProcessor: CPU_USAGE, CpuUsageData(";
+    let start = parsed.message.find(marker)? + marker.len();
+    let data = &parsed.message[start..];
+    let percent: f32 = extract_field(data, "percentage_usage=")?.parse().ok()?;
+    let cores: u8 = extract_field(data, "num_cores=")?.parse().ok()?;
+    Some((percent, cores))
+}
+
+pub fn parse_memory_usage(line: &str) -> Option<MeasureMemory> {
+    let parsed = logcat::parse(line)?;
+    if parsed.tag != "Measure" {
+        return None;
+    }
+    let marker = "EventProcessor: MEMORY_USAGE, MemoryUsageData(";
+    let start = parsed.message.find(marker)? + marker.len();
+    let data = &parsed.message[start..];
+    Some(MeasureMemory {
+        java_max_heap_kb: extract_field(data, "java_max_heap=")?.parse().ok()?,
+        java_total_heap_kb: extract_field(data, "java_total_heap=")?.parse().ok()?,
+        java_free_heap_kb: extract_field(data, "java_free_heap=")?.parse().ok()?,
+        total_pss_kb: extract_field(data, "total_pss=")?.parse().ok()?,
+        rss_kb: extract_field(data, "rss=")?.parse().ok()?,
+        native_total_heap_kb: extract_field(data, "native_total_heap=")?.parse().ok()?,
+        native_free_heap_kb: extract_field(data, "native_free_heap=")?.parse().ok()?,
+    })
 }
 
 #[cfg(test)]
@@ -218,4 +318,100 @@ mod tests {
         assert!(!state.debuggable);
     }
 
+    #[test]
+    fn parse_cpu_usage_line() {
+        let line = "04-15 14:58:27.336 10329 10364 D Measure : EventProcessor: CPU_USAGE, CpuUsageData(num_cores=8, clock_speed=100, start_time=8267336, uptime=83137214, utime=3437, cutime=0, cstime=0, stime=653, interval=5002, percentage_usage=6.1)";
+        let (percent, cores) = parse_cpu_usage(line).unwrap();
+        assert!((percent - 6.1).abs() < 0.01);
+        assert_eq!(cores, 8);
+    }
+
+    #[test]
+    fn parse_memory_usage_line() {
+        let line = "04-15 14:58:27.576 10329 10364 D Measure : EventProcessor: MEMORY_USAGE, MemoryUsageData(java_max_heap=262144, java_total_heap=32533, java_free_heap=13860, total_pss=151528, rss=252144, native_total_heap=25084, native_free_heap=3949, interval=5065)";
+        let mem = parse_memory_usage(line).unwrap();
+        assert_eq!(mem.java_max_heap_kb, 262144);
+        assert_eq!(mem.java_total_heap_kb, 32533);
+        assert_eq!(mem.java_free_heap_kb, 13860);
+        assert_eq!(mem.total_pss_kb, 151528);
+        assert_eq!(mem.rss_kb, 252144);
+        assert_eq!(mem.native_total_heap_kb, 25084);
+        assert_eq!(mem.native_free_heap_kb, 3949);
+    }
+
+    #[test]
+    fn parse_non_measure_cpu_line() {
+        let line = "04-15 14:58:27.336 10329 10364 D OkHttp  : something";
+        assert!(parse_cpu_usage(line).is_none());
+    }
+
+    #[test]
+    fn push_measure_memory_updates_last() {
+        let mut state = MonitorState::new();
+        state.push(sample(100));
+        state.push_measure_memory(MeasureMemory {
+            java_max_heap_kb: 262144,
+            java_total_heap_kb: 32533,
+            java_free_heap_kb: 13860,
+            total_pss_kb: 151528,
+            rss_kb: 252144,
+            native_total_heap_kb: 25084,
+            native_free_heap_kb: 3949,
+        });
+        let last = state.history.last().unwrap();
+        assert_eq!(last.rss_kb, 252144);
+        assert_eq!(last.java_max_heap_kb, 262144);
+    }
+
+    #[test]
+    fn push_measure_cpu_creates_new_sample() {
+        let mut state = MonitorState::new();
+        state.push(sample(100));
+        assert_eq!(state.history.len(), 1);
+        state.push_measure_cpu(6.1, 8);
+        assert_eq!(state.history.len(), 2);
+        let last = state.history.last().unwrap();
+        assert!((last.cpu_percent - 6.1).abs() < 0.01);
+        assert_eq!(last.num_cores, 8);
+    }
+
+    #[test]
+    fn push_measure_cpu_carries_forward_memory() {
+        let mut state = MonitorState::new();
+        state.push(sample(100));
+        state.push_measure_memory(MeasureMemory {
+            java_max_heap_kb: 262144,
+            java_total_heap_kb: 32533,
+            java_free_heap_kb: 13860,
+            total_pss_kb: 151528,
+            rss_kb: 252144,
+            native_total_heap_kb: 25084,
+            native_free_heap_kb: 3949,
+        });
+        state.push_measure_cpu(3.0, 8);
+        let last = state.history.last().unwrap();
+        assert_eq!(last.java_max_heap_kb, 262144);
+        assert_eq!(last.rss_kb, 252144);
+        assert!((last.cpu_percent - 3.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn push_measure_cpu_stamps_disk_from_state() {
+        let mut state = MonitorState::new();
+        state.push(sample(100));
+        state.update_disk(500, 100);
+        state.push_measure_cpu(5.0, 4);
+        let last = state.history.last().unwrap();
+        assert_eq!(last.data_kb, 500);
+        assert_eq!(last.cache_kb, 100);
+    }
+
+    #[test]
+    fn update_disk_sets_state_fields() {
+        let mut state = MonitorState::new();
+        assert_eq!(state.disk_kb, 0);
+        state.update_disk(1024, 256);
+        assert_eq!(state.disk_kb, 1024);
+        assert_eq!(state.cache_kb, 256);
+    }
 }

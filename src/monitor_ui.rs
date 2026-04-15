@@ -157,6 +157,36 @@ fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     ListItem::new(Line::from(spans))
 }
 
+fn usage_bar_item(
+    label: &str,
+    used_kb: u64,
+    total_kb: u64,
+    bar_width: usize,
+) -> ListItem<'static> {
+    let t = theme::current();
+    let filled = if total_kb > 0 {
+        ((used_kb as f64 / total_kb as f64) * bar_width as f64).round() as usize
+    } else {
+        0
+    };
+    let filled = filled.min(bar_width);
+    let empty = bar_width - filled;
+
+    let bar_color = if total_kb > 0 && used_kb * 100 / total_kb >= 85 {
+        t.danger
+    } else {
+        t.sparkline
+    };
+
+    let spans = vec![
+        Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
+        Span::styled("█".repeat(filled), Style::new().fg(bar_color)),
+        Span::styled("░".repeat(empty), Style::new().fg(t.surface)),
+        Span::styled(format!("  {}/{}", format_mb(used_kb), format_mb(total_kb)), Style::new().fg(t.fg)),
+    ];
+    ListItem::new(Line::from(spans))
+}
+
 fn render_monitor(
     frame: &mut Frame,
     area: Rect,
@@ -187,16 +217,31 @@ fn render_monitor(
     frame.render_widget(List::new(items_fn(spark_width, state)), inner);
 }
 
-pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
+pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState, measure_sdk: bool) {
     render_monitor(frame, area, panel::MONITOR, focused, state, |sw, st| {
         let cpu = st.sparkline_f32(|m| m.cpu_percent);
-        let rss = st.sparkline_u64(|m| m.rss_kb);
-        let data = st.sparkline_u64(|m| m.data_kb);
-        vec![
-            cpu_item(&cpu, sw),
-            mem_item("RSS", &rss, st.trend_u64(|m| m.rss_kb), sw),
-            disk_item("Data", &data, st.trend_u64(|m| m.data_kb), sw),
-        ]
+
+        if measure_sdk {
+            let rss = st.sparkline_u64(|m| m.rss_kb);
+            let last = st.history.last().unwrap();
+            let java_used = last.java_total_heap_kb.saturating_sub(last.java_free_heap_kb);
+            let native_used = last.native_total_heap_kb.saturating_sub(last.native_free_heap_kb);
+            vec![
+                cpu_item(&cpu, sw),
+                mem_item("Mem", &rss, st.trend_u64(|m| m.rss_kb), sw),
+                usage_bar_item("Java", java_used, last.java_max_heap_kb, sw),
+                usage_bar_item("Native", native_used, last.native_total_heap_kb, sw),
+                disk_item("Disk", &st.sparkline_u64(|m| m.data_kb), st.trend_u64(|m| m.data_kb), sw),
+            ]
+        } else {
+            let rss = st.sparkline_u64(|m| m.rss_kb);
+            let data = st.sparkline_u64(|m| m.data_kb);
+            vec![
+                cpu_item(&cpu, sw),
+                mem_item("RSS", &rss, st.trend_u64(|m| m.rss_kb), sw),
+                disk_item("Disk", &data, st.trend_u64(|m| m.data_kb), sw),
+            ]
+        }
     });
 }
 

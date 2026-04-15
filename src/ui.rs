@@ -733,7 +733,7 @@ fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, monitor_
 
     for (i, &p) in panels.iter().enumerate() {
         match p {
-            panel::MONITOR => monitor_ui::render_monitor_panel(frame, cols[i], false, app.monitor_state()),
+            panel::MONITOR => monitor_ui::render_monitor_panel(frame, cols[i], false, app.monitor_state(), app.measure_sdk_detected()),
             panel::NETWORK => {
                 let focused = is_focused(app, panel::NETWORK);
                 let detected = app.measure_sdk_detected();
