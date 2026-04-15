@@ -173,16 +173,11 @@ impl DataSources {
 
         if let Some(handle) = &self.logcat_handle {
             let prev_len = self.logcat_lines.len();
-            let prev_network_len = app.network_state().entries.len();
             while let Ok(line) = handle.rx().try_recv() {
                 if let Some(entry) = network::parse_http_data(&line) {
                     app.network_state_mut().push(entry);
                 }
                 self.logcat_lines.push(line);
-            }
-            let new_network_count = app.network_state().entries.len() - prev_network_len;
-            if new_network_count > 0 {
-                app.network_state_mut().adjust_scroll_for_new_lines(new_network_count);
             }
             let new_count = self.logcat_lines.len() - prev_len;
             if new_count > 0 {

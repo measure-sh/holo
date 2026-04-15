@@ -36,7 +36,7 @@ pub enum Action {
     ToggleAirplaneMode,
     TogglePermission(String, bool),
     OpenLogcat,
-    OpenNetwork,
+    ZoomIn,
     RefreshFiles,
     ExpandDir(String),
     OpenFile(String),
@@ -333,12 +333,20 @@ impl App {
 
     fn dispatch_panel_key(&mut self, result: Option<Action>) -> Option<Action> {
         let action = result?;
-        if matches!(action, Action::Unfocus) {
-            self.restore_zoom();
-            self.focused = None;
-            return Some(Action::Noop);
+        match action {
+            Action::Unfocus => {
+                self.restore_zoom();
+                self.focused = None;
+                Some(Action::Noop)
+            }
+            Action::ZoomIn => {
+                if !self.is_zoomed() {
+                    self.toggle_zoom();
+                }
+                Some(Action::Noop)
+            }
+            other => Some(other),
         }
-        Some(action)
     }
 
     fn is_panel_visible(&self, n: u8) -> bool {
@@ -459,10 +467,6 @@ impl App {
 
     pub fn issues_state_mut(&mut self) -> &mut IssuesState {
         &mut self.issues_state
-    }
-
-    pub fn network_state(&self) -> &NetworkState {
-        &self.network_state
     }
 
     pub fn network_state_mut(&mut self) -> &mut NetworkState {

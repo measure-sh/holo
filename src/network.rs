@@ -5,31 +5,37 @@ use crate::logcat;
 
 const MAX_ENTRIES: usize = 500;
 
-#[allow(dead_code)]
 pub struct NetworkEntry {
     pub url: String,
     pub method: String,
     pub status_code: u16,
     pub latency_ms: u64,
     pub failure_reason: Option<String>,
+    pub failure_description: Option<String>,
     pub client: String,
     pub timestamp: String,
+    pub request_headers: String,
+    pub response_headers: String,
+    pub request_body: String,
+    pub response_body: String,
 }
 
 pub struct NetworkState {
     pub entries: Vec<NetworkEntry>,
-    pub scroll: usize,
+    pub selected: usize,
     pub wrap: bool,
     pub failure_count: usize,
+    pub detail_open: bool,
 }
 
 impl NetworkState {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
-            scroll: 0,
+            selected: 0,
             wrap: false,
             failure_count: 0,
+            detail_open: false,
         }
     }
 
@@ -38,6 +44,7 @@ impl NetworkState {
     }
 
     pub fn push(&mut self, entry: NetworkEntry) {
+        let at_last = self.entries.is_empty() || self.selected == self.entries.len() - 1;
         if Self::is_failure(&entry) {
             self.failure_count += 1;
         }
@@ -50,31 +57,65 @@ impl NetworkState {
                 }
             }
         }
+        if at_last {
+            self.selected = self.entries.len() - 1;
+        } else if !self.entries.is_empty() {
+            self.selected = self.selected.min(self.entries.len() - 1);
+        }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        if self.detail_open {
+            return match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.selected = self.selected.saturating_sub(1);
+                    Some(Action::Noop)
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if !self.entries.is_empty() {
+                        self.selected = (self.selected + 1).min(self.entries.len() - 1);
+                    }
+                    Some(Action::Noop)
+                }
+                KeyCode::Char('o') => {
+                    self.entries.get(self.selected).map(|entry| {
+                        Action::OpenInEditor(Self::format_detail(entry))
+                    })
+                }
+                KeyCode::Esc => {
+                    self.detail_open = false;
+                    Some(Action::Unfocus)
+                }
+                _ => Some(Action::Noop),
+            };
+        }
+
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                self.scroll += 1;
+                self.selected = self.selected.saturating_sub(1);
                 Some(Action::Noop)
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.scroll = self.scroll.saturating_sub(1);
+                if !self.entries.is_empty() {
+                    self.selected = (self.selected + 1).min(self.entries.len() - 1);
+                }
                 Some(Action::Noop)
             }
-            KeyCode::Char(' ') => {
-                self.scroll += 20;
-                Some(Action::Noop)
+            KeyCode::Enter => {
+                if self.entries.get(self.selected).is_some() {
+                    self.detail_open = true;
+                    Some(Action::ZoomIn)
+                } else {
+                    Some(Action::Noop)
+                }
             }
             KeyCode::Char('o') => {
-                Some(Action::OpenNetwork)
+                self.entries.get(self.selected).map(|entry| {
+                    Action::OpenInEditor(Self::format_detail(entry))
+                })
             }
             KeyCode::Char('w') => {
                 self.wrap = !self.wrap;
-                Some(Action::Noop)
-            }
-            KeyCode::Esc if self.scroll > 0 => {
-                self.scroll = 0;
                 Some(Action::Noop)
             }
             KeyCode::Esc => Some(Action::Unfocus),
@@ -82,15 +123,32 @@ impl NetworkState {
         }
     }
 
-    pub fn clamp_scroll(&mut self, total: usize, visible_height: usize) {
-        let max = total.saturating_sub(visible_height);
-        self.scroll = self.scroll.min(max);
-    }
-
-    pub fn adjust_scroll_for_new_lines(&mut self, count: usize) {
-        if self.scroll > 0 {
-            self.scroll += count;
+    fn format_detail(entry: &NetworkEntry) -> String {
+        let req_headers = format_headers_text(&entry.request_headers);
+        let resp_headers = format_headers_text(&entry.response_headers);
+        let req_body = format_body_text(&entry.request_body);
+        let resp_body = format_body_text(&entry.response_body);
+        let mut text = format!(
+            "{method} {url}\nStatus: {status} | Latency: {latency} | Client: {client}",
+            method = entry.method.to_uppercase(),
+            url = entry.url,
+            status = entry.status_code,
+            latency = crate::network_ui::format_latency(entry.latency_ms),
+            client = entry.client,
+        );
+        if let Some(reason) = &entry.failure_reason {
+            text.push_str(&format!("\nFailure: {reason}"));
         }
+        if let Some(desc) = &entry.failure_description {
+            text.push_str(&format!("\nDescription: {desc}"));
+        }
+        text.push_str(&format!(
+            "\n\n--- Request Headers ---\n{req_headers}\n\n\
+             --- Response Headers ---\n{resp_headers}\n\n\
+             --- Request Body ---\n{req_body}\n\n\
+             --- Response Body ---\n{resp_body}",
+        ));
+        text
     }
 }
 
@@ -110,6 +168,71 @@ const FIELD_KEYS: &[&str] = &[
     "response_body=",
     "client=",
 ];
+
+fn is_empty_value(value: &str) -> bool {
+    value.is_empty() || value == "null" || value == "{}"
+}
+
+/// Split header pairs on `, ` but only when the next segment contains `=`,
+/// so values like `Wed, 15 Apr 2026 09:22:25 GMT` stay intact.
+fn split_header_pairs(input: &str) -> Vec<&str> {
+    let mut pairs = Vec::new();
+    let mut start = 0;
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if i + 2 <= len && &input[i..i + 2] == ", " {
+            let rest = &input[i + 2..];
+            if rest.contains('=') && rest.find('=') < rest.find(", ") {
+                pairs.push(input[start..i].trim());
+                start = i + 2;
+            }
+        }
+        i += 1;
+    }
+    let last = input[start..].trim();
+    if !last.is_empty() {
+        pairs.push(last);
+    }
+    pairs
+}
+
+/// Format headers from `{key=val, key=val}` into `key: val` lines for editor export.
+fn format_headers_text(raw: &str) -> String {
+    if is_empty_value(raw) {
+        return "(empty)".to_string();
+    }
+    let inner = raw.trim().strip_prefix('{').unwrap_or(raw);
+    let inner = inner.strip_suffix('}').unwrap_or(inner).trim();
+    if inner.is_empty() {
+        return "(empty)".to_string();
+    }
+    split_header_pairs(inner)
+        .iter()
+        .map(|pair| {
+            if let Some((k, v)) = pair.split_once('=') {
+                format!("{k}: {v}")
+            } else {
+                pair.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Pretty-print JSON body, or return raw text.
+fn format_body_text(raw: &str) -> String {
+    if is_empty_value(raw) {
+        return "(empty)".to_string();
+    }
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) {
+        if let Ok(pretty) = serde_json::to_string_pretty(&json) {
+            return pretty;
+        }
+    }
+    raw.to_string()
+}
 
 fn find_field_value<'a>(data: &'a str, key: &str, next_key: Option<&str>) -> Option<&'a str> {
     let start = data.find(key)? + key.len();
@@ -149,11 +272,11 @@ pub fn parse_http_data(line: &str) -> Option<NetworkEntry> {
     let start_time_str = find_field_value(data, FIELD_KEYS[3], Some(FIELD_KEYS[4]))?;
     let end_time_str = find_field_value(data, FIELD_KEYS[4], Some(FIELD_KEYS[5]))?;
     let failure_reason_str = find_field_value(data, FIELD_KEYS[5], Some(FIELD_KEYS[6]))?;
-    let _failure_desc = find_field_value(data, FIELD_KEYS[6], Some(FIELD_KEYS[7]))?;
-    let _req_headers = find_field_value(data, FIELD_KEYS[7], Some(FIELD_KEYS[8]))?;
-    let _resp_headers = find_field_value(data, FIELD_KEYS[8], Some(FIELD_KEYS[9]))?;
-    let _req_body = find_field_value(data, FIELD_KEYS[9], Some(FIELD_KEYS[10]))?;
-    let _resp_body = find_field_value(data, FIELD_KEYS[10], Some(FIELD_KEYS[11]))?;
+    let failure_desc_str = find_field_value(data, FIELD_KEYS[6], Some(FIELD_KEYS[7]))?;
+    let request_headers = find_field_value(data, FIELD_KEYS[7], Some(FIELD_KEYS[8]))?.to_string();
+    let response_headers = find_field_value(data, FIELD_KEYS[8], Some(FIELD_KEYS[9]))?.to_string();
+    let request_body = find_field_value(data, FIELD_KEYS[9], Some(FIELD_KEYS[10]))?.to_string();
+    let response_body = find_field_value(data, FIELD_KEYS[10], Some(FIELD_KEYS[11]))?.to_string();
     let client = find_field_value(data, FIELD_KEYS[11], None)?.to_string();
 
     let status_code: u16 = status_str.parse().unwrap_or(0);
@@ -167,8 +290,13 @@ pub fn parse_http_data(line: &str) -> Option<NetworkEntry> {
         status_code,
         latency_ms,
         failure_reason: parse_optional(failure_reason_str),
+        failure_description: parse_optional(failure_desc_str),
         client,
         timestamp: parsed.timestamp.to_string(),
+        request_headers,
+        response_headers,
+        request_body,
+        response_body,
     })
 }
 
@@ -189,6 +317,10 @@ mod tests {
         assert!(entry.failure_reason.is_none());
         assert_eq!(entry.client, "okhttp");
         assert_eq!(entry.timestamp, "09:17:37.261");
+        assert_eq!(entry.request_headers, "{}");
+        assert_eq!(entry.response_headers, "{}");
+        assert_eq!(entry.request_body, "null");
+        assert_eq!(entry.response_body, "null");
     }
 
     #[test]
@@ -218,65 +350,88 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_navigation() {
+    fn cursor_navigation() {
         let mut state = NetworkState::new();
         state.push(make_entry(200, 100));
         state.push(make_entry(200, 200));
-
-        assert_eq!(state.scroll, 0);
+        state.push(make_entry(200, 300));
+        // auto-follow puts cursor at last
+        assert_eq!(state.selected, 2);
         state.handle_key(key(KeyCode::Char('k')));
-        assert_eq!(state.scroll, 1);
+        assert_eq!(state.selected, 1);
         state.handle_key(key(KeyCode::Char('k')));
-        assert_eq!(state.scroll, 2);
+        assert_eq!(state.selected, 0);
+        state.handle_key(key(KeyCode::Char('k')));
+        assert_eq!(state.selected, 0); // clamped
         state.handle_key(key(KeyCode::Char('j')));
-        assert_eq!(state.scroll, 1);
+        assert_eq!(state.selected, 1);
     }
 
     #[test]
-    fn handle_key_space_scrolls_page() {
+    fn cursor_clamps_at_end() {
         let mut state = NetworkState::new();
-        state.handle_key(key(KeyCode::Char(' ')));
-        assert_eq!(state.scroll, 20);
+        state.push(make_entry(200, 100));
+        state.push(make_entry(200, 200));
+        assert_eq!(state.selected, 1);
+        state.handle_key(key(KeyCode::Char('j')));
+        assert_eq!(state.selected, 1); // can't go past end
     }
 
     #[test]
-    fn handle_key_esc_returns_to_bottom_first() {
+    fn enter_opens_detail_and_zooms() {
         let mut state = NetworkState::new();
-        state.scroll = 5;
-        let action = state.handle_key(key(KeyCode::Esc));
+        state.push(make_entry(200, 100));
+        let action = state.handle_key(key(KeyCode::Enter));
+        assert!(state.detail_open);
+        assert!(matches!(action, Some(Action::ZoomIn)));
+    }
+
+    #[test]
+    fn enter_noop_on_empty() {
+        let mut state = NetworkState::new();
+        let action = state.handle_key(key(KeyCode::Enter));
+        assert!(!state.detail_open);
         assert!(matches!(action, Some(Action::Noop)));
-        assert_eq!(state.scroll, 0);
     }
 
     #[test]
-    fn handle_key_esc_unfocuses_at_bottom() {
+    fn esc_in_detail_closes_and_unfocuses() {
+        let mut state = NetworkState::new();
+        state.push(make_entry(200, 100));
+        state.detail_open = true;
+        let action = state.handle_key(key(KeyCode::Esc));
+        assert!(!state.detail_open);
+        assert!(matches!(action, Some(Action::Unfocus)));
+    }
+
+    #[test]
+    fn esc_in_list_unfocuses() {
         let mut state = NetworkState::new();
         let action = state.handle_key(key(KeyCode::Esc));
         assert!(matches!(action, Some(Action::Unfocus)));
     }
 
     #[test]
-    fn clamp_scroll_limits_to_max() {
+    fn auto_follow_when_at_last() {
         let mut state = NetworkState::new();
-        state.scroll = 100;
-        state.clamp_scroll(50, 20);
-        assert_eq!(state.scroll, 30);
+        state.push(make_entry(200, 100));
+        assert_eq!(state.selected, 0);
+        state.push(make_entry(200, 200));
+        assert_eq!(state.selected, 1); // followed
+        state.push(make_entry(200, 300));
+        assert_eq!(state.selected, 2); // followed
     }
 
     #[test]
-    fn adjust_scroll_increments_when_scrolled() {
+    fn no_follow_when_scrolled_up() {
         let mut state = NetworkState::new();
-        state.scroll = 5;
-        state.adjust_scroll_for_new_lines(3);
-        assert_eq!(state.scroll, 8);
-    }
-
-    #[test]
-    fn adjust_scroll_noop_when_at_bottom() {
-        let mut state = NetworkState::new();
-        state.scroll = 0;
-        state.adjust_scroll_for_new_lines(3);
-        assert_eq!(state.scroll, 0);
+        state.push(make_entry(200, 100));
+        state.push(make_entry(200, 200));
+        assert_eq!(state.selected, 1);
+        state.handle_key(key(KeyCode::Char('k'))); // move up
+        assert_eq!(state.selected, 0);
+        state.push(make_entry(200, 300));
+        assert_eq!(state.selected, 0); // stayed put
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -290,8 +445,13 @@ mod tests {
             status_code: status,
             latency_ms: latency,
             failure_reason: None,
+            failure_description: None,
             client: "okhttp".into(),
             timestamp: "09:17:37.261".into(),
+            request_headers: String::new(),
+            response_headers: String::new(),
+            request_body: String::new(),
+            response_body: String::new(),
         }
     }
 }
