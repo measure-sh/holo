@@ -228,9 +228,12 @@ pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state:
             let native_used = last.native_total_heap_kb.saturating_sub(last.native_free_heap_kb);
             vec![
                 cpu_item(&cpu, sw),
+                ListItem::new(Line::raw("")),
                 mem_item("Mem", &rss, st.trend_u64(|m| m.rss_kb), sw),
+                ListItem::new(Line::raw("")),
                 usage_bar_item("Java", java_used, last.java_max_heap_kb, sw),
                 usage_bar_item("Native", native_used, last.native_total_heap_kb, sw),
+                ListItem::new(Line::raw("")),
                 disk_item("Disk", &st.sparkline_u64(|m| m.data_kb), st.trend_u64(|m| m.data_kb), sw),
             ]
         } else {
@@ -238,7 +241,9 @@ pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state:
             let data = st.sparkline_u64(|m| m.data_kb);
             vec![
                 cpu_item(&cpu, sw),
+                ListItem::new(Line::raw("")),
                 mem_item("RSS", &rss, st.trend_u64(|m| m.rss_kb), sw),
+                ListItem::new(Line::raw("")),
                 disk_item("Disk", &data, st.trend_u64(|m| m.data_kb), sw),
             ]
         }
