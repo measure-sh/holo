@@ -182,7 +182,8 @@ fn render_monitor(
         return;
     }
 
-    let spark_width = (inner.width as usize).saturating_sub(35).max(5);
+    // label(13) + value(10) + arrow(2) + range(~20) + padding(2) = ~47
+    let spark_width = (inner.width as usize).saturating_sub(47).max(5);
     frame.render_widget(List::new(items_fn(spark_width, state)), inner);
 }
 
