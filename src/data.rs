@@ -70,7 +70,7 @@ pub struct DataSources {
 }
 
 impl DataSources {
-    pub fn new(adb: Arc<dyn Adb>, serial: &str, package: &str, panel_vis: &[bool; 9]) -> Self {
+    pub fn new(adb: Arc<dyn Adb>, serial: &str, package: &str, panel_vis: &[bool; 8]) -> Self {
         let initial_layout_bounds = adb.get_layout_bounds(serial).unwrap_or(false);
         let initial_airplane_mode = adb.get_airplane_mode(serial).unwrap_or(false);
         let initial_wifi_enabled = adb.get_wifi_enabled(serial).unwrap_or(false);
@@ -143,7 +143,7 @@ impl DataSources {
         }
     }
 
-    pub fn update_monitor_visibility(&self, vis: &[bool; 9]) {
+    pub fn update_monitor_visibility(&self, vis: &[bool; 8]) {
         self.monitor_visibility.store(monitor::visibility_mask(vis), Ordering::Relaxed);
     }
 

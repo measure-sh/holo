@@ -56,7 +56,7 @@ pub enum Action {
 }
 
 pub struct App {
-    panel_visible: [bool; 9],
+    panel_visible: [bool; 8],
     focused: Option<u8>,
     commands: CommandsState,
     logcat_state: LogcatState,
@@ -82,7 +82,7 @@ pub struct App {
     network_state: NetworkState,
     measure_sdk_detected: bool,
     pub dialog: Option<String>,
-    saved_visibility: Option<([bool; 9], bool)>,
+    saved_visibility: Option<([bool; 8], bool)>,
     status_flash: Option<(String, std::time::Instant, bool)>,
 }
 
@@ -92,7 +92,7 @@ impl App {
         let mut toolbar = ToolbarState::new(device);
         toolbar.package = package.map(String::from);
         Self {
-            panel_visible: [true; 9],
+            panel_visible: [true; 8],
             focused: None,
             commands: CommandsState::new(),
             logcat_state: LogcatState::new(),
@@ -288,7 +288,7 @@ impl App {
                 }
                 Action::Noop
             }
-            KeyCode::Char(c @ '1'..='9') => {
+            KeyCode::Char(c @ '1'..='8') => {
                 self.saved_visibility = None;
                 self.toggle_visibility(c as u8 - b'0');
                 Action::Noop
@@ -345,14 +345,14 @@ impl App {
         if n == panel::COMMANDS {
             return self.commands.visible;
         }
-        if !(1..=9).contains(&n) {
+        if !(1..=8).contains(&n) {
             return false;
         }
         self.panel_visible[(n - 1) as usize]
     }
 
     fn toggle_visibility(&mut self, n: u8) {
-        if !(1..=9).contains(&n) {
+        if !(1..=8).contains(&n) {
             return;
         }
         let idx = (n - 1) as usize;
@@ -372,10 +372,10 @@ impl App {
         } else if let Some(focused) = self.focused {
             self.saved_visibility = Some((self.panel_visible, self.commands.visible));
             if focused == panel::COMMANDS {
-                self.panel_visible = [false; 9];
+                self.panel_visible = [false; 8];
                 self.commands.visible = true;
             } else {
-                self.panel_visible = [false; 9];
+                self.panel_visible = [false; 8];
                 self.commands.visible = false;
                 let idx = (focused - 1) as usize;
                 self.panel_visible[idx] = true;
@@ -408,7 +408,7 @@ impl App {
         self.commands.cursor = 0;
     }
 
-    pub fn panel_visibility(&self) -> &[bool; 9] {
+    pub fn panel_visibility(&self) -> &[bool; 8] {
         &self.panel_visible
     }
 
@@ -639,7 +639,7 @@ mod tests {
     #[test]
     fn new_app_all_panels_visible() {
         let app = App::new(None, Some("com.test"));
-        assert_eq!(app.panel_visibility(), &[true; 9]);
+        assert_eq!(app.panel_visibility(), &[true; 8]);
     }
 
     #[test]
@@ -654,7 +654,7 @@ mod tests {
         app.toggle_visibility(3);
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true, true, true, true]
+            &[true, true, false, true, true, true, true, true]
         );
     }
 
@@ -663,24 +663,24 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.toggle_visibility(3);
         app.toggle_visibility(3);
-        assert_eq!(app.panel_visibility(), &[true; 9]);
+        assert_eq!(app.panel_visibility(), &[true; 8]);
     }
 
     #[test]
     fn cannot_hide_last_panel() {
         let mut app = App::new(None, Some("com.test"));
         app.commands.visible = false;
-        for n in 2..=9 {
+        for n in 2..=8 {
             app.toggle_visibility(n);
         }
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false, false, false, false]
+            &[true, false, false, false, false, false, false, false]
         );
         app.toggle_visibility(1);
         assert_eq!(
             app.panel_visibility(),
-            &[true, false, false, false, false, false, false, false, false]
+            &[true, false, false, false, false, false, false, false]
         );
     }
 
@@ -690,7 +690,7 @@ mod tests {
         app.toggle_visibility(0);
         app.toggle_visibility(10);
         app.toggle_visibility(11);
-        assert_eq!(app.panel_visibility(), &[true; 9]);
+        assert_eq!(app.panel_visibility(), &[true; 8]);
     }
 
     #[test]
@@ -719,7 +719,7 @@ mod tests {
         ));
         assert_eq!(
             app.panel_visibility(),
-            &[true, true, false, true, true, true, true, true, true]
+            &[true, true, false, true, true, true, true, true]
         );
     }
 
@@ -730,7 +730,7 @@ mod tests {
             app.handle_key(key(KeyCode::Tab)),
             Action::Noop
         ));
-        assert_eq!(app.panel_visibility(), &[true; 9]);
+        assert_eq!(app.panel_visibility(), &[true; 8]);
     }
 
     #[test]
@@ -1365,7 +1365,7 @@ mod tests {
 
         app.handle_key(key(KeyCode::Char('z')));
         assert!(app.is_zoomed());
-        assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false, false, false, false]);
+        assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false, false, false]);
         assert!(!app.commands().visible);
 
         app.handle_key(key(KeyCode::Char('z')));
@@ -1382,12 +1382,12 @@ mod tests {
 
         app.handle_key(key(KeyCode::Char('z')));
         assert!(app.is_zoomed());
-        assert_eq!(app.panel_visibility(), &[false; 9]);
+        assert_eq!(app.panel_visibility(), &[false; 8]);
         assert!(app.commands().visible);
 
         app.handle_key(key(KeyCode::Char('z')));
         assert!(!app.is_zoomed());
-        assert_eq!(app.panel_visibility(), &[true; 9]);
+        assert_eq!(app.panel_visibility(), &[true; 8]);
     }
 
     #[test]

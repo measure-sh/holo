@@ -21,8 +21,8 @@ use crate::permissions_ui;
 use crate::theme;
 
 
-pub const SUPERSCRIPT_DIGITS: [char; 9] = [
-    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}', '\u{2079}',
+pub const SUPERSCRIPT_DIGITS: [char; 8] = [
+    '\u{00B9}', '\u{00B2}', '\u{00B3}', '\u{2074}', '\u{2075}', '\u{2076}', '\u{2077}', '\u{2078}',
 ];
 
 pub fn panel_title(panel_number: u8, _focused: bool) -> Line<'static> {
@@ -555,23 +555,22 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let vis = app.panel_visibility();
     let commands_visible = app.commands().visible;
     let logcat_visible = vis[0];
-    let disk_visible = vis[1];
-    let system_visible = vis[2];
-    let network_visible = vis[3];
-    let monitor_visible = disk_visible || system_visible || network_visible;
-    let trace_visible = vis[4];
-    let issues_visible = vis[5];
-    let permissions_visible = vis[6];
-    let mid_visible = trace_visible || issues_visible || permissions_visible;
-    let bot_visible = vis[7] || vis[8];
+    let monitor_visible = vis[1];
+    let network_visible = vis[2];
+    let trace_visible = vis[3];
+    let monitor_section_visible = monitor_visible || network_visible || trace_visible;
+    let issues_visible = vis[4];
+    let permissions_visible = vis[5];
+    let mid_visible = issues_visible || permissions_visible;
+    let bot_visible = vis[6] || vis[7];
 
     let top_visible = commands_visible || logcat_visible;
-    let section_count = top_visible as u8 + monitor_visible as u8 + mid_visible as u8 + bot_visible as u8;
+    let section_count = top_visible as u8 + monitor_section_visible as u8 + mid_visible as u8 + bot_visible as u8;
     if section_count == 0 { return; }
 
     let mut weights: Vec<u32> = Vec::new();
     if top_visible { weights.push(45); }
-    if monitor_visible { weights.push(20); }
+    if monitor_section_visible { weights.push(20); }
     if mid_visible { weights.push(15); }
     if bot_visible { weights.push(20); }
     let total: u32 = weights.iter().sum();
@@ -590,12 +589,12 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         render_top_section(frame, rows[idx], app, logcat_lines, commands_visible, logcat_visible);
         idx += 1;
     }
-    if monitor_visible {
-        render_monitor_section(frame, rows[idx], app, disk_visible, system_visible, network_visible);
+    if monitor_section_visible {
+        render_monitor_section(frame, rows[idx], app, monitor_visible, network_visible, trace_visible);
         idx += 1;
     }
     if mid_visible {
-        render_mid_section(frame, rows[idx], app, trace_visible, issues_visible, permissions_visible);
+        render_mid_section(frame, rows[idx], app, issues_visible, permissions_visible);
         idx += 1;
     }
     if bot_visible {
@@ -619,9 +618,8 @@ fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines
     }
 }
 
-fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visible: bool, issues_visible: bool, permissions_visible: bool) {
+fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, issues_visible: bool, permissions_visible: bool) {
     let panels: Vec<u8> = [
-        (trace_visible, panel::TRACE),
         (issues_visible, panel::ISSUES),
         (permissions_visible, panel::PERMISSIONS),
     ]
@@ -642,7 +640,6 @@ fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, trace_visibl
 
     for (i, &p) in panels.iter().enumerate() {
         match p {
-            panel::TRACE => crate::trace_ui::render_trace_panel(frame, cols[i], is_focused(app, panel::TRACE), app.trace_state()),
             panel::ISSUES => issues_ui::render_issues_panel(frame, cols[i], is_focused(app, panel::ISSUES), app.issues_state()),
             panel::PERMISSIONS => permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state()),
             _ => {}
@@ -713,11 +710,11 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 
-fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_visible: bool, system_visible: bool, network_visible: bool) {
+fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, monitor_visible: bool, network_visible: bool, trace_visible: bool) {
     let panels: Vec<u8> = [
-        (disk_visible, panel::DISK),
-        (system_visible, panel::SYSTEM),
+        (monitor_visible, panel::MONITOR),
         (network_visible, panel::NETWORK),
+        (trace_visible, panel::TRACE),
     ]
     .iter()
     .filter(|(v, _)| *v)
@@ -736,13 +733,13 @@ fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_vis
 
     for (i, &p) in panels.iter().enumerate() {
         match p {
-            panel::DISK => monitor_ui::render_disk_panel(frame, cols[i], false, app.monitor_state()),
-            panel::SYSTEM => monitor_ui::render_system_panel(frame, cols[i], false, app.monitor_state()),
+            panel::MONITOR => monitor_ui::render_monitor_panel(frame, cols[i], false, app.monitor_state()),
             panel::NETWORK => {
                 let focused = is_focused(app, panel::NETWORK);
                 let detected = app.measure_sdk_detected();
                 network_ui::render_network_panel(frame, cols[i], focused, app.network_state_mut(), detected);
             }
+            panel::TRACE => crate::trace_ui::render_trace_panel(frame, cols[i], is_focused(app, panel::TRACE), app.trace_state()),
             _ => {}
         }
     }
@@ -750,8 +747,8 @@ fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, disk_vis
 
 fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
-    let files_visible = vis[7];
-    let database_visible = vis[8];
+    let files_visible = vis[6];
+    let database_visible = vis[7];
 
     match (files_visible, database_visible) {
         (true, true) => {

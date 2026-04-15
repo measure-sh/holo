@@ -11,7 +11,7 @@ use crate::panel;
 use crate::theme;
 use crate::ui::panel_block;
 
-pub(crate) const SPARK_CHARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+pub(crate) const SPARK_CHARS: [char; 8] = ['▁', '▁', '▂', '▂', '▃', '▃', '▄', '▄'];
 
 fn format_mb(kb: u64) -> String {
     let mb = kb as f64 / 1024.0;
@@ -95,23 +95,20 @@ fn mem_item(
     let (spark, min, max) = sparkline_str(data, spark_width);
     let (arrow, arrow_color) = trend_symbol(trend);
 
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
-            Span::styled(spark, Style::new().fg(t.sparkline)),
-            Span::styled(format!("  {:>8}", format_mb(current)), Style::new().fg(t.fg)),
-            Span::raw(" "),
-            Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
-        ]),
+    let mut spans = vec![
+        Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
+        Span::styled(spark, Style::new().fg(t.sparkline)),
+        Span::styled(format!("  {:>8}", format_mb(current)), Style::new().fg(t.fg)),
+        Span::raw(" "),
+        Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
     ];
     if min != max {
-        lines.push(Line::from(Span::styled(
-            format!(" {:>12}{}-{}", "", format_mb(min), format_mb(max)),
+        spans.push(Span::styled(
+            format!(" {}-{}", format_mb(min), format_mb(max)),
             Style::new().fg(t.muted),
-        )));
+        ));
     }
-    lines.push(Line::raw(""));
-    ListItem::new(lines)
+    ListItem::new(Line::from(spans))
 }
 
 fn disk_item(
@@ -125,23 +122,20 @@ fn disk_item(
     let (spark, min, max) = sparkline_str(data, spark_width);
     let (arrow, arrow_color) = trend_symbol(trend);
 
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
-            Span::styled(spark, Style::new().fg(t.sparkline)),
-            Span::styled(format!("  {:>8}", format_mb_precise(current)), Style::new().fg(t.fg)),
-            Span::raw(" "),
-            Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
-        ]),
+    let mut spans = vec![
+        Span::styled(format!(" {:<12}", label), Style::new().fg(t.fg)),
+        Span::styled(spark, Style::new().fg(t.sparkline)),
+        Span::styled(format!("  {:>8}", format_mb_precise(current)), Style::new().fg(t.fg)),
+        Span::raw(" "),
+        Span::styled(arrow.to_string(), Style::new().fg(arrow_color)),
     ];
     if min != max {
-        lines.push(Line::from(Span::styled(
-            format!(" {:>12}{}-{}", "", format_mb_precise(min), format_mb_precise(max)),
+        spans.push(Span::styled(
+            format!(" {}-{}", format_mb_precise(min), format_mb_precise(max)),
             Style::new().fg(t.muted),
-        )));
+        ));
     }
-    lines.push(Line::raw(""));
-    ListItem::new(lines)
+    ListItem::new(Line::from(spans))
 }
 
 fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
@@ -149,21 +143,18 @@ fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     let current = data.last().copied().unwrap_or(0.0);
     let (spark, min, max) = sparkline_str_f32(data, spark_width);
 
-    let mut lines = vec![
-        Line::from(vec![
-            Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(t.fg)),
-            Span::styled(spark, Style::new().fg(t.sparkline)),
-            Span::styled(format!("  {:>7.1}%", current), Style::new().fg(t.fg)),
-        ]),
+    let mut spans = vec![
+        Span::styled(format!(" {:<12}", "CPU"), Style::new().fg(t.fg)),
+        Span::styled(spark, Style::new().fg(t.sparkline)),
+        Span::styled(format!("  {:>7.1}%", current), Style::new().fg(t.fg)),
     ];
     if (max - min) >= 0.01 {
-        lines.push(Line::from(Span::styled(
-            format!(" {:>12}{:.1}-{:.1}%", "", min, max),
+        spans.push(Span::styled(
+            format!(" {:.1}-{:.1}%", min, max),
             Style::new().fg(t.muted),
-        )));
+        ));
     }
-    lines.push(Line::raw(""));
-    ListItem::new(lines)
+    ListItem::new(Line::from(spans))
 }
 
 fn render_monitor(
@@ -191,28 +182,19 @@ fn render_monitor(
         return;
     }
 
-    let spark_width = (inner.width as usize).saturating_sub(27).max(5);
+    let spark_width = (inner.width as usize).saturating_sub(35).max(5);
     frame.render_widget(List::new(items_fn(spark_width, state)), inner);
 }
 
-pub fn render_disk_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
-    render_monitor(frame, area, panel::DISK, focused, state, |sw, st| {
-        let data = st.sparkline_u64(|m| m.data_kb);
-        let cache = st.sparkline_u64(|m| m.cache_kb);
-        vec![
-            disk_item("Data", &data, st.trend_u64(|m| m.data_kb), sw),
-            disk_item("Cache", &cache, st.trend_u64(|m| m.cache_kb), sw),
-        ]
-    });
-}
-
-pub fn render_system_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
-    render_monitor(frame, area, panel::SYSTEM, focused, state, |sw, st| {
+pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
+    render_monitor(frame, area, panel::MONITOR, focused, state, |sw, st| {
         let cpu = st.sparkline_f32(|m| m.cpu_percent);
         let rss = st.sparkline_u64(|m| m.rss_kb);
+        let data = st.sparkline_u64(|m| m.data_kb);
         vec![
             cpu_item(&cpu, sw),
             mem_item("RSS", &rss, st.trend_u64(|m| m.rss_kb), sw),
+            disk_item("Data", &data, st.trend_u64(|m| m.data_kb), sw),
         ]
     });
 }
