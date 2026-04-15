@@ -119,14 +119,19 @@ pub struct LogcatFilter {
     pub tag: String,
     pub search: String,
     pub level: Option<char>,
+    pub exclude_measure: bool,
 }
 
 impl LogcatFilter {
     fn new() -> Self {
+        let exclude_measure = std::env::var("HOLO_MEASURE_LOGS")
+            .map(|v| v != "1")
+            .unwrap_or(true);
         Self {
             tag: String::new(),
             search: String::new(),
             level: None,
+            exclude_measure,
         }
     }
 
@@ -134,6 +139,9 @@ impl LogcatFilter {
         let Some(parsed) = parse(line) else {
             return true;
         };
+        if self.exclude_measure && parsed.tag == "Measure" {
+            return false;
+        }
         let tag_ok = self.tag.is_empty()
             || parsed.tag.to_lowercase().contains(&self.tag.to_lowercase());
         let search_ok = self.search.is_empty()
@@ -399,5 +407,20 @@ mod tests {
         filter.search = "error".into();
         assert!(filter.matches("01-01 12:00:00.000  1234  5678 D MyTag   : some error here"));
         assert!(!filter.matches("01-01 12:00:00.000  1234  5678 D MyTag   : hello world"));
+    }
+
+    #[test]
+    fn filter_excludes_measure_by_default() {
+        let mut filter = LogcatFilter::new();
+        filter.exclude_measure = true;
+        assert!(!filter.matches("03-20 17:20:19.256 17010 17026 D Measure : EventProcessor started"));
+        assert!(filter.matches("03-20 17:20:19.256 17010 17026 D MyTag   : hello"));
+    }
+
+    #[test]
+    fn filter_includes_measure_when_disabled() {
+        let mut filter = LogcatFilter::new();
+        filter.exclude_measure = false;
+        assert!(filter.matches("03-20 17:20:19.256 17010 17026 D Measure : EventProcessor started"));
     }
 }
