@@ -2,7 +2,10 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
+use crossterm::event::{KeyCode, KeyEvent};
+
 use crate::adb::Adb;
+use crate::app::Action;
 use crate::panel;
 
 pub const POLL_SYSTEM: u8 = 1;
@@ -52,6 +55,13 @@ pub struct MonitorState {
 }
 
 impl MonitorState {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+        match key.code {
+            KeyCode::Esc => Some(Action::Unfocus),
+            _ => None,
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             history: Vec::new(),

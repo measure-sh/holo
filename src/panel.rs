@@ -28,7 +28,7 @@ pub const DATABASE: u8 = 8;
 pub const PANELS: [PanelDef; 9] = [
     PanelDef { number: 0, name: "commands",    focus_key: Some('c') },
     PanelDef { number: 1, name: "logcat",      focus_key: Some('l') },
-    PanelDef { number: 2, name: "monitor",     focus_key: None },
+    PanelDef { number: 2, name: "monitor",     focus_key: Some('m') },
     PanelDef { number: 3, name: "network",     focus_key: Some('n') },
     PanelDef { number: 4, name: "trace",       focus_key: Some('t') },
     PanelDef { number: 5, name: "issues",      focus_key: Some('i') },

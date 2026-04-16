@@ -104,7 +104,7 @@ fn mem_item(
     ];
     if min != max {
         spans.push(Span::styled(
-            format!(" {}-{}", format_mb(min), format_mb(max)),
+            format!(" {} - {}", format_mb(min), format_mb(max)),
             Style::new().fg(t.muted),
         ));
     }
@@ -131,7 +131,7 @@ fn disk_item(
     ];
     if min != max {
         spans.push(Span::styled(
-            format!(" {}-{}", format_mb_precise(min), format_mb_precise(max)),
+            format!(" {} - {}", format_mb_precise(min), format_mb_precise(max)),
             Style::new().fg(t.muted),
         ));
     }
@@ -150,7 +150,7 @@ fn cpu_item(data: &[f32], spark_width: usize) -> ListItem<'static> {
     ];
     if (max - min) >= 0.01 {
         spans.push(Span::styled(
-            format!(" {:.1}-{:.1}%", min, max),
+            format!(" {:.1} - {:.1}%", min, max),
             Style::new().fg(t.muted),
         ));
     }

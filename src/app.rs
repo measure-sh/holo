@@ -315,6 +315,7 @@ impl App {
             panel::TRACE => self.trace_state.handle_key(key),
             panel::ISSUES => self.issues_state.handle_key(key),
             panel::NETWORK => self.network_state.handle_key(key),
+            panel::MONITOR => self.monitor_state.handle_key(key),
             _ => None,
         };
         if let Some(action) = self.dispatch_panel_key(result) {

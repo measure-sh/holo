@@ -305,12 +305,12 @@ impl DataSources {
         self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path));
     }
 
-    pub fn start_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
-        self.trace_start_rx = Some(trace::spawn_start_trace(adb, serial, package));
+    pub fn start_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, preset: trace::TracePreset) {
+        self.trace_start_rx = Some(trace::spawn_start_trace(adb, serial, package, preset));
     }
 
-    pub fn stop_and_pull_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
-        self.trace_pull_rx = Some(trace::spawn_stop_and_pull_trace(adb, serial, package));
+    pub fn stop_and_pull_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, preset: trace::TracePreset) {
+        self.trace_pull_rx = Some(trace::spawn_stop_and_pull_trace(adb, serial, package, preset));
     }
 }
 

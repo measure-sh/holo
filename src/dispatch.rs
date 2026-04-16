@@ -297,12 +297,14 @@ impl DispatchContext {
             }
             Action::StartTrace => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
-                    d.start_trace(self.adb.clone(), s.clone(), p.clone());
+                    let preset = app.trace_state().preset;
+                    d.start_trace(self.adb.clone(), s.clone(), p.clone(), preset);
                 }
             }
             Action::StopTrace => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
-                    d.stop_and_pull_trace(self.adb.clone(), s.clone(), p.clone());
+                    let preset = app.trace_state().preset;
+                    d.stop_and_pull_trace(self.adb.clone(), s.clone(), p.clone(), preset);
                 }
             }
             Action::LaunchEmulator(name) => {

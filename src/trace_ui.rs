@@ -30,6 +30,10 @@ pub fn render_trace_panel(frame: &mut Frame, area: Rect, focused: bool, state: &
             spans.extend([
                 Span::styled(" s", accent),
                 Span::styled("tart ", muted),
+                Span::styled("───", border),
+                Span::styled(" \u{25C2}", accent),
+                Span::styled(state.preset.name(), muted),
+                Span::styled("\u{25B8} ", accent),
             ]);
             if !state.pulled_traces.is_empty() {
                 spans.extend([
@@ -68,7 +72,7 @@ pub fn render_trace_panel(frame: &mut Frame, area: Rect, focused: bool, state: &
                 Style::new().fg(t.accent),
             ),
             Span::styled(
-                format!("tracing {:02}:{:02}", mins, secs),
+                format!("{} {:02}:{:02}", state.preset.name().to_lowercase(), mins, secs),
                 Style::new().fg(t.accent),
             ),
         ])));
@@ -88,6 +92,18 @@ pub fn render_trace_panel(frame: &mut Frame, area: Rect, focused: bool, state: &
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
+            let tag = if name.starts_with("mem_") {
+                "[mem]"
+            } else if name.starts_with("cpu_") {
+                "[cpu]"
+            } else {
+                "[def]"
+            };
+            let display_name = if name.starts_with("mem_") || name.starts_with("cpu_") || name.starts_with("def_") {
+                &name[4..]
+            } else {
+                &name
+            };
             let selected = focused && i == state.selected_index;
             let style = if selected {
                 Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
@@ -97,9 +113,27 @@ pub fn render_trace_panel(frame: &mut Frame, area: Rect, focused: bool, state: &
             let prefix = if selected { "▸ " } else { "  " };
             items.push(ListItem::new(Line::from(vec![
                 Span::styled(prefix, style),
-                Span::styled(name, style),
+                Span::styled(format!("{tag} "), Style::new().fg(t.muted)),
+                Span::styled(display_name.to_string(), style),
             ])));
         }
+    }
+
+    if focused && !state.recording && !flash_active {
+        let used_lines = items.len();
+        let available = inner.height as usize;
+        if available > used_lines + 1 {
+            let padding = available - used_lines - 1;
+            for _ in 0..padding {
+                items.push(ListItem::new(Line::raw("")));
+            }
+        }
+        items.push(ListItem::new(Line::from(
+            Span::styled(
+                format!(" {}", state.preset.description()),
+                Style::new().fg(t.muted),
+            ),
+        )));
     }
 
     frame.render_widget(List::new(items), inner);

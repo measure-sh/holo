@@ -254,7 +254,7 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let total_w = device_w + gap + app_w;
     let x_start = area.x + area.width.saturating_sub(total_w) / 2;
 
-    let device_area = Rect::new(x_start, area.y, device_w, 3);
+    let device_area = Rect::new(x_start, area.y, device_w, 3).intersection(area);
     let device_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -279,7 +279,7 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
         device_inner,
     );
 
-    let app_area = Rect::new(x_start + device_w + gap, area.y, app_w, 3);
+    let app_area = Rect::new(x_start + device_w + gap, area.y, app_w, 3).intersection(area);
     let app_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -558,10 +558,10 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     let monitor_visible = vis[1];
     let network_visible = vis[2];
     let trace_visible = vis[3];
-    let monitor_section_visible = monitor_visible || network_visible || trace_visible;
+    let monitor_section_visible = monitor_visible || network_visible;
     let issues_visible = vis[4];
     let permissions_visible = vis[5];
-    let mid_visible = issues_visible || permissions_visible;
+    let mid_visible = issues_visible || trace_visible || permissions_visible;
     let bot_visible = vis[6] || vis[7];
 
     let top_visible = commands_visible || logcat_visible;
@@ -590,11 +590,11 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
         idx += 1;
     }
     if monitor_section_visible {
-        render_monitor_section(frame, rows[idx], app, monitor_visible, network_visible, trace_visible);
+        render_monitor_section(frame, rows[idx], app, monitor_visible, network_visible);
         idx += 1;
     }
     if mid_visible {
-        render_mid_section(frame, rows[idx], app, issues_visible, permissions_visible);
+        render_mid_section(frame, rows[idx], app, issues_visible, trace_visible, permissions_visible);
         idx += 1;
     }
     if bot_visible {
@@ -618,9 +618,10 @@ fn render_top_section(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines
     }
 }
 
-fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, issues_visible: bool, permissions_visible: bool) {
+fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, issues_visible: bool, trace_visible: bool, permissions_visible: bool) {
     let panels: Vec<u8> = [
         (issues_visible, panel::ISSUES),
+        (trace_visible, panel::TRACE),
         (permissions_visible, panel::PERMISSIONS),
     ]
     .iter()
@@ -641,6 +642,7 @@ fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, issues_visib
     for (i, &p) in panels.iter().enumerate() {
         match p {
             panel::ISSUES => issues_ui::render_issues_panel(frame, cols[i], is_focused(app, panel::ISSUES), app.issues_state()),
+            panel::TRACE => crate::trace_ui::render_trace_panel(frame, cols[i], is_focused(app, panel::TRACE), app.trace_state()),
             panel::PERMISSIONS => permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state()),
             _ => {}
         }
@@ -710,38 +712,27 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 
-fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, monitor_visible: bool, network_visible: bool, trace_visible: bool) {
-    let panels: Vec<u8> = [
-        (monitor_visible, panel::MONITOR),
-        (network_visible, panel::NETWORK),
-        (trace_visible, panel::TRACE),
-    ]
-    .iter()
-    .filter(|(v, _)| *v)
-    .map(|(_, p)| *p)
-    .collect();
-
-    if panels.is_empty() {
-        return;
-    }
-
-    let constraints: Vec<Constraint> = panels.iter().map(|_| Constraint::Ratio(1, panels.len() as u32)).collect();
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(area);
-
-    for (i, &p) in panels.iter().enumerate() {
-        match p {
-            panel::MONITOR => monitor_ui::render_monitor_panel(frame, cols[i], false, app.monitor_state(), app.measure_sdk_detected()),
-            panel::NETWORK => {
-                let focused = is_focused(app, panel::NETWORK);
-                let detected = app.measure_sdk_detected();
-                network_ui::render_network_panel(frame, cols[i], focused, app.network_state_mut(), detected);
-            }
-            panel::TRACE => crate::trace_ui::render_trace_panel(frame, cols[i], is_focused(app, panel::TRACE), app.trace_state()),
-            _ => {}
+fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, monitor_visible: bool, network_visible: bool) {
+    match (monitor_visible, network_visible) {
+        (true, true) => {
+            let cols = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+                .split(area);
+            monitor_ui::render_monitor_panel(frame, cols[0], is_focused(app, panel::MONITOR), app.monitor_state(), app.measure_sdk_detected());
+            let focused = is_focused(app, panel::NETWORK);
+            let detected = app.measure_sdk_detected();
+            network_ui::render_network_panel(frame, cols[1], focused, app.network_state_mut(), detected);
         }
+        (true, false) => {
+            monitor_ui::render_monitor_panel(frame, area, is_focused(app, panel::MONITOR), app.monitor_state(), app.measure_sdk_detected());
+        }
+        (false, true) => {
+            let focused = is_focused(app, panel::NETWORK);
+            let detected = app.measure_sdk_detected();
+            network_ui::render_network_panel(frame, area, focused, app.network_state_mut(), detected);
+        }
+        (false, false) => {}
     }
 }
 

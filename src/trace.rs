@@ -10,9 +10,45 @@ use crossterm::event::{KeyCode, KeyEvent};
 use crate::adb::Adb;
 use crate::app::Action;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TracePreset {
+    Default,
+    Memory,
+    Cpu,
+}
+
+const PRESETS: [TracePreset; 3] = [TracePreset::Default, TracePreset::Memory, TracePreset::Cpu];
+
+impl TracePreset {
+    pub fn name(self) -> &'static str {
+        match self {
+            TracePreset::Default => "Default",
+            TracePreset::Memory => "Memory",
+            TracePreset::Cpu => "CPU",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            TracePreset::Default => "Scheduling, rendering, process stats",
+            TracePreset::Memory => "Java heap + native allocations",
+            TracePreset::Cpu => "Callstack sampling + method tracing",
+        }
+    }
+
+    pub fn file_prefix(self) -> &'static str {
+        match self {
+            TracePreset::Default => "def",
+            TracePreset::Memory => "mem",
+            TracePreset::Cpu => "cpu",
+        }
+    }
+}
+
 type FileMap = Arc<Mutex<HashMap<String, PathBuf>>>;
 
 pub struct TraceState {
+    pub preset: TracePreset,
     pub recording: bool,
     pub started_at: Option<std::time::Instant>,
     pub status_message: Option<String>,
@@ -50,6 +86,7 @@ impl TraceState {
             .collect();
         pulled_traces.sort();
         Self {
+            preset: TracePreset::Default,
             recording: false,
             started_at: None,
             status_message: None,
@@ -75,6 +112,16 @@ impl TraceState {
                     self.message_at = None;
                     Some(Action::StartTrace)
                 }
+            }
+            KeyCode::Right if !self.recording => {
+                let idx = PRESETS.iter().position(|p| *p == self.preset).unwrap_or(0);
+                self.preset = PRESETS[(idx + 1) % PRESETS.len()];
+                Some(Action::Noop)
+            }
+            KeyCode::Left if !self.recording => {
+                let idx = PRESETS.iter().position(|p| *p == self.preset).unwrap_or(0);
+                self.preset = PRESETS[(idx + PRESETS.len() - 1) % PRESETS.len()];
+                Some(Action::Noop)
             }
             KeyCode::Up | KeyCode::Char('k') if !self.recording => {
                 if self.selected_index > 0 {
@@ -147,7 +194,15 @@ impl TraceState {
     }
 }
 
-pub fn trace_config(package: &str) -> String {
+pub fn trace_config(package: &str, preset: TracePreset) -> String {
+    match preset {
+        TracePreset::Default => default_trace_config(package),
+        TracePreset::Memory => memory_trace_config(package),
+        TracePreset::Cpu => cpu_trace_config(package),
+    }
+}
+
+fn default_trace_config(package: &str) -> String {
     format!(
         r#"buffers {{
   size_kb: 262144
@@ -238,14 +293,125 @@ duration_ms: 1800000
     )
 }
 
+fn memory_trace_config(package: &str) -> String {
+    format!(
+        r#"buffers {{
+  size_kb: 131072
+  fill_policy: DISCARD
+}}
+
+buffers {{
+  size_kb: 8192
+  fill_policy: RING_BUFFER
+}}
+
+data_sources {{
+  config {{
+    name: "android.java_hprof"
+    target_buffer: 0
+    java_hprof_config {{
+      process_cmdline: "{package}"
+      dump_smaps: true
+    }}
+  }}
+}}
+
+data_sources {{
+  config {{
+    name: "android.heapprofd"
+    target_buffer: 0
+    heapprofd_config {{
+      process_cmdline: "{package}"
+      sampling_interval_bytes: 4096
+      shmem_size_bytes: 8388608
+    }}
+  }}
+}}
+
+data_sources {{
+  config {{
+    name: "linux.process_stats"
+    target_buffer: 1
+    process_stats_config {{
+      scan_all_processes_on_start: true
+      proc_stats_poll_ms: 1000
+    }}
+  }}
+}}
+
+data_source_stop_timeout_ms: 30000
+duration_ms: 1800000
+"#
+    )
+}
+
+fn cpu_trace_config(package: &str) -> String {
+    format!(
+        r#"buffers {{
+  size_kb: 262144
+  fill_policy: RING_BUFFER
+}}
+
+buffers {{
+  size_kb: 8192
+  fill_policy: RING_BUFFER
+}}
+
+data_sources {{
+  config {{
+    name: "linux.perf"
+    target_buffer: 0
+    perf_event_config {{
+      timebase {{
+        frequency: 100
+      }}
+      callstack_sampling {{
+        scope {{
+          target_cmdline: "{package}"
+        }}
+        kernel_frames: true
+      }}
+    }}
+  }}
+}}
+
+data_sources {{
+  config {{
+    name: "linux.process_stats"
+    target_buffer: 1
+    process_stats_config {{
+      scan_all_processes_on_start: true
+      proc_stats_poll_ms: 1000
+    }}
+  }}
+}}
+
+data_sources {{
+  config {{
+    name: "linux.ftrace"
+    target_buffer: 0
+    ftrace_config {{
+      atrace_apps: "{package}"
+      buffer_size_kb: 16384
+      drain_period_ms: 250
+    }}
+  }}
+}}
+
+duration_ms: 1800000
+"#
+    )
+}
+
 pub fn spawn_start_trace(
     adb: Arc<dyn Adb>,
     serial: String,
     package: String,
+    preset: TracePreset,
 ) -> mpsc::Receiver<Result<(), String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let config = trace_config(&package);
+        let config = trace_config(&package, preset);
         let result = adb
             .start_trace(&serial, &config)
             .map_err(|e| e.to_string());
@@ -258,6 +424,7 @@ pub fn spawn_stop_and_pull_trace(
     adb: Arc<dyn Adb>,
     serial: String,
     package: String,
+    preset: TracePreset,
 ) -> mpsc::Receiver<Result<PathBuf, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -266,7 +433,7 @@ pub fn spawn_stop_and_pull_trace(
             .join("holo")
             .join(&package)
             .join("traces")
-            .join(format!("{timestamp}_trace.perfetto-trace"));
+            .join(format!("{}_{timestamp}_trace.perfetto-trace", preset.file_prefix()));
         let result = adb
             .stop_and_pull_trace(&serial, &dest)
             .map(|_| dest)
