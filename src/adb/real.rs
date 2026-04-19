@@ -727,6 +727,60 @@ fn parse_uid(dumpsys_output: &str) -> Option<u32> {
 }
 
 fn parse_netstats_for_uid(output: &str, uid: u32) -> NetworkBytes {
+    if let Some(bytes) = parse_app_uid_stats_map(output, uid) {
+        return bytes;
+    }
+    parse_netstats_history_for_uid(output, uid)
+}
+
+// Modern Android (eBPF, Android 9+): the live per-uid totals live in the
+// `mAppUidStatsMap:` section under `BPF map content:` — updated as packets
+// are processed, not aggregated into 2h history buckets.
+//
+// Layout:
+//   mAppUidStatsMap:
+//     uid rxBytes rxPackets txBytes txPackets
+//     10232 818516958 638070 13278833 181965
+//     ...
+//
+// Returns Some(zero) if the section exists but our uid is absent (the app
+// just hasn't transferred anything), and None if the section isn't present.
+fn parse_app_uid_stats_map(output: &str, uid: u32) -> Option<NetworkBytes> {
+    let mut in_map = false;
+    let mut found_map = false;
+    for line in output.lines() {
+        let trimmed = line.trim_start();
+        if trimmed == "mAppUidStatsMap:" {
+            in_map = true;
+            found_map = true;
+            continue;
+        }
+        if !in_map {
+            continue;
+        }
+        if !line.starts_with("    ") {
+            if trimmed.is_empty() {
+                continue;
+            }
+            in_map = false;
+            continue;
+        }
+        let mut parts = trimmed.split_whitespace();
+        let Some(first) = parts.next() else { continue };
+        if first == "uid" {
+            continue;
+        }
+        if first.parse::<u32>() == Ok(uid) {
+            let rx = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            let _rx_packets = parts.next();
+            let tx = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+            return Some(NetworkBytes { rx, tx });
+        }
+    }
+    found_map.then_some(NetworkBytes { rx: 0, tx: 0 })
+}
+
+fn parse_netstats_history_for_uid(output: &str, uid: u32) -> NetworkBytes {
     let needle = format!("uid={uid}");
     let mut rx = 0u64;
     let mut tx = 0u64;
@@ -1363,6 +1417,41 @@ Package [com.example.app]:
     installerPackageUid=-1
 ";
         assert_eq!(parse_uid(output), Some(10232));
+    }
+
+    #[test]
+    fn parses_netstats_prefers_app_uid_stats_map() {
+        // mAppUidStatsMap is the live BPF map — preferred over the stale
+        // NetworkStatsHistory buckets when both are present.
+        let output = "\
+BPF map content:
+  mAppUidStatsMap:
+    uid rxBytes rxPackets txBytes txPackets
+    10232 818516958 638070 13278833 181965
+    10154 8413791 7535 690398 4823
+  mStatsMapA:
+Active UID stats:
+  ident=[...] uid=10232 set=DEFAULT tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1776578400 rb=999 rp=1 tb=999 tp=1 op=0
+";
+        let bytes = parse_netstats_for_uid(output, 10232);
+        assert_eq!(bytes.rx, 818516958);
+        assert_eq!(bytes.tx, 13278833);
+    }
+
+    #[test]
+    fn parses_netstats_app_uid_stats_map_zero_when_uid_absent() {
+        // BPF map present but uid not listed — app has zero traffic.
+        let output = "\
+  mAppUidStatsMap:
+    uid rxBytes rxPackets txBytes txPackets
+    10135 8246 14 2537 15
+  mStatsMapA:
+";
+        let bytes = parse_netstats_for_uid(output, 10232);
+        assert_eq!(bytes.rx, 0);
+        assert_eq!(bytes.tx, 0);
     }
 
     #[test]
