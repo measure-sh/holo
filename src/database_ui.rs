@@ -296,7 +296,7 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, activ
     };
 
     let (chip_area, rest) = split_chip(detail_inner);
-    render_pane_chip(frame, chip_area, &table, active, show_hint);
+    render_pane_chip(frame, chip_area, &format!("{table} table"), active, show_hint);
     let stats_text = state
         .table_data
         .as_ref()
