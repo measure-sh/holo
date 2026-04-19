@@ -86,9 +86,11 @@ impl DataSources {
         let app_version = adb.get_app_version(serial, package).ok();
         let has_measure_sdk = adb.has_measure_sdk(serial, package);
         let monitor_visibility = Arc::new(AtomicU8::new(monitor::visibility_mask(panel_vis)));
-        let traffic_rx = (!has_measure_sdk).then(|| {
-            network::spawn_traffic_poller(adb.clone(), serial.to_string(), package.to_string())
-        });
+        let traffic_rx = Some(network::spawn_traffic_poller(
+            adb.clone(),
+            serial.to_string(),
+            package.to_string(),
+        ));
         Self {
             battery_rx: battery::spawn_poller(adb.clone(), serial.to_string()),
             battery_level: None,

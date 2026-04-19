@@ -449,6 +449,10 @@ impl App {
         &mut self.issues_state
     }
 
+    pub fn network_state(&self) -> &NetworkState {
+        &self.network_state
+    }
+
     pub fn network_state_mut(&mut self) -> &mut NetworkState {
         &mut self.network_state
     }

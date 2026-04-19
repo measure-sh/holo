@@ -15,6 +15,7 @@ const BASELINE_BARS: symbols::bar::Set = symbols::bar::Set {
 };
 
 use crate::monitor::MonitorState;
+use crate::network::TrafficSample;
 use crate::panel;
 use crate::theme;
 use crate::ui::panel_block;
@@ -31,6 +32,16 @@ fn format_mb(kb: u64) -> String {
 fn format_mb_precise(kb: u64) -> String {
     let mb = kb as f64 / 1024.0;
     format!("{:.2} MB", mb)
+}
+
+fn format_rate(bps: u64) -> String {
+    if bps < 1024 {
+        format!("{} B/s", bps)
+    } else if bps < 1024 * 1024 {
+        format!("{:.1} KB/s", bps as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB/s", bps as f64 / (1024.0 * 1024.0))
+    }
 }
 
 /// Range-shift a series so stable non-zero values render as a flat low bar
@@ -90,7 +101,13 @@ fn metric_row(
     frame.render_widget(spark, chunks[1]);
 }
 
-fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_sdk: bool) {
+fn render_charts(
+    frame: &mut Frame,
+    inner: Rect,
+    state: &MonitorState,
+    traffic: &[TrafficSample],
+    measure_sdk: bool,
+) {
     if inner.width == 0 || inner.height == 0 {
         return;
     }
@@ -103,10 +120,16 @@ fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_s
         .map(|m| SparklineBar::from(Some(m.cpu_percent.max(0.0).round() as u64)))
         .collect();
 
-    let rss: Vec<u64> = state.history.iter().map(|m| m.rss_kb).collect();
-    let rss_now = state.history.last().map(|m| m.rss_kb).unwrap_or(0);
-    let rss_label = if measure_sdk { "Mem" } else { "RSS" };
-    let (rss_data, rss_max) = range_shifted(&rss);
+    let (mem_label, mem_now, mem_samples) = if measure_sdk {
+        let samples: Vec<u64> = state.history.iter().map(|m| m.total_pss_kb).collect();
+        let now = state.history.last().map(|m| m.total_pss_kb).unwrap_or(0);
+        ("PSS", now, samples)
+    } else {
+        let samples: Vec<u64> = state.history.iter().map(|m| m.rss_kb).collect();
+        let now = state.history.last().map(|m| m.rss_kb).unwrap_or(0);
+        ("RSS", now, samples)
+    };
+    let (mem_data, mem_max) = range_shifted(&mem_samples);
 
     let disk: Vec<u64> = state.history.iter().map(|m| m.data_kb).collect();
     let disk_now = state.history.last().map(|m| m.data_kb).unwrap_or(0);
@@ -114,52 +137,24 @@ fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_s
 
     let mut rows: Vec<(String, Vec<SparklineBar>, u64, Color)> = Vec::new();
     rows.push((format!(" CPU {:.1}%  ", cpu_now), cpu_data, 100, t.spark_cpu));
-    rows.push((format!(" {} {}  ", rss_label, format_mb(rss_now)), rss_data, rss_max, t.spark_mem));
-
-    if measure_sdk {
-        let last = state.history.last().copied().unwrap_or_default();
-        let java_max = last.java_max_heap_kb;
-        let java_used_now = last.java_total_heap_kb.saturating_sub(last.java_free_heap_kb);
-        let java_data: Vec<SparklineBar> = state
-            .history
-            .iter()
-            .map(|m| {
-                if m.java_max_heap_kb == 0 {
-                    SparklineBar::from(None)
-                } else {
-                    SparklineBar::from(Some(m.java_total_heap_kb.saturating_sub(m.java_free_heap_kb)))
-                }
-            })
-            .collect();
-        rows.push((
-            format!(" Java {}/{}  ", format_mb(java_used_now), format_mb(java_max)),
-            java_data,
-            java_max,
-            t.spark_java,
-        ));
-
-        let native_max = last.native_total_heap_kb;
-        let native_used_now = last.native_total_heap_kb.saturating_sub(last.native_free_heap_kb);
-        let native_data: Vec<SparklineBar> = state
-            .history
-            .iter()
-            .map(|m| {
-                if m.native_total_heap_kb == 0 {
-                    SparklineBar::from(None)
-                } else {
-                    SparklineBar::from(Some(m.native_total_heap_kb.saturating_sub(m.native_free_heap_kb)))
-                }
-            })
-            .collect();
-        rows.push((
-            format!(" Native {}/{}  ", format_mb(native_used_now), format_mb(native_max)),
-            native_data,
-            native_max,
-            t.spark_native,
-        ));
-    }
-
+    rows.push((format!(" {} {}  ", mem_label, format_mb(mem_now)), mem_data, mem_max, t.spark_mem));
     rows.push((format!(" Disk {}  ", format_mb_precise(disk_now)), disk_data, disk_max, t.spark_disk));
+
+    if !traffic.is_empty() {
+        let last = *traffic.last().unwrap();
+        let rx_samples: Vec<SparklineBar> = traffic
+            .iter()
+            .map(|s| SparklineBar::from(Some(s.rx_bps)))
+            .collect();
+        let tx_samples: Vec<SparklineBar> = traffic
+            .iter()
+            .map(|s| SparklineBar::from(Some(s.tx_bps)))
+            .collect();
+        let rx_max = traffic.iter().map(|s| s.rx_bps).max().unwrap_or(0);
+        let tx_max = traffic.iter().map(|s| s.tx_bps).max().unwrap_or(0);
+        rows.push((format!(" ↓ {}  ", format_rate(last.rx_bps)), rx_samples, rx_max, t.spark_rx));
+        rows.push((format!(" ↑ {}  ", format_rate(last.tx_bps)), tx_samples, tx_max, t.spark_tx));
+    }
 
     let label_width = rows.iter().map(|(l, _, _, _)| l.chars().count()).max().unwrap_or(0) as u16;
     let visible_rows = rows.len().min(inner.height as usize);
@@ -174,7 +169,14 @@ fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_s
     }
 }
 
-pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState, measure_sdk: bool) {
+pub fn render_monitor_panel(
+    frame: &mut Frame,
+    area: Rect,
+    focused: bool,
+    state: &MonitorState,
+    traffic: &[TrafficSample],
+    measure_sdk: bool,
+) {
     let t = theme::current();
     let block = panel_block(panel::MONITOR, focused);
     let inner = block.inner(area);
@@ -196,7 +198,7 @@ pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state:
         return;
     }
 
-    render_charts(frame, inner, state, measure_sdk);
+    render_charts(frame, inner, state, traffic, measure_sdk);
 }
 
 #[cfg(test)]
