@@ -431,8 +431,6 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, activ
         };
         let mut hbar = ScrollbarState::new(max_h_scroll).position(h_off);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::HorizontalBottom)
-            .thumb_symbol("━")
-            .track_symbol(Some("─"))
             .thumb_style(Style::new().fg(t.muted))
             .track_style(Style::new().fg(t.surface));
         frame.render_stateful_widget(scrollbar, hbar_area, &mut hbar);
