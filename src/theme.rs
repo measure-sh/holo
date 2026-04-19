@@ -145,10 +145,11 @@ pub fn theme_count() -> usize {
 pub fn status_color(code: u16) -> Color {
     let t = current();
     match code {
-        200..=299 => t.success,
-        300..=399 => t.info,
-        400..=499 => t.warning,
-        _ => t.danger,
+        100..=199 => t.spark_cpu,
+        200..=299 => t.spark_mem,
+        300..=399 => t.spark_disk,
+        400..=499 => t.spark_rx,
+        _ => t.spark_tx,
     }
 }
 
