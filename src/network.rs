@@ -370,10 +370,15 @@ fn parse_optional(value: &str) -> Option<String> {
     if value == "null" { None } else { Some(value.to_string()) }
 }
 
-fn is_rn_inspector_url(url: &str) -> bool {
-    let path = url.split('?').next().unwrap_or(url);
-    path.rsplit_once("/inspector/device")
-        .is_some_and(|(_, tail)| tail.is_empty())
+fn is_localhost_url(url: &str) -> bool {
+    let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let host = after_scheme
+        .split(|c: char| c == '/' || c == '?' || c == '#')
+        .next()
+        .unwrap_or("");
+    let host = host.rsplit_once('@').map(|(_, h)| h).unwrap_or(host);
+    let host = host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host);
+    matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1" | "10.0.2.2" | "10.0.3.2")
 }
 
 pub fn parse_http_data(line: &str) -> Option<NetworkEntry> {
@@ -391,7 +396,7 @@ pub fn parse_http_data(line: &str) -> Option<NetworkEntry> {
     let data = &msg[start..end];
 
     let url = find_field_value(data, FIELD_KEYS[0], Some(FIELD_KEYS[1]))?.to_string();
-    if is_rn_inspector_url(&url) {
+    if is_localhost_url(&url) {
         return None;
     }
     let method = find_field_value(data, FIELD_KEYS[1], Some(FIELD_KEYS[2]))?.to_string();
@@ -503,13 +508,25 @@ mod tests {
     }
 
     #[test]
-    fn parse_drops_rn_inspector() {
-        let line = "04-08 09:17:37.261 23922 23938 D Measure : EventProcessor: HTTP, HttpData(url=http://localhost:8081/inspector/device?name=Pixel&app=com.foo.debug&device=abc&profiling=false, method=get, status_code=200, start_time=1, end_time=2, failure_reason=null, failure_description=null, request_headers={}, response_headers={}, request_body=null, response_body=null, client=okhttp)";
+    fn parse_drops_localhost() {
+        let line = "04-08 09:17:37.261 23922 23938 D Measure : EventProcessor: HTTP, HttpData(url=http://localhost:8081/message?device=Pixel&app=com.foo.debug&clientid=BridgelessDevSupportManager, method=get, status_code=200, start_time=1, end_time=2, failure_reason=null, failure_description=null, request_headers={}, response_headers={}, request_body=null, response_body=null, client=okhttp)";
         assert!(parse_http_data(line).is_none());
     }
 
     #[test]
-    fn parse_keeps_similar_urls() {
+    fn parse_drops_loopback_ip() {
+        let line = "04-08 09:17:37.261 23922 23938 D Measure : EventProcessor: HTTP, HttpData(url=http://127.0.0.1:8081/inspector/device, method=get, status_code=200, start_time=1, end_time=2, failure_reason=null, failure_description=null, request_headers={}, response_headers={}, request_body=null, response_body=null, client=okhttp)";
+        assert!(parse_http_data(line).is_none());
+    }
+
+    #[test]
+    fn parse_drops_emulator_host() {
+        let line = "04-08 09:17:37.261 23922 23938 D Measure : EventProcessor: HTTP, HttpData(url=http://10.0.2.2:3000/api, method=get, status_code=200, start_time=1, end_time=2, failure_reason=null, failure_description=null, request_headers={}, response_headers={}, request_body=null, response_body=null, client=okhttp)";
+        assert!(parse_http_data(line).is_none());
+    }
+
+    #[test]
+    fn parse_keeps_non_localhost_urls() {
         let line = "04-08 09:17:37.261 23922 23938 D Measure : EventProcessor: HTTP, HttpData(url=https://api.example.com/inspector/devices/42, method=get, status_code=200, start_time=1, end_time=2, failure_reason=null, failure_description=null, request_headers={}, response_headers={}, request_body=null, response_body=null, client=okhttp)";
         let entry = parse_http_data(line).unwrap();
         assert_eq!(entry.url, "https://api.example.com/inspector/devices/42");
