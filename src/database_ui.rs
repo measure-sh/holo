@@ -12,7 +12,7 @@ use ratatui::{
 use crate::database::{DatabaseState, ReplLine, TreeNode};
 use crate::panel;
 use crate::theme;
-use crate::ui::{panel_title, render_focus_rail, render_pane_chip, split_chip, split_rail};
+use crate::ui::{panel_title, render_pane_chip, split_chip};
 
 pub fn render_database_panel(
     frame: &mut Frame,
@@ -58,16 +58,16 @@ pub fn render_database_panel(
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(inner);
-        render_tree(frame, chunks[0], db_state, tree_focused);
+        render_tree(frame, chunks[0], db_state, tree_focused, true);
         if db_state.repl_active {
-            render_repl(frame, chunks[1], db_state, focused);
+            render_repl(frame, chunks[1], db_state, focused, true);
         } else {
             render_detail(frame, chunks[1], db_state, detail_active);
         }
     } else if db_state.repl_active {
-        render_repl(frame, inner, db_state, focused);
+        render_repl(frame, inner, db_state, focused, false);
     } else {
-        render_tree(frame, inner, db_state, tree_focused);
+        render_tree(frame, inner, db_state, tree_focused, false);
     }
 
     if db_state.copied_at
@@ -187,18 +187,18 @@ fn build_bottom_bar(
     ])
 }
 
-fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active: bool) {
+fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active: bool, in_split: bool) {
     let t = theme::current();
     let muted = Style::new().fg(t.muted);
     let fg = Style::new().fg(t.fg);
 
-    let (rail_area, content_area) = split_rail(area);
-    render_focus_rail(frame, rail_area, active);
-    if content_area.width == 0 || content_area.height == 0 {
-        return;
-    }
-    let (chip_area, body_area) = split_chip(content_area);
-    render_pane_chip(frame, chip_area, "tables", active);
+    let body_area = if in_split {
+        let (chip_area, body) = split_chip(area);
+        render_pane_chip(frame, chip_area, "tables", active);
+        body
+    } else {
+        area
+    };
     if body_area.width == 0 || body_area.height == 0 {
         return;
     }
@@ -281,8 +281,12 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, activ
     let header_style = Style::new().fg(t.accent).add_modifier(Modifier::BOLD);
     let danger = Style::new().fg(t.danger);
 
-    let (rail_area, detail_inner) = split_rail(area);
-    render_focus_rail(frame, rail_area, active);
+    let separator = Block::default()
+        .borders(Borders::LEFT)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(t.muted));
+    let detail_inner = separator.inner(area);
+    frame.render_widget(separator, area);
     if detail_inner.width == 0 || detail_inner.height == 0 {
         return;
     }
@@ -479,21 +483,36 @@ fn compute_col_widths(columns: &[String], rows: &[Vec<String>]) -> Vec<usize> {
     widths
 }
 
-fn render_repl(frame: &mut Frame, area: Rect, state: &mut DatabaseState, focused: bool) {
+fn render_repl(frame: &mut Frame, area: Rect, state: &mut DatabaseState, focused: bool, in_split: bool) {
     let t = theme::current();
     let muted = Style::new().fg(t.muted);
     let selected = Style::new().fg(t.accent).add_modifier(Modifier::BOLD);
     let fg = Style::new().fg(t.fg);
     let danger = Style::new().fg(t.danger);
 
-    let (rail_area, after_rail) = split_rail(area);
-    render_focus_rail(frame, rail_area, focused);
-    if after_rail.width == 0 || after_rail.height == 0 {
+    let content_area = if in_split {
+        let separator = Block::default()
+            .borders(Borders::LEFT)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().fg(t.muted));
+        let inner = separator.inner(area);
+        frame.render_widget(separator, area);
+        inner
+    } else {
+        area
+    };
+    if content_area.width == 0 || content_area.height == 0 {
         return;
     }
-    let (chip_area, repl_inner) = split_chip(after_rail);
-    let chip_label = state.repl_db.as_deref().unwrap_or("repl");
-    render_pane_chip(frame, chip_area, chip_label, focused);
+
+    let repl_inner = if in_split {
+        let (chip_area, body) = split_chip(content_area);
+        let chip_label = state.repl_db.as_deref().unwrap_or("repl");
+        render_pane_chip(frame, chip_area, chip_label, focused);
+        body
+    } else {
+        content_area
+    };
 
     if repl_inner.height == 0 {
         return;
