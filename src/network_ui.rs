@@ -457,16 +457,58 @@ fn render_traffic_chart(frame: &mut Frame, area: Rect, traffic: &[TrafficSample]
     }
 
     let last = traffic.last().copied().unwrap_or_default();
-    let style = Style::new().fg(t.fg);
-    let dn = Line::from(Span::styled(
-        format!(" ↓ {}    total {}", format_rate(last.rx_bps), format_bytes(last.rx_total)),
-        style,
-    ));
-    let up = Line::from(Span::styled(
-        format!(" ↑ {}    total {}", format_rate(last.tx_bps), format_bytes(last.tx_total)),
-        style,
-    ));
+    let text_style = Style::new().fg(t.fg);
+    let spark_style = Style::new().fg(t.sparkline);
+    let width = area.width as usize;
+
+    let dn = traffic_line(" ↓ ", last.rx_bps, last.rx_total, traffic.iter().map(|s| s.rx_bps), width, text_style, spark_style);
+    let up = traffic_line(" ↑ ", last.tx_bps, last.tx_total, traffic.iter().map(|s| s.tx_bps), width, text_style, spark_style);
     frame.render_widget(Paragraph::new(vec![dn, up]), area);
+}
+
+fn traffic_line<'a>(
+    arrow: &'a str,
+    rate: u64,
+    total: u64,
+    series: impl Iterator<Item = u64>,
+    width: usize,
+    text_style: Style,
+    spark_style: Style,
+) -> Line<'a> {
+    let label = format!("{arrow}{}    total {}  ", format_rate(rate), format_bytes(total));
+    let label_cols = label.chars().count();
+    let spark_cols = width.saturating_sub(label_cols);
+    let samples: Vec<u64> = series.collect();
+    let spark = sparkline(&samples, spark_cols);
+    Line::from(vec![
+        Span::styled(label, text_style),
+        Span::styled(spark, spark_style),
+    ])
+}
+
+/// Render the last `width` values of `samples` as unicode sparkline characters.
+/// Right-aligned: the most recent sample is the rightmost character.
+fn sparkline(samples: &[u64], width: usize) -> String {
+    const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    if width == 0 {
+        return String::new();
+    }
+    let visible: Vec<u64> = samples.iter().rev().take(width).copied().collect();
+    let max = visible.iter().copied().max().unwrap_or(0);
+    let pad = width.saturating_sub(visible.len());
+    let mut out = String::with_capacity(width);
+    for _ in 0..pad {
+        out.push(' ');
+    }
+    for &v in visible.iter().rev() {
+        let idx = if max == 0 {
+            0
+        } else {
+            ((v as f64 / max as f64) * (BLOCKS.len() - 1) as f64).round() as usize
+        };
+        out.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
+    }
+    out
 }
 
 fn format_rate(bps: u64) -> String {
