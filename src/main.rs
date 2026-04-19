@@ -135,6 +135,12 @@ fn run_app(
                 d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::At(offset));
             }
 
+            if !d.files_stat_in_flight()
+                && app.files_state().loading_meta
+                && let Some(path) = app.files_state().selected_file.clone()
+            {
+                d.start_stat_file(ctx.adb.clone(), s.clone(), p.clone(), path);
+            }
             if !d.files_cat_in_flight()
                 && let Some(path) = app.files_state_mut().take_pending_cat()
             {

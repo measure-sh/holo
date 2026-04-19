@@ -300,11 +300,6 @@ impl DispatchContext {
                     d.start_pull_file(self.adb.clone(), s.clone(), p.clone(), path);
                 }
             }
-            Action::StatFile(path) => {
-                if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
-                    d.start_stat_file(self.adb.clone(), s.clone(), p.clone(), path);
-                }
-            }
             Action::StartTrace => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
                     let preset = app.trace_state().preset;

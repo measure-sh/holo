@@ -180,7 +180,7 @@ impl FilesState {
         if first_open {
             Action::ZoomIn
         } else {
-            Action::StatFile(path)
+            Action::Noop
         }
     }
 
@@ -820,7 +820,7 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_different_file_emits_stat_file() {
+    fn enter_on_different_file_rescopes_detail() {
         let mut state = make_state_with_children();
         state.set_children("cache", vec![("a.txt".into(), false)]);
         find_node_mut(state.root_children.as_mut().unwrap(), "cache").unwrap().expanded = true;
@@ -828,15 +828,18 @@ mod tests {
         state.selected_index = 3; // config.xml after expansion
         state.handle_key(key(KeyCode::Enter));
         assert!(state.detail_open);
+        // Finish "loading" for the first file
+        state.loading_meta = false;
 
         state.selected_index = 1; // a.txt
         let action = state.handle_key(key(KeyCode::Enter));
-        assert!(matches!(&action, Some(Action::StatFile(p)) if p == "cache/a.txt"));
+        assert!(matches!(&action, Some(Action::Noop)));
         assert_eq!(state.selected_file.as_deref(), Some("cache/a.txt"));
+        assert!(state.loading_meta, "re-scoping must trigger a fresh stat load");
     }
 
     #[test]
-    fn tree_navigation_never_emits_stat_file() {
+    fn tree_navigation_does_not_trigger_load() {
         let mut state = make_state_with_children();
         state.set_children("cache", vec![
             ("a.txt".into(), false),
@@ -846,10 +849,14 @@ mod tests {
         // open detail on one file first
         state.selected_index = 1;
         state.handle_key(key(KeyCode::Enter));
-        // now move cursor around while detail is open
+        state.loading_meta = false;
+        let pinned = state.selected_file.clone();
+
         for k in [KeyCode::Down, KeyCode::Down, KeyCode::Up, KeyCode::Down] {
             let action = state.handle_key(key(k));
-            assert!(matches!(action, Some(Action::Noop)), "{:?} must not emit stat", k);
+            assert!(matches!(action, Some(Action::Noop)), "{:?} must not fire", k);
+            assert_eq!(state.selected_file, pinned, "cursor nav must not change selected_file");
+            assert!(!state.loading_meta, "cursor nav must not start a load");
         }
     }
 

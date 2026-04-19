@@ -41,7 +41,6 @@ pub enum Action {
     RefreshFiles,
     ExpandDir(String),
     OpenFile(String),
-    StatFile(String),
     StartTrace,
     StopTrace,
     Screenshot,
@@ -432,6 +431,10 @@ impl App {
 
     pub fn permissions_state_mut(&mut self) -> &mut PermissionsState {
         &mut self.permissions_state
+    }
+
+    pub fn files_state(&self) -> &FilesState {
+        &self.files_state
     }
 
     pub fn files_state_mut(&mut self) -> &mut FilesState {

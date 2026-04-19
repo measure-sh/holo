@@ -374,6 +374,10 @@ impl DataSources {
         self.files_cat_rx.is_some()
     }
 
+    pub fn files_stat_in_flight(&self) -> bool {
+        self.files_stat_rx.is_some()
+    }
+
     pub fn start_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, preset: trace::TracePreset) {
         self.trace_start_rx = Some(trace::spawn_start_trace(adb, serial, package, preset));
     }
