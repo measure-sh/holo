@@ -12,6 +12,7 @@ All ADB commands used by holo, organized by feature area.
 | 1s | Memory | `adb shell cat /proc/<pid>/status` |
 | 5s | Disk | `adb shell run-as <package> du -s . ./cache` |
 | 5s | Connectivity | `adb get-state` |
+| 2s | Network bytes | `adb shell dumpsys netstats detail` |
 | 5s | Permissions | `adb shell dumpsys package <package>` |
 | 5s | Crashes | `adb shell dumpsys dropbox --print data_app_crash` |
 | 5s | ANRs | `adb shell dumpsys dropbox --print data_app_anr` |
@@ -58,6 +59,13 @@ All ADB commands used by holo, organized by feature area.
 | `adb shell top -b -n 1 -q` | CPU usage snapshot (polled every 1s) |
 | `adb shell cat /proc/<pid>/status` | RSS memory from proc filesystem (polled every 1s) |
 | `adb shell run-as <package> du -s . ./cache` | App data and cache size on disk (polled every 5s) |
+
+### Network (no Measure SDK)
+
+| Command | Purpose |
+|---------|---------|
+| `adb shell dumpsys package <package>` | Resolve app UID via `userId=` line |
+| `adb shell dumpsys netstats detail` | Per-UID rxBytes/txBytes counters (polled every 2s) |
 
 ### Permissions
 
