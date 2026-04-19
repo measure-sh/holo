@@ -500,9 +500,14 @@ impl DatabaseState {
         let in_start = data.offset;
         let in_end = in_start + data.rows.len();
 
-        // Case 4: fully contained — sync row_count only.
+        // Case 4: fully contained — sync row_count and drop any
+        // existing rows that no longer exist (table shrank).
         if in_start >= ex_start && in_end <= ex_end {
             existing.row_count = data.row_count;
+            let max_loaded = data.row_count.saturating_sub(existing.offset);
+            if existing.rows.len() > max_loaded {
+                existing.rows.truncate(max_loaded);
+            }
             return;
         }
 
