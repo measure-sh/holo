@@ -80,20 +80,6 @@ pub fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
         .border_style(Style::new().fg(color))
 }
 
-pub fn split_rail(area: Rect) -> (Rect, Rect) {
-    if area.width == 0 {
-        return (area, area);
-    }
-    let rail = Rect { x: area.x, y: area.y, width: 1, height: area.height };
-    let content = Rect {
-        x: area.x + 1,
-        y: area.y,
-        width: area.width - 1,
-        height: area.height,
-    };
-    (rail, content)
-}
-
 pub fn split_chip(area: Rect) -> (Rect, Rect) {
     if area.height == 0 {
         return (area, area);
@@ -106,18 +92,6 @@ pub fn split_chip(area: Rect) -> (Rect, Rect) {
         height: area.height - 1,
     };
     (chip, body)
-}
-
-pub fn render_focus_rail(frame: &mut Frame, area: Rect, active: bool) {
-    if !active || area.width == 0 || area.height == 0 {
-        return;
-    }
-    let t = theme::current();
-    let style = Style::new().fg(t.accent);
-    let rail: Vec<Line> = (0..area.height)
-        .map(|_| Line::from(Span::styled("\u{258E}", style)))
-        .collect();
-    frame.render_widget(ratatui::widgets::Paragraph::new(rail), area);
 }
 
 pub fn render_pane_chip(frame: &mut Frame, area: Rect, label: &str, active: bool) {

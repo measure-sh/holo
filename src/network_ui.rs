@@ -9,7 +9,7 @@ use ratatui::{
 use crate::network::{NetworkEntry, NetworkState};
 use crate::panel;
 use crate::theme;
-use crate::ui::{panel_title, render_focus_rail, render_pane_chip, split_chip, split_rail, wrap_line};
+use crate::ui::{panel_title, render_pane_chip, split_chip, wrap_line};
 
 pub fn format_latency(ms: u64) -> String {
     if ms >= 1000 {
@@ -112,25 +112,25 @@ pub fn render_network_panel(
             .split(inner);
         render_detail(frame, chunks[1], state, focused);
         let filtered = state.filtered_entries();
-        render_list(frame, chunks[0], &filtered, state, focused);
+        render_list(frame, chunks[0], &filtered, state, focused, true);
     } else {
         let filtered = state.filtered_entries();
-        render_list(frame, inner, &filtered, state, focused);
+        render_list(frame, inner, &filtered, state, focused, false);
     }
 }
 
 
-fn render_list(frame: &mut Frame, area: Rect, filtered: &[(usize, &NetworkEntry)], state: &NetworkState, focused: bool) {
+fn render_list(frame: &mut Frame, area: Rect, filtered: &[(usize, &NetworkEntry)], state: &NetworkState, focused: bool, in_split: bool) {
     let t = theme::current();
     let list_active = focused && !state.detail_focused;
 
-    let (rail_area, content_area) = split_rail(area);
-    render_focus_rail(frame, rail_area, list_active);
-    if content_area.width == 0 || content_area.height == 0 {
-        return;
-    }
-    let (chip_area, area) = split_chip(content_area);
-    render_pane_chip(frame, chip_area, "requests", list_active);
+    let area = if in_split {
+        let (chip_area, body) = split_chip(area);
+        render_pane_chip(frame, chip_area, "requests", list_active);
+        body
+    } else {
+        area
+    };
     if area.width == 0 || area.height == 0 {
         return;
     }
@@ -274,8 +274,12 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut NetworkState, focuse
     let t = theme::current();
     let detail_active = focused && state.detail_focused;
 
-    let (rail_area, content_area) = split_rail(area);
-    render_focus_rail(frame, rail_area, detail_active);
+    let separator = Block::default()
+        .borders(Borders::LEFT)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(t.muted));
+    let content_area = separator.inner(area);
+    frame.render_widget(separator, area);
     if content_area.width == 0 || content_area.height == 0 {
         return;
     }
