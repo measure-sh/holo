@@ -344,10 +344,10 @@ fn format_body_text(raw: &str) -> String {
     if is_empty_value(raw) {
         return "(empty)".to_string();
     }
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) {
-        if let Ok(pretty) = serde_json::to_string_pretty(&json) {
-            return pretty;
-        }
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(raw)
+        && let Ok(pretty) = serde_json::to_string_pretty(&json)
+    {
+        return pretty;
     }
     raw.to_string()
 }
@@ -373,7 +373,7 @@ fn parse_optional(value: &str) -> Option<String> {
 fn is_localhost_url(url: &str) -> bool {
     let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let host = after_scheme
-        .split(|c: char| c == '/' || c == '?' || c == '#')
+        .split(['/', '?', '#'])
         .next()
         .unwrap_or("");
     let host = host.rsplit_once('@').map(|(_, h)| h).unwrap_or(host);

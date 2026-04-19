@@ -459,7 +459,7 @@ impl DatabaseState {
         if !self.is_at_loaded_bottom() || !is_at_table_tail(data) {
             return false;
         }
-        self.last_refresh.map_or(true, |t| t.elapsed() >= AUTO_REFRESH)
+        self.last_refresh.is_none_or(|t| t.elapsed() >= AUTO_REFRESH)
     }
 
     /// Returns the offset of the previous chunk to fetch when the user has

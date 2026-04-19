@@ -170,7 +170,7 @@ fn render_list(frame: &mut Frame, area: Rect, filtered: &[(usize, &NetworkEntry)
     let mut display_lines: Vec<ListItem> = Vec::new();
     let mut selected_display_start = 0;
     let mut selected_display_count = 0;
-    for (_, (orig_idx, entry)) in filtered.iter().enumerate() {
+    for (orig_idx, entry) in filtered.iter() {
         let is_selected = *orig_idx == selected && focused;
         let line = build_entry_line(entry, is_selected);
         let wrapped = wrap_line(line, width, network_pad);
@@ -365,13 +365,13 @@ fn push_body_lines<'a>(lines: &mut Vec<Line<'a>>, raw: &str, style: Style, muted
         return;
     }
     // Try JSON pretty-print
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(raw) {
-        if let Ok(pretty) = serde_json::to_string_pretty(&json) {
-            for line in pretty.lines() {
-                lines.push(Line::from(Span::styled(format!("   {line}"), style)));
-            }
-            return;
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(raw)
+        && let Ok(pretty) = serde_json::to_string_pretty(&json)
+    {
+        for line in pretty.lines() {
+            lines.push(Line::from(Span::styled(format!("   {line}"), style)));
         }
+        return;
     }
     // Fallback: raw text
     for line in raw.lines() {

@@ -210,7 +210,7 @@ use crate::logcat;
 
 fn extract_field<'a>(data: &'a str, key: &str) -> Option<&'a str> {
     let start = data.find(key)? + key.len();
-    let end = data[start..].find(|c: char| c == ',' || c == ')').map(|i| start + i).unwrap_or(data.len());
+    let end = data[start..].find([',', ')']).map(|i| start + i).unwrap_or(data.len());
     Some(data[start..end].trim())
 }
 
