@@ -531,6 +531,12 @@ impl DatabaseState {
             existing.offset = in_start;
             existing.row_count = data.row_count;
             self.detail_scroll = self.detail_scroll.saturating_add(take);
+            // If the table shrank since last poll, drop trailing rows that
+            // no longer exist so the row count and window stay in sync.
+            let max_loaded = data.row_count.saturating_sub(existing.offset);
+            if existing.rows.len() > max_loaded {
+                existing.rows.truncate(max_loaded);
+            }
             return;
         }
 
@@ -1295,6 +1301,37 @@ mod tests {
         assert_eq!(data.rows[12][0], "12");
         assert_eq!(data.rows[111][0], "111");
         assert_eq!(s.detail_scroll, 17);
+    }
+
+    #[test]
+    fn receive_extends_backward_truncates_when_table_shrinks() {
+        // Existing [41, 91) with row_count=91. Tail poll returns COUNT=69
+        // (table shrank): incoming [19, 69) with row_count=69. Prepending
+        // naively would leave rows.len()=72 past row_count=69.
+        let mut s = DatabaseState::new();
+        s.selected_table = Some(("a.db".into(), "t".into()));
+        s.detail_scroll = 0;
+        s.table_data = Some(TableData {
+            db: "a.db".into(),
+            table: "t".into(),
+            columns: vec!["id".into()],
+            rows: (41..91).map(|i| vec![i.to_string()]).collect(),
+            row_count: 91,
+            offset: 41,
+        });
+        s.receive_table_data(TableData {
+            db: "a.db".into(),
+            table: "t".into(),
+            columns: vec!["id".into()],
+            rows: (19..69).map(|i| vec![i.to_string()]).collect(),
+            row_count: 69,
+            offset: 19,
+        });
+        let data = s.table_data.as_ref().unwrap();
+        assert_eq!(data.offset, 19);
+        assert_eq!(data.row_count, 69);
+        assert_eq!(data.rows.len(), 50);
+        assert!(data.offset + data.rows.len() <= data.row_count);
     }
 
     #[test]
