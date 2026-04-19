@@ -178,20 +178,15 @@ pub fn render_app(
             .add_modifier(Modifier::BOLD),
     );
 
-    let mut hint_spans = if app.confirming_quit() {
-        vec![
-            Span::styled(" q", Style::new().fg(t.danger)),
-            Span::styled(" to confirm ", Style::new().fg(t.fg)),
-        ]
-    } else if app.confirming_settings() {
+    let mut hint_spans = if app.confirming_settings() {
         vec![
             Span::styled(" s", Style::new().fg(t.danger)),
             Span::styled(" to confirm ", Style::new().fg(t.fg)),
         ]
     } else {
         vec![
-            Span::styled(" qq", Style::new().fg(t.danger)),
-            Span::styled("uit ", Style::new().fg(t.muted)),
+            Span::styled(" ^q ", Style::new().fg(t.danger)),
+            Span::styled("quit ", Style::new().fg(t.muted)),
             Span::styled(" ss", Style::new().fg(t.danger)),
             Span::styled("ettings ", Style::new().fg(t.muted)),
         ]

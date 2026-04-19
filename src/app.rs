@@ -74,7 +74,6 @@ pub struct App {
     pointer_location: bool,
     gpu_rendering: bool,
     talkback: bool,
-    confirming_quit: bool,
     confirming_settings: bool,
     pub settings_open: bool,
     pub settings_cursor: usize,
@@ -110,7 +109,6 @@ impl App {
             pointer_location: false,
             gpu_rendering: false,
             talkback: false,
-            confirming_quit: false,
             confirming_settings: false,
             settings_open: false,
             settings_cursor: 0,
@@ -195,6 +193,7 @@ impl App {
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match code {
+                KeyCode::Char('q') => return Action::Quit,
                 KeyCode::Char('d') => {
                     self.toolbar.open_devices();
                     return Action::FetchDevices;
@@ -219,14 +218,6 @@ impl App {
                 ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
                 ToolbarAction::LaunchEmulator(name) => Action::LaunchEmulator(name),
                 ToolbarAction::Close | ToolbarAction::None => Action::Noop,
-            };
-        }
-
-        if self.confirming_quit {
-            self.confirming_quit = false;
-            return match code {
-                KeyCode::Char('q') => Action::Quit,
-                _ => Action::Noop,
             };
         }
 
@@ -274,10 +265,6 @@ impl App {
         }
 
         match code {
-            KeyCode::Char('q') => {
-                self.confirming_quit = true;
-                Action::Noop
-            }
             KeyCode::Char('s') => {
                 self.confirming_settings = true;
                 Action::Noop
@@ -561,10 +548,6 @@ impl App {
         self.measure_sdk_detected = v;
     }
 
-    pub fn confirming_quit(&self) -> bool {
-        self.confirming_quit
-    }
-
     pub fn confirming_settings(&self) -> bool {
         self.confirming_settings
     }
@@ -599,7 +582,6 @@ impl App {
 
         self.focused = None;
         self.dialog = None;
-        self.confirming_quit = false;
         self.confirming_settings = false;
         self.settings_open = false;
     }
@@ -700,20 +682,17 @@ mod tests {
     }
 
     #[test]
-    fn qq_quits() {
+    fn ctrl_q_quits() {
         let mut app = App::new(None, Some("com.test"));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('q'))), Action::Noop));
-        assert!(app.confirming_quit());
-        assert!(matches!(app.handle_key(key(KeyCode::Char('q'))), Action::Quit));
+        assert!(matches!(app.handle_key(ctrl('q')), Action::Quit));
     }
 
     #[test]
-    fn q_then_other_cancels_quit() {
+    fn ctrl_q_quits_even_when_focused() {
         let mut app = App::new(None, Some("com.test"));
-        app.handle_key(key(KeyCode::Char('q')));
-        assert!(app.confirming_quit());
-        assert!(matches!(app.handle_key(key(KeyCode::Esc)), Action::Noop));
-        assert!(!app.confirming_quit());
+        app.handle_key(key(KeyCode::Char('l')));
+        assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
+        assert!(matches!(app.handle_key(ctrl('q')), Action::Quit));
     }
 
     #[test]
