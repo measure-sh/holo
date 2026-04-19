@@ -94,18 +94,28 @@ pub fn split_chip(area: Rect) -> (Rect, Rect) {
     (chip, body)
 }
 
-pub fn render_pane_chip(frame: &mut Frame, area: Rect, label: &str, active: bool) {
+pub fn render_pane_chip(frame: &mut Frame, area: Rect, label: &str, active: bool, show_hint: bool) {
     if area.width == 0 || area.height == 0 {
         return;
     }
     let t = theme::current();
-    let style = if active {
-        Style::new().fg(t.bg).bg(t.accent).add_modifier(Modifier::BOLD)
+    if active {
+        let style = Style::new().fg(t.bg).bg(t.accent).add_modifier(Modifier::BOLD);
+        frame.render_widget(Line::from(Span::styled(format!(" {label} "), style)), area);
+    } else if show_hint {
+        let hint = Style::new().fg(t.danger);
+        let label_style = Style::new().fg(t.muted).add_modifier(Modifier::BOLD);
+        frame.render_widget(
+            Line::from(vec![
+                Span::styled(" tab", hint),
+                Span::styled(format!(" {label} "), label_style),
+            ]),
+            area,
+        );
     } else {
-        Style::new().fg(t.muted).add_modifier(Modifier::BOLD)
-    };
-    let text = format!(" {label} ");
-    frame.render_widget(Line::from(Span::styled(text, style)), area);
+        let style = Style::new().fg(t.muted).add_modifier(Modifier::BOLD);
+        frame.render_widget(Line::from(Span::styled(format!(" {label} "), style)), area);
+    }
 }
 
 pub fn wrap_line(line: Line<'_>, width: usize, pad: usize) -> Vec<Line<'_>> {

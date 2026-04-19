@@ -70,9 +70,6 @@ pub fn render_network_panel(
         let action_muted = Style::new().fg(t.muted);
         if state.detail_open && state.detail_focused {
             block = block.title_bottom(Line::from(vec![
-                Span::styled(" tab", accent),
-                Span::styled(" list ", action_muted),
-                Span::styled("───", Style::new().fg(color)),
                 Span::styled(" o", accent),
                 Span::styled("pen ", action_muted),
                 Span::styled("───", Style::new().fg(color)),
@@ -81,9 +78,6 @@ pub fn render_network_panel(
             ]));
         } else if state.detail_open {
             block = block.title_bottom(Line::from(vec![
-                Span::styled(" tab", accent),
-                Span::styled(" detail ", action_muted),
-                Span::styled("───", Style::new().fg(color)),
                 Span::styled(" o", accent),
                 Span::styled("pen ", action_muted),
                 Span::styled("───", Style::new().fg(color)),
@@ -126,7 +120,7 @@ fn render_list(frame: &mut Frame, area: Rect, filtered: &[(usize, &NetworkEntry)
 
     let area = if in_split {
         let (chip_area, body) = split_chip(area);
-        render_pane_chip(frame, chip_area, "requests", list_active);
+        render_pane_chip(frame, chip_area, "requests", list_active, focused && !list_active);
         body
     } else {
         area
@@ -288,13 +282,13 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut NetworkState, focuse
     let entry = match state.entries.get(state.selected) {
         Some(e) => e,
         None => {
-            render_pane_chip(frame, chip_area, "detail", detail_active);
+            render_pane_chip(frame, chip_area, "detail", detail_active, focused && !detail_active);
             return;
         }
     };
 
     let method_label = entry.method.to_uppercase();
-    render_pane_chip(frame, chip_area, &method_label, detail_active);
+    render_pane_chip(frame, chip_area, &method_label, detail_active, focused && !detail_active);
     let status_latency = Line::from(vec![
         Span::styled(
             format!("{} ", entry.status_code),

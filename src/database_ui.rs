@@ -52,22 +52,24 @@ pub fn render_database_panel(
 
     let tree_focused = focused && !db_state.detail_focused && !db_state.repl_active;
     let detail_active = focused && db_state.detail_focused;
+    let tree_hint = focused && !tree_focused;
+    let detail_hint = focused && !detail_active;
 
     if db_state.detail_open {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(inner);
-        render_tree(frame, chunks[0], db_state, tree_focused, true);
+        render_tree(frame, chunks[0], db_state, tree_focused, true, tree_hint);
         if db_state.repl_active {
             render_repl(frame, chunks[1], db_state, focused, true);
         } else {
-            render_detail(frame, chunks[1], db_state, detail_active);
+            render_detail(frame, chunks[1], db_state, detail_active, detail_hint);
         }
     } else if db_state.repl_active {
         render_repl(frame, inner, db_state, focused, false);
     } else {
-        render_tree(frame, inner, db_state, tree_focused, false);
+        render_tree(frame, inner, db_state, tree_focused, false, false);
     }
 
     if db_state.copied_at
@@ -145,9 +147,6 @@ fn build_bottom_bar(
 
     if state.detail_open && state.detail_focused {
         return Line::from(vec![
-            Span::styled(" tab", accent),
-            Span::styled(" tree ", muted),
-            Span::styled("───", sep),
             Span::styled(" hjkl", accent),
             Span::styled(" scroll ", muted),
             Span::styled("───", sep),
@@ -158,9 +157,6 @@ fn build_bottom_bar(
 
     if state.detail_open {
         return Line::from(vec![
-            Span::styled(" tab", accent),
-            Span::styled(" detail ", muted),
-            Span::styled("───", sep),
             Span::styled(" /", accent),
             Span::styled("repl ", muted),
             Span::styled("───", sep),
@@ -187,14 +183,14 @@ fn build_bottom_bar(
     ])
 }
 
-fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active: bool, in_split: bool) {
+fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active: bool, in_split: bool, show_hint: bool) {
     let t = theme::current();
     let muted = Style::new().fg(t.muted);
     let fg = Style::new().fg(t.fg);
 
     let body_area = if in_split {
         let (chip_area, body) = split_chip(area);
-        render_pane_chip(frame, chip_area, "tables", active);
+        render_pane_chip(frame, chip_area, "tables", active, show_hint);
         body
     } else {
         area
@@ -274,7 +270,7 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active:
     }
 }
 
-fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active: bool) {
+fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active: bool, show_hint: bool) {
     let t = theme::current();
     let fg = Style::new().fg(t.fg);
     let muted = Style::new().fg(t.muted);
@@ -293,14 +289,14 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, activ
 
     let Some((_, table)) = state.selected_table.clone() else {
         let (chip_area, body_area) = split_chip(detail_inner);
-        render_pane_chip(frame, chip_area, "detail", active);
+        render_pane_chip(frame, chip_area, "detail", active, show_hint);
         let item = ListItem::new(Line::from(Span::styled(" select a table", muted)));
         frame.render_widget(List::new(vec![item]), body_area);
         return;
     };
 
     let (chip_area, rest) = split_chip(detail_inner);
-    render_pane_chip(frame, chip_area, &table, active);
+    render_pane_chip(frame, chip_area, &table, active, show_hint);
     let stats_text = state
         .table_data
         .as_ref()
@@ -508,7 +504,7 @@ fn render_repl(frame: &mut Frame, area: Rect, state: &mut DatabaseState, focused
     let repl_inner = if in_split {
         let (chip_area, body) = split_chip(content_area);
         let chip_label = state.repl_db.as_deref().unwrap_or("repl");
-        render_pane_chip(frame, chip_area, chip_label, focused);
+        render_pane_chip(frame, chip_area, chip_label, focused, false);
         body
     } else {
         content_area
