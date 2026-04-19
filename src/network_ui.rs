@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, RenderDirection, Scrollbar, ScrollbarOrientation, ScrollbarState, Sparkline},
     Frame,
 };
 
@@ -465,59 +465,56 @@ fn render_traffic_chart(
     let (base_rx, base_tx) = baseline.unwrap_or((last.rx_total, last.tx_total));
     let rx_session = last.rx_total.saturating_sub(base_rx);
     let tx_session = last.tx_total.saturating_sub(base_tx);
-    let text_style = Style::new().fg(t.fg);
-    let width = area.width as usize;
 
-    let dn = traffic_line(" ↓ ", last.rx_bps, rx_session, traffic.iter().map(|s| s.rx_bps), width, text_style, t.spark_rx);
-    let up = traffic_line(" ↑ ", last.tx_bps, tx_session, traffic.iter().map(|s| s.tx_bps), width, text_style, t.spark_tx);
-    frame.render_widget(Paragraph::new(vec![dn, up]), area);
+    let rx_label = format!(" ↓ {}    total {}  ", format_rate(last.rx_bps), format_bytes(rx_session));
+    let tx_label = format!(" ↑ {}    total {}  ", format_rate(last.tx_bps), format_bytes(tx_session));
+    let label_width = rx_label.chars().count().max(tx_label.chars().count()) as u16;
+
+    let visible_rows = (area.height as usize).min(2);
+    if visible_rows == 0 {
+        return;
+    }
+    let constraints: Vec<Constraint> = (0..visible_rows).map(|_| Constraint::Length(1)).collect();
+    let chunks = Layout::vertical(constraints).split(area);
+
+    if visible_rows >= 1 {
+        traffic_row(frame, chunks[0], &rx_label, label_width, traffic.iter().map(|s| s.rx_bps), t.spark_rx);
+    }
+    if visible_rows >= 2 {
+        traffic_row(frame, chunks[1], &tx_label, label_width, traffic.iter().map(|s| s.tx_bps), t.spark_tx);
+    }
 }
 
-fn traffic_line<'a>(
-    arrow: &'a str,
-    rate: u64,
-    total: u64,
+fn traffic_row(
+    frame: &mut Frame,
+    area: Rect,
+    label: &str,
+    label_width: u16,
     series: impl Iterator<Item = u64>,
-    width: usize,
-    text_style: Style,
     spark_color: Color,
-) -> Line<'a> {
-    let label = format!("{arrow}{}    total {}  ", format_rate(rate), format_bytes(total));
-    let label_cols = label.chars().count();
-    let spark_cols = width.saturating_sub(label_cols);
-    let samples: Vec<u64> = series.collect();
-    let spark = sparkline(&samples, spark_cols);
-    Line::from(vec![
-        Span::styled(label, text_style),
-        Span::styled(spark, Style::new().fg(spark_color)),
+) {
+    let t = theme::current();
+    let chunks = Layout::horizontal([
+        Constraint::Length(label_width),
+        Constraint::Min(0),
     ])
-}
+    .split(area);
+    frame.render_widget(
+        Paragraph::new(Line::styled(label.to_string(), Style::new().fg(t.fg))),
+        chunks[0],
+    );
 
-/// Render the last `width` values of `samples` as unicode sparkline characters.
-/// Right-aligned: the most recent sample is the rightmost character.
-fn sparkline(samples: &[u64], width: usize) -> String {
-    const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-    if width == 0 {
-        return String::new();
+    let data: Vec<u64> = series.collect();
+    let max = data.iter().copied().max().unwrap_or(0);
+    let reversed: Vec<u64> = data.into_iter().rev().collect();
+    let mut spark = Sparkline::default()
+        .data(reversed)
+        .direction(RenderDirection::RightToLeft)
+        .style(Style::new().fg(spark_color));
+    if max > 0 {
+        spark = spark.max(max);
     }
-    let visible: Vec<u64> = samples.iter().rev().take(width).copied().collect();
-    let min = visible.iter().copied().min().unwrap_or(0);
-    let max = visible.iter().copied().max().unwrap_or(0);
-    let range = max.saturating_sub(min);
-    let pad = width.saturating_sub(visible.len());
-    let mut out = String::with_capacity(width);
-    for _ in 0..pad {
-        out.push(' ');
-    }
-    for &v in visible.iter().rev() {
-        let idx = if range == 0 {
-            0
-        } else {
-            ((v.saturating_sub(min)) as f64 / range as f64 * (BLOCKS.len() - 1) as f64).round() as usize
-        };
-        out.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
-    }
-    out
+    frame.render_widget(spark, chunks[1]);
 }
 
 fn format_rate(bps: u64) -> String {

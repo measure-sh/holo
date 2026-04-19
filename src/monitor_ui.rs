@@ -1,8 +1,8 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Layout, Rect},
     style::{Color, Style},
-    text::{Line, Span},
-    widgets::Paragraph,
+    text::Line,
+    widgets::{Paragraph, RenderDirection, Sparkline, SparklineBar},
     Frame,
 };
 
@@ -25,118 +25,142 @@ fn format_mb_precise(kb: u64) -> String {
     format!("{:.2} MB", mb)
 }
 
-/// Render the last `width` values of `samples` as unicode sparkline characters.
-/// Right-aligned: the most recent sample is the rightmost character.
-fn sparkline(samples: &[f64], width: usize) -> String {
-    const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-    if width == 0 {
-        return String::new();
+/// Range-shift a series so stable non-zero values render as a flat low bar
+/// instead of clipping to the top, and zero samples render as absent (e.g.
+/// the app wasn't running yet). Returns bars in chronological order plus the
+/// `max` to feed the widget.
+fn range_shifted(samples: &[u64]) -> (Vec<SparklineBar>, u64) {
+    let nonzero: Vec<u64> = samples.iter().copied().filter(|&v| v > 0).collect();
+    if nonzero.is_empty() {
+        return (samples.iter().map(|_| SparklineBar::from(None)).collect(), 0);
     }
-    let visible: Vec<f64> = samples.iter().rev().take(width).copied().collect();
-    let min = visible.iter().copied().fold(f64::INFINITY, f64::min);
-    let max = visible.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let range = max - min;
-    let pad = width.saturating_sub(visible.len());
-    let mut out = String::with_capacity(width);
-    for _ in 0..pad {
-        out.push(' ');
-    }
-    for &v in visible.iter().rev() {
-        let idx = if range <= 0.0 {
-            0
-        } else {
-            ((v - min) / range * (BLOCKS.len() - 1) as f64).round() as usize
-        };
-        out.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
-    }
-    out
+    let min = *nonzero.iter().min().unwrap();
+    let max = *nonzero.iter().max().unwrap();
+    let data = samples
+        .iter()
+        .map(|&v| {
+            if v == 0 {
+                SparklineBar::from(None)
+            } else {
+                SparklineBar::from(Some(v - min))
+            }
+        })
+        .collect();
+    (data, max - min)
 }
 
-fn metric_line<'a>(
-    label: String,
-    label_width: usize,
-    samples: &[f64],
-    width: usize,
-    text_style: Style,
-    spark_color: Color,
-) -> Line<'a> {
-    let label_cols = label.chars().count();
-    let pad = label_width.saturating_sub(label_cols);
-    let padded = format!("{}{}", label, " ".repeat(pad));
-    let spark_cols = width.saturating_sub(padded.chars().count());
-    let spark = sparkline(samples, spark_cols);
-    Line::from(vec![
-        Span::styled(padded, text_style),
-        Span::styled(spark, Style::new().fg(spark_color)),
+fn metric_row(
+    frame: &mut Frame,
+    area: Rect,
+    label: &str,
+    label_width: u16,
+    data: Vec<SparklineBar>,
+    max: u64,
+    color: Color,
+) {
+    let t = theme::current();
+    let chunks = Layout::horizontal([
+        Constraint::Length(label_width),
+        Constraint::Min(0),
     ])
+    .split(area);
+    frame.render_widget(
+        Paragraph::new(Line::styled(label.to_string(), Style::new().fg(t.fg))),
+        chunks[0],
+    );
+    let reversed: Vec<SparklineBar> = data.into_iter().rev().collect();
+    let mut spark = Sparkline::default()
+        .data(reversed)
+        .direction(RenderDirection::RightToLeft)
+        .style(Style::new().fg(color));
+    if max > 0 {
+        spark = spark.max(max);
+    }
+    frame.render_widget(spark, chunks[1]);
 }
 
 fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_sdk: bool) {
     if inner.width == 0 || inner.height == 0 {
         return;
     }
-
     let t = theme::current();
-    let text_style = Style::new().fg(t.fg);
-    let width = inner.width as usize;
 
-    let cpu_series: Vec<f64> = state.history.iter().map(|m| m.cpu_percent as f64).collect();
-    let cpu_now = cpu_series.last().copied().unwrap_or(0.0);
+    let cpu_now = state.history.last().map(|m| m.cpu_percent).unwrap_or(0.0);
+    let cpu_data: Vec<SparklineBar> = state
+        .history
+        .iter()
+        .map(|m| SparklineBar::from(Some(m.cpu_percent.max(0.0).round() as u64)))
+        .collect();
 
-    let rss_series: Vec<f64> = state.history.iter().map(|m| m.rss_kb as f64).collect();
-    let rss_now = rss_series.last().copied().unwrap_or(0.0) as u64;
+    let rss: Vec<u64> = state.history.iter().map(|m| m.rss_kb).collect();
+    let rss_now = state.history.last().map(|m| m.rss_kb).unwrap_or(0);
     let rss_label = if measure_sdk { "Mem" } else { "RSS" };
+    let (rss_data, rss_max) = range_shifted(&rss);
 
-    let disk_series: Vec<f64> = state.history.iter().map(|m| m.data_kb as f64).collect();
-    let disk_now = disk_series.last().copied().unwrap_or(0.0) as u64;
+    let disk: Vec<u64> = state.history.iter().map(|m| m.data_kb).collect();
+    let disk_now = state.history.last().map(|m| m.data_kb).unwrap_or(0);
+    let (disk_data, disk_max) = range_shifted(&disk);
 
-    let mut rows: Vec<(String, Vec<f64>, Color)> = Vec::new();
-    rows.push((format!(" CPU {:.1}%  ", cpu_now), cpu_series, t.spark_cpu));
-    rows.push((format!(" {} {}  ", rss_label, format_mb(rss_now)), rss_series, t.spark_mem));
+    let mut rows: Vec<(String, Vec<SparklineBar>, u64, Color)> = Vec::new();
+    rows.push((format!(" CPU {:.1}%  ", cpu_now), cpu_data, 100, t.spark_cpu));
+    rows.push((format!(" {} {}  ", rss_label, format_mb(rss_now)), rss_data, rss_max, t.spark_mem));
 
     if measure_sdk {
         let last = state.history.last().copied().unwrap_or_default();
+        let java_max = last.java_max_heap_kb;
         let java_used_now = last.java_total_heap_kb.saturating_sub(last.java_free_heap_kb);
-        let java_series: Vec<f64> = state
+        let java_data: Vec<SparklineBar> = state
             .history
             .iter()
-            .map(|m| m.java_total_heap_kb.saturating_sub(m.java_free_heap_kb) as f64)
+            .map(|m| {
+                if m.java_max_heap_kb == 0 {
+                    SparklineBar::from(None)
+                } else {
+                    SparklineBar::from(Some(m.java_total_heap_kb.saturating_sub(m.java_free_heap_kb)))
+                }
+            })
             .collect();
         rows.push((
-            format!(" Java {}/{}  ", format_mb(java_used_now), format_mb(last.java_max_heap_kb)),
-            java_series,
+            format!(" Java {}/{}  ", format_mb(java_used_now), format_mb(java_max)),
+            java_data,
+            java_max,
             t.spark_java,
         ));
 
-        let native_used_now = last
-            .native_total_heap_kb
-            .saturating_sub(last.native_free_heap_kb);
-        let native_series: Vec<f64> = state
+        let native_max = last.native_total_heap_kb;
+        let native_used_now = last.native_total_heap_kb.saturating_sub(last.native_free_heap_kb);
+        let native_data: Vec<SparklineBar> = state
             .history
             .iter()
-            .map(|m| m.native_total_heap_kb.saturating_sub(m.native_free_heap_kb) as f64)
+            .map(|m| {
+                if m.native_total_heap_kb == 0 {
+                    SparklineBar::from(None)
+                } else {
+                    SparklineBar::from(Some(m.native_total_heap_kb.saturating_sub(m.native_free_heap_kb)))
+                }
+            })
             .collect();
         rows.push((
-            format!(
-                " Native {}/{}  ",
-                format_mb(native_used_now),
-                format_mb(last.native_total_heap_kb)
-            ),
-            native_series,
+            format!(" Native {}/{}  ", format_mb(native_used_now), format_mb(native_max)),
+            native_data,
+            native_max,
             t.spark_native,
         ));
     }
 
-    rows.push((format!(" Disk {}  ", format_mb_precise(disk_now)), disk_series, t.spark_disk));
+    rows.push((format!(" Disk {}  ", format_mb_precise(disk_now)), disk_data, disk_max, t.spark_disk));
 
-    let label_width = rows.iter().map(|(l, _, _)| l.chars().count()).max().unwrap_or(0);
-    let max_rows = inner.height as usize;
-    let lines: Vec<Line> = rows
-        .iter()
-        .take(max_rows)
-        .map(|(label, data, color)| metric_line(label.clone(), label_width, data, width, text_style, *color))
-        .collect();
-    frame.render_widget(Paragraph::new(lines), inner);
+    let label_width = rows.iter().map(|(l, _, _, _)| l.chars().count()).max().unwrap_or(0) as u16;
+    let visible_rows = rows.len().min(inner.height as usize);
+    if visible_rows == 0 {
+        return;
+    }
+    let constraints: Vec<Constraint> = (0..visible_rows).map(|_| Constraint::Length(1)).collect();
+    let chunks = Layout::vertical(constraints).split(inner);
+
+    for (i, (label, data, max, color)) in rows.into_iter().take(visible_rows).enumerate() {
+        metric_row(frame, chunks[i], &label, label_width, data, max, color);
+    }
 }
 
 pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState, measure_sdk: bool) {
@@ -167,53 +191,6 @@ pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state:
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn sparkline_empty_is_empty() {
-        assert_eq!(sparkline(&[], 10), "          ");
-    }
-
-    #[test]
-    fn sparkline_zero_width() {
-        assert_eq!(sparkline(&[1.0, 2.0, 3.0], 0), "");
-    }
-
-    #[test]
-    fn sparkline_pads_short_series() {
-        let s = sparkline(&[100.0], 5);
-        assert_eq!(s.chars().count(), 5);
-        assert_eq!(s.chars().take(4).collect::<String>(), "    ");
-    }
-
-    #[test]
-    fn sparkline_constant_nonzero_values() {
-        // Flat (non-varying) data renders as a flat low bar so stable
-        // metrics don't visually look maxed out.
-        let s = sparkline(&[50.0, 50.0, 50.0], 5);
-        let last_three: String = s.chars().skip(2).collect();
-        assert!(last_three.chars().all(|c| c == '▁'));
-    }
-
-    #[test]
-    fn sparkline_all_zero() {
-        let s = sparkline(&[0.0, 0.0, 0.0], 3);
-        assert_eq!(s, "▁▁▁");
-    }
-
-    #[test]
-    fn sparkline_range_values() {
-        let s = sparkline(&[0.0, 100.0], 2);
-        let chars: Vec<char> = s.chars().collect();
-        assert_eq!(chars[0], '▁');
-        assert_eq!(chars[1], '█');
-    }
-
-    #[test]
-    fn sparkline_caps_to_width() {
-        let data: Vec<f64> = (0..20).map(|i| i as f64).collect();
-        let s = sparkline(&data, 5);
-        assert_eq!(s.chars().count(), 5);
-    }
 
     #[test]
     fn format_mb_small() {
