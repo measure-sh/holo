@@ -2,8 +2,10 @@ use std::sync::{mpsc, Arc};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::adb::Adb;
+use crate::adb::{Adb, FileMeta};
 use crate::app::Action;
+
+pub const MAX_DETAIL_BYTES: u64 = 1024 * 1024;
 
 pub struct FileNode {
     pub name: String,
@@ -278,6 +280,94 @@ pub fn spawn_list_dir(
     rx
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DetailKind {
+    Text { language: &'static str, content: String },
+    Binary { reason: &'static str },
+    TooLarge { size_bytes: u64 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailKindHint {
+    Text(&'static str),
+    Binary(&'static str),
+    TooLarge,
+}
+
+pub fn classify(path: &str, size_bytes: u64) -> DetailKindHint {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    let text_language: Option<&'static str> = match ext.as_str() {
+        "json" => Some("json"),
+        "xml" | "html" | "htm" => Some("xml"),
+        "txt" | "log" | "md" => Some("text"),
+        "csv" | "tsv" => Some("csv"),
+        "yml" | "yaml" => Some("yaml"),
+        "toml" => Some("toml"),
+        "ini" | "properties" | "conf" | "cfg" => Some("ini"),
+        "sh" => Some("sh"),
+        "sql" => Some("sql"),
+        _ => None,
+    };
+
+    if let Some(lang) = text_language {
+        if size_bytes > MAX_DETAIL_BYTES {
+            return DetailKindHint::TooLarge;
+        }
+        return DetailKindHint::Text(lang);
+    }
+
+    let binary_reason = match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "svg" => "image",
+        "db" | "db-wal" | "db-shm" | "sqlite" | "sqlite3" => "sqlite database",
+        "apk" | "zip" | "jar" | "dex" | "so" | "bin" => "binary file",
+        _ => "unknown format, showing meta only",
+    };
+    DetailKindHint::Binary(binary_reason)
+}
+
+pub type StatResult = Result<(String, FileMeta), String>;
+pub type CatResult = Result<(String, Vec<u8>), String>;
+
+pub fn spawn_stat_file(
+    adb: Arc<dyn Adb>,
+    serial: String,
+    package: String,
+    remote_path: String,
+) -> mpsc::Receiver<StatResult> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = adb
+            .stat_file(&serial, &package, &remote_path)
+            .map(|meta| (remote_path, meta))
+            .map_err(|e| e.to_string());
+        let _ = tx.send(result);
+    });
+    rx
+}
+
+pub fn spawn_cat_file(
+    adb: Arc<dyn Adb>,
+    serial: String,
+    package: String,
+    remote_path: String,
+    max_bytes: u64,
+) -> mpsc::Receiver<CatResult> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let result = adb
+            .cat_file(&serial, &package, &remote_path, max_bytes)
+            .map(|bytes| (remote_path, bytes))
+            .map_err(|e| e.to_string());
+        let _ = tx.send(result);
+    });
+    rx
+}
+
 pub fn spawn_pull_file(
     adb: Arc<dyn Adb>,
     serial: String,
@@ -484,6 +574,46 @@ mod tests {
         state.selected_index = 2;
         state.collapse_selected();
         assert_eq!(state.selected_index, 2);
+    }
+
+    #[test]
+    fn classify_json_is_text() {
+        assert_eq!(classify("config.json", 1000), DetailKindHint::Text("json"));
+    }
+
+    #[test]
+    fn classify_xml_and_prefs() {
+        assert_eq!(classify("prefs.xml", 1000), DetailKindHint::Text("xml"));
+        assert_eq!(classify("notes.md", 50), DetailKindHint::Text("text"));
+    }
+
+    #[test]
+    fn classify_image_is_binary() {
+        assert_eq!(classify("icon.png", 4096), DetailKindHint::Binary("image"));
+        assert_eq!(classify("logo.SVG", 4096), DetailKindHint::Binary("image"));
+    }
+
+    #[test]
+    fn classify_sqlite_is_binary() {
+        assert_eq!(classify("app.db", 1000), DetailKindHint::Binary("sqlite database"));
+        assert_eq!(classify("cache.sqlite3", 1000), DetailKindHint::Binary("sqlite database"));
+    }
+
+    #[test]
+    fn classify_unknown_is_binary_unknown() {
+        assert_eq!(classify("data.bin", 1000), DetailKindHint::Binary("binary file"));
+        assert_eq!(classify("mystery", 1000), DetailKindHint::Binary("unknown format, showing meta only"));
+    }
+
+    #[test]
+    fn classify_too_large_text_is_too_large() {
+        assert_eq!(classify("huge.json", 5_000_000), DetailKindHint::TooLarge);
+        assert_eq!(classify("huge.log", MAX_DETAIL_BYTES + 1), DetailKindHint::TooLarge);
+    }
+
+    #[test]
+    fn classify_at_limit_is_text() {
+        assert_eq!(classify("ok.json", MAX_DETAIL_BYTES), DetailKindHint::Text("json"));
     }
 
     #[test]
