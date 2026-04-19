@@ -754,10 +754,7 @@ pub fn spawn_table_data(
             FetchKind::Tail => row_count.saturating_sub(TABLE_PAGE_SIZE),
             FetchKind::At(n) => n.min(row_count),
         };
-        let rows_sql = format!(
-            "SELECT * FROM \"{escaped}\" LIMIT {} OFFSET {offset};",
-            TABLE_PAGE_SIZE,
-        );
+        let rows_sql = build_rows_sql(&escaped, &columns, offset);
         let rows = match adb.query_database(&serial, &package, &db, &rows_sql) {
             Ok(out) => parse_rows(&out, columns.len().max(1)),
             Err(e) => {
@@ -777,15 +774,42 @@ pub fn spawn_table_data(
     rx
 }
 
+fn build_rows_sql(table_escaped: &str, columns: &[String], offset: usize) -> String {
+    let projection = if columns.is_empty() {
+        String::from("json_array()")
+    } else {
+        let exprs: Vec<String> = columns
+            .iter()
+            .map(|c| {
+                let q = c.replace('"', "\"\"");
+                format!("CASE typeof(\"{q}\") WHEN 'blob' THEN hex(\"{q}\") ELSE CAST(\"{q}\" AS TEXT) END")
+            })
+            .collect();
+        format!("json_array({})", exprs.join(", "))
+    };
+    format!(
+        "SELECT {projection} FROM \"{table_escaped}\" LIMIT {} OFFSET {offset};",
+        TABLE_PAGE_SIZE,
+    )
+}
+
 fn parse_rows(raw: &str, expected_cols: usize) -> Vec<Vec<String>> {
     raw.lines()
         .filter(|l| !l.is_empty())
-        .map(|line| {
-            let mut parts: Vec<String> = line.splitn(expected_cols, '|').map(|s| s.to_string()).collect();
-            while parts.len() < expected_cols {
-                parts.push(String::new());
+        .filter_map(|line| serde_json::from_str::<Vec<serde_json::Value>>(line).ok())
+        .map(|arr| {
+            let mut row: Vec<String> = arr
+                .into_iter()
+                .map(|v| match v {
+                    serde_json::Value::Null => String::new(),
+                    serde_json::Value::String(s) => s,
+                    other => other.to_string(),
+                })
+                .collect();
+            while row.len() < expected_cols {
+                row.push(String::new());
             }
-            parts
+            row
         })
         .collect()
 }
@@ -1453,5 +1477,58 @@ mod tests {
         assert_eq!(s.textarea_text(), "SELECT 2");
         s.handle_key(key(KeyCode::Up));
         assert_eq!(s.textarea_text(), "SELECT 1");
+    }
+
+    #[test]
+    fn parse_rows_handles_embedded_newline_in_string() {
+        let raw = r#"["line1\nline2","ok"]"#;
+        let rows = parse_rows(raw, 2);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0], vec!["line1\nline2".to_string(), "ok".to_string()]);
+    }
+
+    #[test]
+    fn parse_rows_decodes_nulls_as_empty() {
+        let raw = r#"[null,"x"]"#;
+        let rows = parse_rows(raw, 2);
+        assert_eq!(rows, vec![vec![String::new(), "x".to_string()]]);
+    }
+
+    #[test]
+    fn parse_rows_pads_short_rows_to_expected_cols() {
+        let raw = r#"["a"]"#;
+        let rows = parse_rows(raw, 3);
+        assert_eq!(rows, vec![vec!["a".to_string(), String::new(), String::new()]]);
+    }
+
+    #[test]
+    fn parse_rows_skips_malformed_lines() {
+        let raw = "[\"a\"]\nnot json\n[\"b\"]";
+        let rows = parse_rows(raw, 1);
+        assert_eq!(rows, vec![vec!["a".to_string()], vec!["b".to_string()]]);
+    }
+
+    #[test]
+    fn build_rows_sql_uses_typeof_blob_branch() {
+        let sql = build_rows_sql("t", &["c".to_string()], 0);
+        assert!(
+            sql.contains("CASE typeof(\"c\") WHEN 'blob' THEN hex(\"c\") ELSE CAST(\"c\" AS TEXT) END"),
+            "unexpected sql: {sql}"
+        );
+        assert!(sql.contains("FROM \"t\""));
+        assert!(sql.contains("LIMIT 50 OFFSET 0"));
+    }
+
+    #[test]
+    fn build_rows_sql_escapes_quotes_in_column_name() {
+        let sql = build_rows_sql("t", &["foo\"bar".to_string()], 17);
+        assert!(sql.contains("\"foo\"\"bar\""), "unexpected sql: {sql}");
+        assert!(sql.contains("OFFSET 17"));
+    }
+
+    #[test]
+    fn build_rows_sql_handles_zero_columns() {
+        let sql = build_rows_sql("t", &[], 0);
+        assert!(sql.contains("json_array()"), "unexpected sql: {sql}");
     }
 }
