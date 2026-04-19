@@ -44,6 +44,7 @@ pub struct NetworkState {
     pub search: String,
     pub editing_search: bool,
     pub traffic: Vec<TrafficSample>,
+    pub traffic_baseline: Option<(u64, u64)>,
 }
 
 impl NetworkState {
@@ -59,10 +60,14 @@ impl NetworkState {
             search: String::new(),
             editing_search: false,
             traffic: Vec::new(),
+            traffic_baseline: None,
         }
     }
 
     pub fn push_traffic(&mut self, sample: TrafficSample) {
+        if self.traffic_baseline.is_none() {
+            self.traffic_baseline = Some((sample.rx_total, sample.tx_total));
+        }
         self.traffic.push(sample);
         if self.traffic.len() > MAX_TRAFFIC {
             let drain = self.traffic.len() - MAX_TRAFFIC;
@@ -611,6 +616,51 @@ mod tests {
         assert_eq!(state.traffic.len(), MAX_TRAFFIC);
         assert_eq!(state.traffic.first().unwrap().rx_bps, 50);
         assert_eq!(state.traffic.last().unwrap().rx_bps, (MAX_TRAFFIC + 49) as u64);
+    }
+
+    #[test]
+    fn push_traffic_records_baseline() {
+        let mut state = NetworkState::new();
+        assert_eq!(state.traffic_baseline, None);
+        state.push_traffic(TrafficSample {
+            rx_bps: 0,
+            tx_bps: 0,
+            rx_total: 1000,
+            tx_total: 500,
+        });
+        assert_eq!(state.traffic_baseline, Some((1000, 500)));
+    }
+
+    #[test]
+    fn push_traffic_keeps_first_baseline() {
+        let mut state = NetworkState::new();
+        state.push_traffic(TrafficSample {
+            rx_bps: 0,
+            tx_bps: 0,
+            rx_total: 1000,
+            tx_total: 500,
+        });
+        state.push_traffic(TrafficSample {
+            rx_bps: 0,
+            tx_bps: 0,
+            rx_total: 2000,
+            tx_total: 1500,
+        });
+        assert_eq!(state.traffic_baseline, Some((1000, 500)));
+    }
+
+    #[test]
+    fn push_traffic_baseline_survives_buffer_rotation() {
+        let mut state = NetworkState::new();
+        for i in 0..(MAX_TRAFFIC + 10) {
+            state.push_traffic(TrafficSample {
+                rx_bps: 0,
+                tx_bps: 0,
+                rx_total: 1000 + i as u64,
+                tx_total: 500 + i as u64,
+            });
+        }
+        assert_eq!(state.traffic_baseline, Some((1000, 500)));
     }
 
     #[test]

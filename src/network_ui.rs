@@ -40,7 +40,7 @@ pub fn render_network_panel(
 
     if !measure_sdk_detected {
         frame.render_widget(block, area);
-        render_traffic_chart(frame, inner, &state.traffic);
+        render_traffic_chart(frame, inner, &state.traffic, state.traffic_baseline);
         return;
     }
 
@@ -444,7 +444,12 @@ fn network_filter_bar(state: &NetworkState, color: ratatui::style::Color) -> Lin
     Line::from(spans)
 }
 
-fn render_traffic_chart(frame: &mut Frame, area: Rect, traffic: &[TrafficSample]) {
+fn render_traffic_chart(
+    frame: &mut Frame,
+    area: Rect,
+    traffic: &[TrafficSample],
+    baseline: Option<(u64, u64)>,
+) {
     let t = theme::current();
     if area.width == 0 || area.height == 0 {
         return;
@@ -457,12 +462,15 @@ fn render_traffic_chart(frame: &mut Frame, area: Rect, traffic: &[TrafficSample]
     }
 
     let last = traffic.last().copied().unwrap_or_default();
+    let (base_rx, base_tx) = baseline.unwrap_or((last.rx_total, last.tx_total));
+    let rx_session = last.rx_total.saturating_sub(base_rx);
+    let tx_session = last.tx_total.saturating_sub(base_tx);
     let text_style = Style::new().fg(t.fg);
     let spark_style = Style::new().fg(t.sparkline);
     let width = area.width as usize;
 
-    let dn = traffic_line(" ↓ ", last.rx_bps, last.rx_total, traffic.iter().map(|s| s.rx_bps), width, text_style, spark_style);
-    let up = traffic_line(" ↑ ", last.tx_bps, last.tx_total, traffic.iter().map(|s| s.tx_bps), width, text_style, spark_style);
+    let dn = traffic_line(" ↓ ", last.rx_bps, rx_session, traffic.iter().map(|s| s.rx_bps), width, text_style, spark_style);
+    let up = traffic_line(" ↑ ", last.tx_bps, tx_session, traffic.iter().map(|s| s.tx_bps), width, text_style, spark_style);
     frame.render_widget(Paragraph::new(vec![dn, up]), area);
 }
 
