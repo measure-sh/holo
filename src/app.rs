@@ -203,6 +203,12 @@ impl App {
                     self.toolbar.open_apps();
                     return Action::FetchApps;
                 }
+                KeyCode::Char('z') => {
+                    if self.focused.is_some() {
+                        self.toggle_zoom();
+                    }
+                    return Action::Noop;
+                }
                 _ => {}
             }
         }
@@ -214,11 +220,6 @@ impl App {
                 ToolbarAction::LaunchEmulator(name) => Action::LaunchEmulator(name),
                 ToolbarAction::Close | ToolbarAction::None => Action::Noop,
             };
-        }
-
-        if self.focused.is_some() && code == KeyCode::Char('z') {
-            self.toggle_zoom();
-            return Action::Noop;
         }
 
         if self.confirming_quit {
@@ -1348,12 +1349,12 @@ mod tests {
         let original_vis = *app.panel_visibility();
         let original_cmd = app.commands().visible;
 
-        app.handle_key(key(KeyCode::Char('z')));
+        app.handle_key(ctrl('z'));
         assert!(app.is_zoomed());
         assert_eq!(app.panel_visibility(), &[true, false, false, false, false, false, false, false]);
         assert!(!app.commands().visible);
 
-        app.handle_key(key(KeyCode::Char('z')));
+        app.handle_key(ctrl('z'));
         assert!(!app.is_zoomed());
         assert_eq!(app.panel_visibility(), &original_vis);
         assert_eq!(app.commands().visible, original_cmd);
@@ -1365,12 +1366,12 @@ mod tests {
         app.handle_key(key(KeyCode::Char('c')));
         assert_eq!(app.focused_panel(), Some(panel::COMMANDS));
 
-        app.handle_key(key(KeyCode::Char('z')));
+        app.handle_key(ctrl('z'));
         assert!(app.is_zoomed());
         assert_eq!(app.panel_visibility(), &[false; 8]);
         assert!(app.commands().visible);
 
-        app.handle_key(key(KeyCode::Char('z')));
+        app.handle_key(ctrl('z'));
         assert!(!app.is_zoomed());
         assert_eq!(app.panel_visibility(), &[true; 8]);
     }
@@ -1381,7 +1382,7 @@ mod tests {
         app.handle_key(key(KeyCode::Char('l')));
         let original_vis = *app.panel_visibility();
 
-        app.handle_key(key(KeyCode::Char('z')));
+        app.handle_key(ctrl('z'));
         assert!(app.is_zoomed());
 
         app.handle_key(key(KeyCode::Esc));
@@ -1394,7 +1395,7 @@ mod tests {
     fn visibility_toggle_clears_zoom() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
-        app.handle_key(key(KeyCode::Char('z')));
+        app.handle_key(ctrl('z'));
         assert!(app.is_zoomed());
 
         app.handle_key(key(KeyCode::Char('2')));
@@ -1405,7 +1406,7 @@ mod tests {
     fn z_noop_without_focus() {
         let mut app = App::new(None, Some("com.test"));
         let original_vis = *app.panel_visibility();
-        app.handle_key(key(KeyCode::Char('z')));
+        app.handle_key(ctrl('z'));
         assert!(!app.is_zoomed());
         assert_eq!(app.panel_visibility(), &original_vis);
     }

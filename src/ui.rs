@@ -197,8 +197,8 @@ pub fn render_app(
         ]
     };
     if app.focused_panel().is_some() {
-        let label = if app.is_zoomed() { "oom out " } else { "oom in " };
-        hint_spans.push(Span::styled(" z", Style::new().fg(t.danger)));
+        let label = if app.is_zoomed() { "zoom out " } else { "zoom in " };
+        hint_spans.push(Span::styled(" ^z ", Style::new().fg(t.danger)));
         hint_spans.push(Span::styled(label, Style::new().fg(t.muted)));
     }
     let hint_line = Line::from(hint_spans);
