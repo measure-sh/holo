@@ -1,20 +1,12 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    symbols,
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, RenderDirection, Scrollbar, ScrollbarOrientation, ScrollbarState, Sparkline},
+    widgets::{Block, BorderType, Borders, List, ListItem, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 
-/// Sparkline glyphs with a visible `▁` baseline instead of the default blank
-/// `empty`, so idle stretches still render as a continuous low line.
-const BASELINE_BARS: symbols::bar::Set = symbols::bar::Set {
-    empty: symbols::bar::ONE_EIGHTH,
-    ..symbols::bar::NINE_LEVELS
-};
-
-use crate::network::{NetworkEntry, NetworkState, TrafficSample};
+use crate::network::{NetworkEntry, NetworkState};
 use crate::panel;
 use crate::theme;
 use crate::ui::{panel_title, render_pane_chip, split_chip, wrap_line};
@@ -48,7 +40,11 @@ pub fn render_network_panel(
 
     if !measure_sdk_detected {
         frame.render_widget(block, area);
-        render_traffic_chart(frame, inner, &state.traffic, state.traffic_baseline);
+        let item = ListItem::new(Line::from(Span::styled(
+            " measure SDK is required for inspecting each network call",
+            muted,
+        )));
+        frame.render_widget(List::new(vec![item]), inner);
         return;
     }
 
@@ -450,102 +446,6 @@ fn network_filter_bar(state: &NetworkState, color: ratatui::style::Color) -> Lin
     spans.push(Span::styled("rap ", muted));
 
     Line::from(spans)
-}
-
-fn render_traffic_chart(
-    frame: &mut Frame,
-    area: Rect,
-    traffic: &[TrafficSample],
-    baseline: Option<(u64, u64)>,
-) {
-    let t = theme::current();
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-
-    if traffic.is_empty() {
-        let line = Line::from(Span::styled(" warming up...", Style::new().fg(t.muted)));
-        frame.render_widget(Paragraph::new(line), area);
-        return;
-    }
-
-    let last = traffic.last().copied().unwrap_or_default();
-    let (base_rx, base_tx) = baseline.unwrap_or((last.rx_total, last.tx_total));
-    let rx_session = last.rx_total.saturating_sub(base_rx);
-    let tx_session = last.tx_total.saturating_sub(base_tx);
-
-    let rx_label = format!(" ↓ {}    total {}  ", format_rate(last.rx_bps), format_bytes(rx_session));
-    let tx_label = format!(" ↑ {}    total {}  ", format_rate(last.tx_bps), format_bytes(tx_session));
-    let label_width = rx_label.chars().count().max(tx_label.chars().count()) as u16;
-
-    let visible_rows = (area.height as usize).min(2);
-    if visible_rows == 0 {
-        return;
-    }
-    let constraints: Vec<Constraint> = (0..visible_rows).map(|_| Constraint::Length(1)).collect();
-    let chunks = Layout::vertical(constraints).split(area);
-
-    if visible_rows >= 1 {
-        traffic_row(frame, chunks[0], &rx_label, label_width, traffic.iter().map(|s| s.rx_bps), t.spark_rx);
-    }
-    if visible_rows >= 2 {
-        traffic_row(frame, chunks[1], &tx_label, label_width, traffic.iter().map(|s| s.tx_bps), t.spark_tx);
-    }
-}
-
-fn traffic_row(
-    frame: &mut Frame,
-    area: Rect,
-    label: &str,
-    label_width: u16,
-    series: impl Iterator<Item = u64>,
-    spark_color: Color,
-) {
-    let t = theme::current();
-    let chunks = Layout::horizontal([
-        Constraint::Length(label_width),
-        Constraint::Min(0),
-    ])
-    .split(area);
-    frame.render_widget(
-        Paragraph::new(Line::styled(label.to_string(), Style::new().fg(t.fg))),
-        chunks[0],
-    );
-
-    let data: Vec<u64> = series.collect();
-    let max = data.iter().copied().max().unwrap_or(0);
-    let reversed: Vec<u64> = data.into_iter().rev().collect();
-    let mut spark = Sparkline::default()
-        .data(reversed)
-        .direction(RenderDirection::RightToLeft)
-        .style(Style::new().fg(spark_color))
-        .bar_set(BASELINE_BARS);
-    if max > 0 {
-        spark = spark.max(max);
-    }
-    frame.render_widget(spark, chunks[1]);
-}
-
-fn format_rate(bps: u64) -> String {
-    if bps < 1024 {
-        format!("{} B/s", bps)
-    } else if bps < 1024 * 1024 {
-        format!("{:.1} KB/s", bps as f64 / 1024.0)
-    } else {
-        format!("{:.1} MB/s", bps as f64 / (1024.0 * 1024.0))
-    }
-}
-
-fn format_bytes(b: u64) -> String {
-    if b < 1024 {
-        format!("{} B", b)
-    } else if b < 1024 * 1024 {
-        format!("{:.1} KB", b as f64 / 1024.0)
-    } else if b < 1024 * 1024 * 1024 {
-        format!("{:.1} MB", b as f64 / (1024.0 * 1024.0))
-    } else {
-        format!("{:.2} GB", b as f64 / (1024.0 * 1024.0 * 1024.0))
-    }
 }
 
 fn is_empty_value(value: &str) -> bool {
