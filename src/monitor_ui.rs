@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::Style,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -56,7 +56,7 @@ fn metric_line<'a>(
     samples: &[f64],
     width: usize,
     text_style: Style,
-    spark_style: Style,
+    spark_color: Color,
 ) -> Line<'a> {
     let label_cols = label.chars().count();
     let pad = label_width.saturating_sub(label_cols);
@@ -65,7 +65,7 @@ fn metric_line<'a>(
     let spark = sparkline(samples, spark_cols);
     Line::from(vec![
         Span::styled(padded, text_style),
-        Span::styled(spark, spark_style),
+        Span::styled(spark, Style::new().fg(spark_color)),
     ])
 }
 
@@ -76,7 +76,6 @@ fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_s
 
     let t = theme::current();
     let text_style = Style::new().fg(t.fg);
-    let spark_style = Style::new().fg(t.sparkline);
     let width = inner.width as usize;
 
     let cpu_series: Vec<f64> = state.history.iter().map(|m| m.cpu_percent as f64).collect();
@@ -89,9 +88,9 @@ fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_s
     let disk_series: Vec<f64> = state.history.iter().map(|m| m.data_kb as f64).collect();
     let disk_now = disk_series.last().copied().unwrap_or(0.0) as u64;
 
-    let mut rows: Vec<(String, Vec<f64>)> = Vec::new();
-    rows.push((format!(" CPU {:.1}%  ", cpu_now), cpu_series));
-    rows.push((format!(" {} {}  ", rss_label, format_mb(rss_now)), rss_series));
+    let mut rows: Vec<(String, Vec<f64>, Color)> = Vec::new();
+    rows.push((format!(" CPU {:.1}%  ", cpu_now), cpu_series, t.spark_cpu));
+    rows.push((format!(" {} {}  ", rss_label, format_mb(rss_now)), rss_series, t.spark_mem));
 
     if measure_sdk {
         let last = state.history.last().copied().unwrap_or_default();
@@ -104,6 +103,7 @@ fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_s
         rows.push((
             format!(" Java {}/{}  ", format_mb(java_used_now), format_mb(last.java_max_heap_kb)),
             java_series,
+            t.spark_java,
         ));
 
         let native_used_now = last
@@ -121,17 +121,18 @@ fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_s
                 format_mb(last.native_total_heap_kb)
             ),
             native_series,
+            t.spark_native,
         ));
     }
 
-    rows.push((format!(" Disk {}  ", format_mb_precise(disk_now)), disk_series));
+    rows.push((format!(" Disk {}  ", format_mb_precise(disk_now)), disk_series, t.spark_disk));
 
-    let label_width = rows.iter().map(|(l, _)| l.chars().count()).max().unwrap_or(0);
+    let label_width = rows.iter().map(|(l, _, _)| l.chars().count()).max().unwrap_or(0);
     let max_rows = inner.height as usize;
     let lines: Vec<Line> = rows
         .iter()
         .take(max_rows)
-        .map(|(label, data)| metric_line(label.clone(), label_width, data, width, text_style, spark_style))
+        .map(|(label, data, color)| metric_line(label.clone(), label_width, data, width, text_style, *color))
         .collect();
     frame.render_widget(Paragraph::new(lines), inner);
 }

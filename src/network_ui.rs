@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
@@ -466,11 +466,10 @@ fn render_traffic_chart(
     let rx_session = last.rx_total.saturating_sub(base_rx);
     let tx_session = last.tx_total.saturating_sub(base_tx);
     let text_style = Style::new().fg(t.fg);
-    let spark_style = Style::new().fg(t.sparkline);
     let width = area.width as usize;
 
-    let dn = traffic_line(" ↓ ", last.rx_bps, rx_session, traffic.iter().map(|s| s.rx_bps), width, text_style, spark_style);
-    let up = traffic_line(" ↑ ", last.tx_bps, tx_session, traffic.iter().map(|s| s.tx_bps), width, text_style, spark_style);
+    let dn = traffic_line(" ↓ ", last.rx_bps, rx_session, traffic.iter().map(|s| s.rx_bps), width, text_style, t.spark_rx);
+    let up = traffic_line(" ↑ ", last.tx_bps, tx_session, traffic.iter().map(|s| s.tx_bps), width, text_style, t.spark_tx);
     frame.render_widget(Paragraph::new(vec![dn, up]), area);
 }
 
@@ -481,7 +480,7 @@ fn traffic_line<'a>(
     series: impl Iterator<Item = u64>,
     width: usize,
     text_style: Style,
-    spark_style: Style,
+    spark_color: Color,
 ) -> Line<'a> {
     let label = format!("{arrow}{}    total {}  ", format_rate(rate), format_bytes(total));
     let label_cols = label.chars().count();
@@ -490,7 +489,7 @@ fn traffic_line<'a>(
     let spark = sparkline(&samples, spark_cols);
     Line::from(vec![
         Span::styled(label, text_style),
-        Span::styled(spark, spark_style),
+        Span::styled(spark, Style::new().fg(spark_color)),
     ])
 }
 
