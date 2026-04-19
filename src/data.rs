@@ -46,6 +46,8 @@ pub struct DataSources {
 
     files_list_rx: Option<mpsc::Receiver<files::DirListResult>>,
     files_pull_rx: Option<mpsc::Receiver<Result<String, String>>>,
+    files_stat_rx: Option<mpsc::Receiver<files::StatResult>>,
+    files_cat_rx: Option<mpsc::Receiver<files::CatResult>>,
 
     monitor_rx: mpsc::Receiver<MonitorSample>,
     monitor_visibility: Arc<AtomicU8>,
@@ -120,6 +122,8 @@ impl DataSources {
                 ".".to_string(),
             )),
             files_pull_rx: None,
+            files_stat_rx: None,
+            files_cat_rx: None,
             monitor_rx: monitor::spawn_poller(
                 adb.clone(),
                 serial.to_string(),
@@ -280,6 +284,18 @@ impl DataSources {
                 Err(e) => app.files_state_mut().error = Some(e),
             }
         }
+        if let Some(result) = try_poll(&mut self.files_stat_rx) {
+            match result {
+                Ok((path, meta)) => app.files_state_mut().receive_meta(path, meta),
+                Err(e) => app.files_state_mut().receive_detail_error(e),
+            }
+        }
+        if let Some(result) = try_poll(&mut self.files_cat_rx) {
+            match result {
+                Ok((path, bytes)) => app.files_state_mut().receive_content(path, bytes),
+                Err(e) => app.files_state_mut().receive_detail_error(e),
+            }
+        }
         if let Some(result) = try_poll(&mut self.trace_start_rx)
             && let Err(e) = result
         {
@@ -344,6 +360,18 @@ impl DataSources {
 
     pub fn start_pull_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
         self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path));
+    }
+
+    pub fn start_stat_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
+        self.files_stat_rx = Some(files::spawn_stat_file(adb, serial, package, path));
+    }
+
+    pub fn start_cat_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
+        self.files_cat_rx = Some(files::spawn_cat_file(adb, serial, package, path, files::MAX_DETAIL_BYTES));
+    }
+
+    pub fn files_cat_in_flight(&self) -> bool {
+        self.files_cat_rx.is_some()
     }
 
     pub fn start_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, preset: trace::TracePreset) {

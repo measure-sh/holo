@@ -41,6 +41,7 @@ pub enum Action {
     RefreshFiles,
     ExpandDir(String),
     OpenFile(String),
+    StatFile(String),
     StartTrace,
     StopTrace,
     Screenshot,

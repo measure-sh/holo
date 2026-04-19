@@ -134,6 +134,12 @@ fn run_app(
                 app.database_state_mut().mark_load_more_started();
                 d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::At(offset));
             }
+
+            if !d.files_cat_in_flight()
+                && let Some(path) = app.files_state_mut().take_pending_cat()
+            {
+                d.start_cat_file(ctx.adb.clone(), s.clone(), p.clone(), path);
+            }
         }
 
         let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);

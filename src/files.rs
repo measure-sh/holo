@@ -39,6 +39,18 @@ pub struct FilesState {
     pub selected_index: usize,
     pub error: Option<String>,
     pub action_flash: Option<(&'static str, std::time::Instant)>,
+
+    pub detail_open: bool,
+    pub detail_focused: bool,
+    pub detail_scroll: usize,
+    pub detail_visible_rows: usize,
+    pub selected_file: Option<String>,
+    pub selected_meta: Option<FileMeta>,
+    pub selected_kind: Option<DetailKind>,
+    pub loading_meta: bool,
+    pub loading_content: bool,
+    pub pending_cat: Option<String>,
+    pub detail_error: Option<String>,
 }
 
 impl FilesState {
@@ -49,11 +61,62 @@ impl FilesState {
             selected_index: 0,
             error: None,
             action_flash: None,
+            detail_open: false,
+            detail_focused: false,
+            detail_scroll: 0,
+            detail_visible_rows: 0,
+            selected_file: None,
+            selected_meta: None,
+            selected_kind: None,
+            loading_meta: false,
+            loading_content: false,
+            pending_cat: None,
+            detail_error: None,
         }
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
         let code = key.code;
+
+        // Detail pane focused — scroll/open-editor/close.
+        if self.detail_open && self.detail_focused {
+            return Some(match code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.detail_scroll = self.detail_scroll.saturating_sub(1);
+                    Action::Noop
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.detail_scroll = self.detail_scroll.saturating_add(1);
+                    Action::Noop
+                }
+                KeyCode::Char(' ') => {
+                    self.detail_scroll = self.detail_scroll.saturating_add(20);
+                    Action::Noop
+                }
+                KeyCode::Tab => {
+                    self.detail_focused = false;
+                    Action::Noop
+                }
+                KeyCode::Char('o') => {
+                    if let Some(path) = self.selected_file.clone() {
+                        Action::OpenFile(path)
+                    } else {
+                        Action::Noop
+                    }
+                }
+                KeyCode::Enter => {
+                    self.close_detail();
+                    Action::Noop
+                }
+                KeyCode::Esc => {
+                    self.detail_focused = false;
+                    Action::Noop
+                }
+                _ => return None,
+            });
+        }
+
+        // Tree focused.
         match code {
             KeyCode::Up => {
                 self.move_up();
@@ -75,7 +138,7 @@ impl FilesState {
                         Some(Action::Noop)
                     }
                 } else if let Some(path) = self.selected_path() {
-                    Some(Action::OpenFile(path))
+                    Some(self.open_detail_for(path))
                 } else {
                     Some(Action::Noop)
                 }
@@ -84,15 +147,115 @@ impl FilesState {
                 self.collapse_selected();
                 Some(Action::Noop)
             }
+            KeyCode::Tab if self.detail_open => {
+                self.detail_focused = true;
+                Some(Action::Noop)
+            }
             KeyCode::Char('r') => {
                 self.error = None;
                 self.root_children = None;
                 self.selected_index = 0;
+                if let Some(path) = self.selected_file.clone() {
+                    self.start_detail_load(&path);
+                }
                 Some(Action::RefreshFiles)
             }
-            KeyCode::Esc => Some(Action::Unfocus),
+            KeyCode::Esc => {
+                if self.detail_open {
+                    self.close_detail();
+                }
+                Some(Action::Unfocus)
+            }
             _ => None,
         }
+    }
+
+    fn open_detail_for(&mut self, path: String) -> Action {
+        let first_open = !self.detail_open;
+        if self.selected_file.as_deref() == Some(path.as_str()) && self.detail_open {
+            return Action::Noop;
+        }
+        self.detail_open = true;
+        self.start_detail_load(&path);
+        if first_open {
+            Action::ZoomIn
+        } else {
+            Action::StatFile(path)
+        }
+    }
+
+    fn start_detail_load(&mut self, path: &str) {
+        self.selected_file = Some(path.to_string());
+        self.selected_meta = None;
+        self.selected_kind = None;
+        self.detail_error = None;
+        self.detail_scroll = 0;
+        self.loading_meta = true;
+        self.loading_content = false;
+        self.pending_cat = None;
+    }
+
+    pub fn close_detail(&mut self) {
+        self.detail_open = false;
+        self.detail_focused = false;
+        self.detail_scroll = 0;
+        self.selected_file = None;
+        self.selected_meta = None;
+        self.selected_kind = None;
+        self.loading_meta = false;
+        self.loading_content = false;
+        self.pending_cat = None;
+        self.detail_error = None;
+    }
+
+    pub fn receive_meta(&mut self, path: String, meta: FileMeta) {
+        if self.selected_file.as_deref() != Some(path.as_str()) {
+            return;
+        }
+        self.loading_meta = false;
+        let hint = classify(&path, meta.size_bytes);
+        match hint {
+            DetailKindHint::Text(lang) => {
+                self.selected_kind = Some(DetailKind::Text {
+                    language: lang,
+                    content: String::new(),
+                });
+                self.loading_content = true;
+                self.pending_cat = Some(path);
+            }
+            DetailKindHint::Binary(reason) => {
+                self.selected_kind = Some(DetailKind::Binary { reason });
+            }
+            DetailKindHint::TooLarge => {
+                self.selected_kind = Some(DetailKind::TooLarge {
+                    size_bytes: meta.size_bytes,
+                });
+            }
+        }
+        self.selected_meta = Some(meta);
+    }
+
+    pub fn receive_content(&mut self, path: String, bytes: Vec<u8>) {
+        if self.selected_file.as_deref() != Some(path.as_str()) {
+            return;
+        }
+        self.loading_content = false;
+        let Some(DetailKind::Text { language, .. }) = self.selected_kind.take() else {
+            return;
+        };
+        let content = String::from_utf8_lossy(&bytes).into_owned();
+        self.selected_kind = Some(DetailKind::Text { language, content });
+    }
+
+    pub fn receive_detail_error(&mut self, err: String) {
+        self.loading_meta = false;
+        self.loading_content = false;
+        self.pending_cat = None;
+        self.detail_error = Some(err);
+    }
+
+    pub fn take_pending_cat(&mut self) -> Option<String> {
+        self.pending_cat.take()
     }
 
     pub fn flatten_visible(&self) -> Vec<FlatEntry> {
@@ -628,5 +791,152 @@ mod tests {
         let db_entry = &flat[2];
         assert_eq!(db_entry.name, "app.db");
         assert_eq!(db_entry.ancestor_is_last, vec![false]);
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, crossterm::event::KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn enter_on_file_opens_detail_and_zooms_first_time() {
+        let mut state = make_state_with_children();
+        state.selected_index = 2;
+        let action = state.handle_key(key(KeyCode::Enter));
+        assert!(matches!(action, Some(Action::ZoomIn)));
+        assert!(state.detail_open);
+        assert_eq!(state.selected_file.as_deref(), Some("config.xml"));
+        assert!(state.loading_meta);
+    }
+
+    #[test]
+    fn enter_on_same_file_is_noop() {
+        let mut state = make_state_with_children();
+        state.selected_index = 2;
+        state.handle_key(key(KeyCode::Enter));
+        // loading done, kind resolved
+        state.loading_meta = false;
+        let again = state.handle_key(key(KeyCode::Enter));
+        assert!(matches!(again, Some(Action::Noop)));
+    }
+
+    #[test]
+    fn enter_on_different_file_emits_stat_file() {
+        let mut state = make_state_with_children();
+        state.set_children("cache", vec![("a.txt".into(), false)]);
+        find_node_mut(state.root_children.as_mut().unwrap(), "cache").unwrap().expanded = true;
+
+        state.selected_index = 3; // config.xml after expansion
+        state.handle_key(key(KeyCode::Enter));
+        assert!(state.detail_open);
+
+        state.selected_index = 1; // a.txt
+        let action = state.handle_key(key(KeyCode::Enter));
+        assert!(matches!(&action, Some(Action::StatFile(p)) if p == "cache/a.txt"));
+        assert_eq!(state.selected_file.as_deref(), Some("cache/a.txt"));
+    }
+
+    #[test]
+    fn tree_navigation_never_emits_stat_file() {
+        let mut state = make_state_with_children();
+        state.set_children("cache", vec![
+            ("a.txt".into(), false),
+            ("b.txt".into(), false),
+        ]);
+        find_node_mut(state.root_children.as_mut().unwrap(), "cache").unwrap().expanded = true;
+        // open detail on one file first
+        state.selected_index = 1;
+        state.handle_key(key(KeyCode::Enter));
+        // now move cursor around while detail is open
+        for k in [KeyCode::Down, KeyCode::Down, KeyCode::Up, KeyCode::Down] {
+            let action = state.handle_key(key(k));
+            assert!(matches!(action, Some(Action::Noop)), "{:?} must not emit stat", k);
+        }
+    }
+
+    #[test]
+    fn tab_toggles_detail_focus_when_open() {
+        let mut state = make_state_with_children();
+        state.selected_index = 2;
+        state.handle_key(key(KeyCode::Enter));
+        assert!(state.detail_open);
+        assert!(!state.detail_focused);
+
+        let a = state.handle_key(key(KeyCode::Tab));
+        assert!(matches!(a, Some(Action::Noop)));
+        assert!(state.detail_focused);
+
+        let b = state.handle_key(key(KeyCode::Tab));
+        assert!(matches!(b, Some(Action::Noop)));
+        assert!(!state.detail_focused);
+    }
+
+    #[test]
+    fn esc_from_tree_closes_detail_then_unfocuses() {
+        let mut state = make_state_with_children();
+        state.selected_index = 2;
+        state.handle_key(key(KeyCode::Enter));
+        let action = state.handle_key(key(KeyCode::Esc));
+        assert!(matches!(action, Some(Action::Unfocus)));
+        assert!(!state.detail_open);
+    }
+
+    #[test]
+    fn receive_meta_for_text_queues_cat() {
+        let mut state = FilesState::new("com.test");
+        state.detail_open = true;
+        state.selected_file = Some("a.json".into());
+        state.loading_meta = true;
+        state.receive_meta(
+            "a.json".into(),
+            FileMeta { size_bytes: 100, modified: None, mode: "-rw-".into() },
+        );
+        assert!(!state.loading_meta);
+        assert!(state.loading_content);
+        assert_eq!(state.take_pending_cat().as_deref(), Some("a.json"));
+        assert!(matches!(state.selected_kind, Some(DetailKind::Text { .. })));
+    }
+
+    #[test]
+    fn receive_meta_for_binary_does_not_queue_cat() {
+        let mut state = FilesState::new("com.test");
+        state.detail_open = true;
+        state.selected_file = Some("icon.png".into());
+        state.loading_meta = true;
+        state.receive_meta(
+            "icon.png".into(),
+            FileMeta { size_bytes: 100, modified: None, mode: "-rw-".into() },
+        );
+        assert!(!state.loading_content);
+        assert!(state.take_pending_cat().is_none());
+        assert!(matches!(state.selected_kind, Some(DetailKind::Binary { reason: "image" })));
+    }
+
+    #[test]
+    fn receive_meta_for_stale_path_is_dropped() {
+        let mut state = FilesState::new("com.test");
+        state.detail_open = true;
+        state.selected_file = Some("current.json".into());
+        state.loading_meta = true;
+        state.receive_meta(
+            "stale.json".into(),
+            FileMeta { size_bytes: 100, modified: None, mode: "-rw-".into() },
+        );
+        assert!(state.loading_meta);
+        assert!(state.selected_kind.is_none());
+    }
+
+    #[test]
+    fn receive_content_for_stale_path_is_dropped() {
+        let mut state = FilesState::new("com.test");
+        state.detail_open = true;
+        state.selected_file = Some("current.json".into());
+        state.selected_kind = Some(DetailKind::Text { language: "json", content: String::new() });
+        state.loading_content = true;
+        state.receive_content("stale.json".into(), b"{}".to_vec());
+        assert!(state.loading_content);
+        match state.selected_kind.as_ref().unwrap() {
+            DetailKind::Text { content, .. } => assert!(content.is_empty()),
+            _ => panic!("expected Text"),
+        }
     }
 }
