@@ -174,7 +174,7 @@ fn build_bottom_bar(
             Span::styled("ull ", muted),
             Span::styled("───", sep),
             Span::styled(" r", accent),
-            Span::styled("eset ", muted),
+            Span::styled("efresh ", muted),
         ]);
     }
 
@@ -189,7 +189,7 @@ fn build_bottom_bar(
         Span::styled("ull ", muted),
         Span::styled("───", sep),
         Span::styled(" r", accent),
-        Span::styled("eset ", muted),
+        Span::styled("efresh ", muted),
     ])
 }
 

@@ -273,8 +273,8 @@ impl DatabaseState {
                 Some(Action::Noop)
             }
             KeyCode::Char('r') => {
-                self.reset();
-                Some(Action::ResetDb)
+                self.refresh();
+                Some(Action::RefreshDb)
             }
             KeyCode::Esc => {
                 if self.detail_open {
@@ -612,7 +612,7 @@ impl DatabaseState {
         self.repl_scroll = self.repl_scroll.min(max);
     }
 
-    pub fn reset(&mut self) {
+    pub fn refresh(&mut self) {
         *self = Self::new();
     }
 

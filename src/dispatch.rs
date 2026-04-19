@@ -247,7 +247,7 @@ impl DispatchContext {
                     d.logcat_lines.clear();
                 }
             }
-            Action::ResetDb => {
+            Action::RefreshDb => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
                     d.restart_db_detection(self.adb.clone(), s.clone(), p.clone());
                 }

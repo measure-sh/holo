@@ -26,7 +26,7 @@ pub enum Action {
     KillApp,
     ClearData,
     ResetLogcat,
-    ResetDb,
+    RefreshDb,
     CopyDbResult(String),
     RunQuery(String, String),
     PullDb(String),
@@ -1294,16 +1294,16 @@ mod tests {
     }
 
     #[test]
-    fn r_resets_db_from_list_view() {
+    fn r_refreshes_db_from_list_view() {
         let mut app = App::new(None, Some("com.test"));
         app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
-        assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::ResetDb));
+        assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::RefreshDb));
         assert!(app.database_state().databases.is_empty());
     }
 
     #[test]
-    fn r_resets_db_from_repl_view() {
+    fn r_refreshes_db_from_repl_view() {
         let mut app = App::new(None, Some("com.test"));
         app.database_state_mut().databases = vec!["a.db".into()];
         app.handle_key(key(KeyCode::Char('d')));
@@ -1311,7 +1311,7 @@ mod tests {
         app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Esc));
         assert!(!app.database_state().repl_active);
-        assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::ResetDb));
+        assert!(matches!(app.handle_key(key(KeyCode::Char('r'))), Action::RefreshDb));
         assert!(app.database_state().databases.is_empty());
     }
 
