@@ -1,9 +1,22 @@
+use std::sync::{mpsc, Arc};
+use std::time::{Duration, Instant};
+
 use crossterm::event::{KeyCode, KeyEvent};
 
+use crate::adb::Adb;
 use crate::app::Action;
 use crate::logcat;
 
 const MAX_ENTRIES: usize = 500;
+const MAX_TRAFFIC: usize = 240;
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TrafficSample {
+    pub rx_bps: u64,
+    pub tx_bps: u64,
+    pub rx_total: u64,
+    pub tx_total: u64,
+}
 
 pub struct NetworkEntry {
     pub url: String,
@@ -30,6 +43,7 @@ pub struct NetworkState {
     pub detail_scroll: usize,
     pub search: String,
     pub editing_search: bool,
+    pub traffic: Vec<TrafficSample>,
 }
 
 impl NetworkState {
@@ -44,6 +58,15 @@ impl NetworkState {
             detail_scroll: 0,
             search: String::new(),
             editing_search: false,
+            traffic: Vec::new(),
+        }
+    }
+
+    pub fn push_traffic(&mut self, sample: TrafficSample) {
+        self.traffic.push(sample);
+        if self.traffic.len() > MAX_TRAFFIC {
+            let drain = self.traffic.len() - MAX_TRAFFIC;
+            self.traffic.drain(..drain);
         }
     }
 
@@ -396,6 +419,40 @@ pub fn parse_http_data(line: &str) -> Option<NetworkEntry> {
     })
 }
 
+pub fn spawn_traffic_poller(
+    adb: Arc<dyn Adb>,
+    serial: String,
+    package: String,
+) -> mpsc::Receiver<TrafficSample> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let interval = Duration::from_secs(2);
+        let mut prev: Option<(u64, u64, Instant)> = None;
+        loop {
+            let now = Instant::now();
+            if let Ok(bytes) = adb.get_network_bytes(&serial, &package) {
+                if let Some((p_rx, p_tx, p_at)) = prev {
+                    let elapsed = now.duration_since(p_at).as_secs_f64().max(0.001);
+                    let rx_bps = ((bytes.rx.saturating_sub(p_rx)) as f64 / elapsed) as u64;
+                    let tx_bps = ((bytes.tx.saturating_sub(p_tx)) as f64 / elapsed) as u64;
+                    let sample = TrafficSample {
+                        rx_bps,
+                        tx_bps,
+                        rx_total: bytes.rx,
+                        tx_total: bytes.tx,
+                    };
+                    if tx.send(sample).is_err() {
+                        return;
+                    }
+                }
+                prev = Some((bytes.rx, bytes.tx, now));
+            }
+            std::thread::sleep(interval);
+        }
+    });
+    rx
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -516,6 +573,22 @@ mod tests {
         assert_eq!(state.selected, 1); // followed
         state.push(make_entry(200, 300));
         assert_eq!(state.selected, 2); // followed
+    }
+
+    #[test]
+    fn push_traffic_caps_at_max() {
+        let mut state = NetworkState::new();
+        for i in 0..(MAX_TRAFFIC + 50) {
+            state.push_traffic(TrafficSample {
+                rx_bps: i as u64,
+                tx_bps: 0,
+                rx_total: 0,
+                tx_total: 0,
+            });
+        }
+        assert_eq!(state.traffic.len(), MAX_TRAFFIC);
+        assert_eq!(state.traffic.first().unwrap().rx_bps, 50);
+        assert_eq!(state.traffic.last().unwrap().rx_bps, (MAX_TRAFFIC + 49) as u64);
     }
 
     #[test]

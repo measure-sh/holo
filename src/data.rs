@@ -69,6 +69,8 @@ pub struct DataSources {
 
     connectivity_rx: mpsc::Receiver<bool>,
     pub device_connected: bool,
+
+    traffic_rx: Option<mpsc::Receiver<network::TrafficSample>>,
 }
 
 impl DataSources {
@@ -84,6 +86,9 @@ impl DataSources {
         let app_version = adb.get_app_version(serial, package).ok();
         let has_measure_sdk = adb.has_measure_sdk(serial, package);
         let monitor_visibility = Arc::new(AtomicU8::new(monitor::visibility_mask(panel_vis)));
+        let traffic_rx = (!has_measure_sdk).then(|| {
+            network::spawn_traffic_poller(adb.clone(), serial.to_string(), package.to_string())
+        });
         Self {
             battery_rx: battery::spawn_poller(adb.clone(), serial.to_string()),
             battery_level: None,
@@ -145,6 +150,7 @@ impl DataSources {
             monitor_visibility,
             connectivity_rx: spawn_connectivity_poller(adb.clone(), serial.to_string()),
             device_connected: true,
+            traffic_rx,
         }
     }
 
@@ -155,6 +161,11 @@ impl DataSources {
     pub fn poll(&mut self, app: &mut App, serial: &str) {
         while let Ok(connected) = self.connectivity_rx.try_recv() {
             self.device_connected = connected;
+        }
+        if let Some(rx) = &self.traffic_rx {
+            while let Ok(sample) = rx.try_recv() {
+                app.network_state_mut().push_traffic(sample);
+            }
         }
         while let Ok(level) = self.battery_rx.try_recv() {
             self.battery_level = Some(level);
