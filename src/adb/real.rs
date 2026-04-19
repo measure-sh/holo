@@ -717,8 +717,10 @@ fn dumpsys_package(serial: &str, package: &str) -> Option<String> {
 fn parse_uid(dumpsys_output: &str) -> Option<u32> {
     for line in dumpsys_output.lines() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("userId=") {
-            return rest.split_whitespace().next()?.parse().ok();
+        for key in ["userId=", "appId="] {
+            if let Some(rest) = trimmed.strip_prefix(key) {
+                return rest.split_whitespace().next()?.parse().ok();
+            }
         }
     }
     None
@@ -728,12 +730,21 @@ fn parse_netstats_for_uid(output: &str, uid: u32) -> NetworkBytes {
     let needle = format!("uid={uid}");
     let mut rx = 0u64;
     let mut tx = 0u64;
+    let mut in_block = false;
     for line in output.lines() {
-        if !line.contains(&needle) {
-            continue;
+        if line.trim_start().starts_with("ident=") {
+            in_block = line.split_whitespace().any(|tok| tok == needle);
         }
-        rx = rx.saturating_add(extract_kv_u64(line, "rxBytes=").unwrap_or(0));
-        tx = tx.saturating_add(extract_kv_u64(line, "txBytes=").unwrap_or(0));
+        if in_block {
+            let rx_val = extract_kv_u64(line, "rxBytes=")
+                .or_else(|| extract_kv_u64(line, "rb="))
+                .unwrap_or(0);
+            let tx_val = extract_kv_u64(line, "txBytes=")
+                .or_else(|| extract_kv_u64(line, "tb="))
+                .unwrap_or(0);
+            rx = rx.saturating_add(rx_val);
+            tx = tx.saturating_add(tx_val);
+        }
     }
     NetworkBytes { rx, tx }
 }
@@ -1341,5 +1352,36 @@ Active UID stats:
         let bytes = parse_netstats_for_uid(output, 10234);
         assert_eq!(bytes.rx, 500);
         assert_eq!(bytes.tx, 0);
+    }
+
+    #[test]
+    fn parses_uid_from_android14_dumpsys_package() {
+        let output = "\
+Package [com.example.app]:
+    uid=10232 gids=[] type=0 prot=signature
+    appId=10232
+    installerPackageUid=-1
+";
+        assert_eq!(parse_uid(output), Some(10232));
+    }
+
+    #[test]
+    fn parses_netstats_multiline_history_format() {
+        let output = "\
+Active UID stats:
+  ident=[...] uid=10232 set=DEFAULT tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1776571200 rb=132 rp=2 tb=170 tp=2 op=0
+      st=1776578400 rb=62560 rp=96 tb=9079 tp=91 op=0
+  ident=[...] uid=10232 set=FOREGROUND tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1776578400 rb=1000 rp=10 tb=200 tp=5 op=0
+  ident=[...] uid=99999 set=DEFAULT tag=0x0
+    NetworkStatsHistory: bucketDuration=7200
+      st=1776578400 rb=99999 rp=99 tb=99999 tp=99 op=0
+";
+        let bytes = parse_netstats_for_uid(output, 10232);
+        assert_eq!(bytes.rx, 132 + 62560 + 1000);
+        assert_eq!(bytes.tx, 170 + 9079 + 200);
     }
 }
