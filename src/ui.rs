@@ -719,7 +719,7 @@ fn render_commands_panel(frame: &mut Frame, area: Rect, app: &App) {
             let hint = format!("^{}", shortcut);
             let triggered = app.commands().triggered_color(*shortcut);
             let name_color = triggered.unwrap_or(t.fg);
-            let hint_color = triggered.unwrap_or(t.muted);
+            let hint_color = triggered.unwrap_or(t.danger);
             let spans = vec![
                 Span::styled(*name, Style::new().fg(name_color)),
                 Span::raw("  "),
