@@ -1,9 +1,17 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
+    symbols,
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, RenderDirection, Scrollbar, ScrollbarOrientation, ScrollbarState, Sparkline},
     Frame,
+};
+
+/// Sparkline glyphs with a visible `▁` baseline instead of the default blank
+/// `empty`, so idle stretches still render as a continuous low line.
+const BASELINE_BARS: symbols::bar::Set = symbols::bar::Set {
+    empty: symbols::bar::ONE_EIGHTH,
+    ..symbols::bar::NINE_LEVELS
 };
 
 use crate::network::{NetworkEntry, NetworkState, TrafficSample};
@@ -510,7 +518,8 @@ fn traffic_row(
     let mut spark = Sparkline::default()
         .data(reversed)
         .direction(RenderDirection::RightToLeft)
-        .style(Style::new().fg(spark_color));
+        .style(Style::new().fg(spark_color))
+        .bar_set(BASELINE_BARS);
     if max > 0 {
         spark = spark.max(max);
     }

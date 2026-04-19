@@ -1,9 +1,17 @@
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Style},
+    symbols,
     text::Line,
     widgets::{Paragraph, RenderDirection, Sparkline, SparklineBar},
     Frame,
+};
+
+/// Sparkline glyphs with a visible `▁` baseline instead of the default blank
+/// `empty`, so flat or zero stretches still render as a continuous low line.
+const BASELINE_BARS: symbols::bar::Set = symbols::bar::Set {
+    empty: symbols::bar::ONE_EIGHTH,
+    ..symbols::bar::NINE_LEVELS
 };
 
 use crate::monitor::MonitorState;
@@ -73,7 +81,8 @@ fn metric_row(
         .data(reversed)
         .direction(RenderDirection::RightToLeft)
         .style(Style::new().fg(color))
-        .absent_value_symbol("▁")
+        .bar_set(BASELINE_BARS)
+        .absent_value_symbol(symbols::bar::ONE_EIGHTH)
         .absent_value_style(Style::new().fg(color));
     if max > 0 {
         spark = spark.max(max);
