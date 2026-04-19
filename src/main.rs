@@ -115,6 +115,25 @@ fn run_app(
             }
         }
 
+        if let (Some(d), Some(s), Some(p)) = (&mut ctx.data, &serial, &package) {
+            if app.database_state().needs_table_refresh()
+                && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
+            {
+                app.database_state_mut().mark_refresh_started();
+                d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::Tail);
+            } else if let Some(offset) = app.database_state().needs_previous_rows()
+                && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
+            {
+                app.database_state_mut().mark_load_more_started();
+                d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::At(offset));
+            } else if let Some(offset) = app.database_state().needs_next_rows()
+                && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
+            {
+                app.database_state_mut().mark_load_more_started();
+                d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::At(offset));
+            }
+        }
+
         let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);
         let logcat_lines: &[String] = ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines);
 

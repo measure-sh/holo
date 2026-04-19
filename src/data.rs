@@ -39,6 +39,8 @@ pub struct DataSources {
     db_detect_rx: Option<mpsc::Receiver<Result<Vec<String>, String>>>,
     db_query_rx: Option<mpsc::Receiver<Result<String, String>>>,
     db_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
+    db_tables_rx: Option<mpsc::Receiver<database::TableListResult>>,
+    db_table_data_rx: Option<mpsc::Receiver<database::TableDataResult>>,
 
     permissions_rx: mpsc::Receiver<Result<Vec<(String, bool)>, String>>,
 
@@ -97,6 +99,8 @@ impl DataSources {
             )),
             db_query_rx: None,
             db_pull_rx: None,
+            db_tables_rx: None,
+            db_table_data_rx: None,
             permissions_rx: permissions::spawn_poller(
                 adb.clone(),
                 serial.to_string(),
@@ -226,6 +230,22 @@ impl DataSources {
                 Err(e) => app.database_state_mut().push_error(&format!("pull failed: {e}")),
             }
         }
+        if let Some(result) = try_poll(&mut self.db_tables_rx) {
+            match result {
+                Ok((db, tables)) => app.database_state_mut().receive_tables(db, tables),
+                Err(e) => {
+                    let db = app.database_state_mut();
+                    db.tables_loading.clear();
+                    db.error = Some(e);
+                }
+            }
+        }
+        if let Some(result) = try_poll(&mut self.db_table_data_rx) {
+            match result {
+                Ok(data) => app.database_state_mut().receive_table_data(data),
+                Err(e) => app.database_state_mut().receive_table_error(e),
+            }
+        }
         if let Some(result) = try_poll(&mut self.files_list_rx) {
             match result {
                 Ok((path, entries)) => {
@@ -295,6 +315,14 @@ impl DataSources {
 
     pub fn restart_db_detection(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
         self.db_detect_rx = Some(database::spawn_db_detector(adb, serial, package));
+    }
+
+    pub fn start_fetch_tables(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, db: String) {
+        self.db_tables_rx = Some(database::spawn_table_list(adb, serial, package, db));
+    }
+
+    pub fn start_fetch_table_data(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, db: String, table: String, kind: database::FetchKind) {
+        self.db_table_data_rx = Some(database::spawn_table_data(adb, serial, package, db, table, kind));
     }
 
     pub fn start_list_dir(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {

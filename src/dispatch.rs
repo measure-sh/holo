@@ -280,6 +280,11 @@ impl DispatchContext {
                     d.start_pull(self.adb.clone(), s.clone(), p.clone(), db);
                 }
             }
+            Action::DbFetchTables(db) => {
+                if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
+                    d.start_fetch_tables(self.adb.clone(), s.clone(), p.clone(), db);
+                }
+            }
             Action::RefreshFiles => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
                     d.start_list_dir(self.adb.clone(), s.clone(), p.clone(), ".".to_string());
