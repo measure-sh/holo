@@ -2,11 +2,11 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 
-use crate::network::{NetworkEntry, NetworkState};
+use crate::network::{NetworkEntry, NetworkState, TrafficSample};
 use crate::panel;
 use crate::theme;
 use crate::ui::{panel_title, render_pane_chip, split_chip, wrap_line};
@@ -40,17 +40,7 @@ pub fn render_network_panel(
 
     if !measure_sdk_detected {
         frame.render_widget(block, area);
-        let items = vec![
-            ListItem::new(Line::from(Span::styled(
-                " requires Measure SDK",
-                muted,
-            ))),
-            ListItem::new(Line::from(Span::styled(
-                " integrate measure.sh SDK to capture HTTP requests",
-                muted,
-            ))),
-        ];
-        frame.render_widget(List::new(items), inner);
+        render_traffic_chart(frame, inner, &state.traffic);
         return;
     }
 
@@ -452,6 +442,210 @@ fn network_filter_bar(state: &NetworkState, color: ratatui::style::Color) -> Lin
     spans.push(Span::styled("rap ", muted));
 
     Line::from(spans)
+}
+
+fn render_traffic_chart(frame: &mut Frame, area: Rect, traffic: &[TrafficSample]) {
+    let t = theme::current();
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    if traffic.is_empty() {
+        let line = Line::from(Span::styled(" warming up...", Style::new().fg(t.muted)));
+        frame.render_widget(Paragraph::new(line), area);
+        return;
+    }
+
+    let last = traffic.last().copied().unwrap_or_default();
+    let dn_label = format!(
+        " ↓ {}    total {}",
+        format_rate(last.rx_bps),
+        format_bytes(last.rx_total),
+    );
+    let up_label = format!(
+        " ↑ {}    total {}",
+        format_rate(last.tx_bps),
+        format_bytes(last.tx_total),
+    );
+
+    let h = area.height;
+    if h < 3 {
+        // Not enough room for labels + chart — show one summary line.
+        let line = Line::from(Span::styled(
+            format!(" ↓ {}  ↑ {}", format_rate(last.rx_bps), format_rate(last.tx_bps)),
+            Style::new().fg(t.fg),
+        ));
+        frame.render_widget(Paragraph::new(line), area);
+        return;
+    }
+
+    let chart_total = h.saturating_sub(3) as usize;
+    let dn_h = chart_total.div_ceil(2);
+    let up_h = chart_total - dn_h;
+
+    let mut constraints: Vec<Constraint> = Vec::new();
+    constraints.push(Constraint::Length(1));
+    if dn_h > 0 {
+        constraints.push(Constraint::Length(dn_h as u16));
+    }
+    constraints.push(Constraint::Length(1));
+    if up_h > 0 {
+        constraints.push(Constraint::Length(up_h as u16));
+    }
+    constraints.push(Constraint::Length(1));
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    let mut idx = 0;
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(dn_label, Style::new().fg(t.fg)))),
+        rows[idx],
+    );
+    idx += 1;
+
+    let width = area.width as usize;
+    let visible: Vec<&TrafficSample> = traffic.iter().rev().take(width).collect();
+    let visible: Vec<&TrafficSample> = visible.into_iter().rev().collect();
+    let max = visible
+        .iter()
+        .map(|s| s.rx_bps.max(s.tx_bps))
+        .max()
+        .unwrap_or(0)
+        .max(1024);
+
+    if dn_h > 0 {
+        render_bars(
+            frame,
+            rows[idx],
+            &visible,
+            max,
+            |s| s.rx_bps,
+            Direction2::Down,
+            t.sparkline,
+        );
+        idx += 1;
+    }
+
+    let centerline: String = "─".repeat(area.width as usize);
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(centerline, Style::new().fg(t.muted)))),
+        rows[idx],
+    );
+    idx += 1;
+
+    if up_h > 0 {
+        render_bars(
+            frame,
+            rows[idx],
+            &visible,
+            max,
+            |s| s.tx_bps,
+            Direction2::Up,
+            t.sparkline,
+        );
+        idx += 1;
+    }
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(up_label, Style::new().fg(t.fg)))),
+        rows[idx],
+    );
+}
+
+#[derive(Copy, Clone)]
+enum Direction2 {
+    /// Bars rooted at the top edge, growing down.
+    Down,
+    /// Bars rooted at the bottom edge, growing up.
+    Up,
+}
+
+fn render_bars(
+    frame: &mut Frame,
+    area: Rect,
+    samples: &[&TrafficSample],
+    max: u64,
+    extract: impl Fn(&TrafficSample) -> u64,
+    direction: Direction2,
+    color: ratatui::style::Color,
+) {
+    let h = area.height as usize;
+    let w = area.width as usize;
+    if h == 0 || w == 0 {
+        return;
+    }
+    let total_subrows = h * 2;
+    let style = Style::new().fg(color);
+    let pad_cols = w.saturating_sub(samples.len());
+
+    let mut rows: Vec<String> = vec![String::with_capacity(w); h];
+
+    for col in 0..w {
+        let filled = if col < pad_cols {
+            0
+        } else {
+            let s = samples[col - pad_cols];
+            let v = extract(s);
+            ((v as f64 / max as f64) * total_subrows as f64).round() as usize
+        };
+        let filled = filled.min(total_subrows);
+
+        for r in 0..h {
+            let top_sub = 2 * r;
+            let bot_sub = 2 * r + 1;
+            let (top_filled, bot_filled) = match direction {
+                Direction2::Down => (top_sub < filled, bot_sub < filled),
+                Direction2::Up => {
+                    let top_inv = total_subrows - 1 - top_sub;
+                    let bot_inv = total_subrows - 1 - bot_sub;
+                    (top_inv < filled, bot_inv < filled)
+                }
+            };
+            rows[r].push(match (top_filled, bot_filled) {
+                (true, true) => '█',
+                (true, false) => '▀',
+                (false, true) => '▄',
+                (false, false) => ' ',
+            });
+        }
+    }
+
+    for (r, line) in rows.into_iter().enumerate() {
+        let row_area = Rect {
+            x: area.x,
+            y: area.y + r as u16,
+            width: area.width,
+            height: 1,
+        };
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(line, style))),
+            row_area,
+        );
+    }
+}
+
+fn format_rate(bps: u64) -> String {
+    if bps < 1024 {
+        format!("{} B/s", bps)
+    } else if bps < 1024 * 1024 {
+        format!("{:.1} KB/s", bps as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB/s", bps as f64 / (1024.0 * 1024.0))
+    }
+}
+
+fn format_bytes(b: u64) -> String {
+    if b < 1024 {
+        format!("{} B", b)
+    } else if b < 1024 * 1024 {
+        format!("{:.1} KB", b as f64 / 1024.0)
+    } else if b < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", b as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", b as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
 }
 
 fn is_empty_value(value: &str) -> bool {
