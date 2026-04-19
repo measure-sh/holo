@@ -4,7 +4,7 @@ use std::process::Command;
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
-use super::{Adb, Device, MemInfo, NetworkBytes};
+use super::{Adb, Device, FileMeta, MemInfo, NetworkBytes};
 
 fn emulator_path() -> PathBuf {
     std::env::var_os("ANDROID_HOME")
@@ -334,6 +334,52 @@ impl Adb for RealAdb {
         let mut file = std::fs::File::create(dest)?;
         file.write_all(&output.stdout)?;
         Ok(())
+    }
+
+    fn stat_file(&self, serial: &str, package: &str, remote_path: &str) -> Result<FileMeta> {
+        let stat_out = Command::new("adb")
+            .args([
+                "-s", serial, "shell", "run-as", package,
+                "stat", "-c", "%s|%y|%A", remote_path,
+            ])
+            .output()?;
+
+        if stat_out.status.success() {
+            let stdout = String::from_utf8_lossy(&stat_out.stdout);
+            if let Some(meta) = parse_stat_output(&stdout) {
+                return Ok(meta);
+            }
+        }
+
+        let ls_out = Command::new("adb")
+            .args(["-s", serial, "shell", "run-as", package, "ls", "-la", remote_path])
+            .output()?;
+
+        if !ls_out.status.success() {
+            let stderr = String::from_utf8_lossy(&ls_out.stderr);
+            bail!("stat/ls failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&ls_out.stdout);
+        parse_ls_la_output(&stdout)
+            .ok_or_else(|| color_eyre::eyre::eyre!("could not parse stat output"))
+    }
+
+    fn cat_file(&self, serial: &str, package: &str, remote_path: &str, max_bytes: u64) -> Result<Vec<u8>> {
+        let max = max_bytes.to_string();
+        let output = Command::new("adb")
+            .args([
+                "-s", serial, "exec-out", "run-as", package,
+                "head", "-c", &max, remote_path,
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("cat failed: {stderr}");
+        }
+
+        Ok(output.stdout)
     }
 
     fn start_trace(&self, serial: &str, config: &str) -> Result<()> {
@@ -895,6 +941,42 @@ fn parse_file_list(output: &str) -> Vec<(String, bool)> {
     entries
 }
 
+fn parse_stat_output(output: &str) -> Option<FileMeta> {
+    let line = output.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let parts: Vec<&str> = line.splitn(3, '|').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+    let size_bytes = parts[0].trim().parse::<u64>().ok()?;
+    let modified = {
+        let m = parts[1].trim();
+        if m.is_empty() { None } else { Some(m.to_string()) }
+    };
+    let mode = parts[2].trim().to_string();
+    if mode.is_empty() {
+        return None;
+    }
+    Some(FileMeta { size_bytes, modified, mode })
+}
+
+fn parse_ls_la_output(output: &str) -> Option<FileMeta> {
+    let line = output.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with("total "))?;
+    let mut fields = line.split_whitespace();
+    let mode = fields.next()?.to_string();
+    let _links = fields.next()?;
+    let _owner = fields.next()?;
+    let _group = fields.next()?;
+    let size_bytes = fields.next()?.parse::<u64>().ok()?;
+    let date = fields.next().unwrap_or("");
+    let time = fields.next().unwrap_or("");
+    let modified = if date.is_empty() {
+        None
+    } else {
+        Some(format!("{} {}", date, time).trim().to_string())
+    };
+    Some(FileMeta { size_bytes, modified, mode })
+}
+
 fn parse_runtime_permissions(output: &str) -> Vec<(String, bool)> {
     let mut results = Vec::new();
     let mut in_runtime_section = false;
@@ -1239,6 +1321,30 @@ mod tests {
         assert_eq!(entries[0], ("a_dir".into(), true));
         assert_eq!(entries[1], ("b_file".into(), false));
         assert_eq!(entries[2], ("z_file".into(), false));
+    }
+
+    #[test]
+    fn parses_stat_pipe_format() {
+        let meta = parse_stat_output("12345|2026-04-19 12:34:56.000000000 +0000|-rw-r--r--\n").unwrap();
+        assert_eq!(meta.size_bytes, 12345);
+        assert_eq!(meta.modified.as_deref(), Some("2026-04-19 12:34:56.000000000 +0000"));
+        assert_eq!(meta.mode, "-rw-r--r--");
+    }
+
+    #[test]
+    fn returns_none_for_unparseable_stat() {
+        assert!(parse_stat_output("").is_none());
+        assert!(parse_stat_output("garbage output\n").is_none());
+        assert!(parse_stat_output("notanumber|time|mode\n").is_none());
+    }
+
+    #[test]
+    fn parses_ls_la_fallback() {
+        let output = "-rw------- 1 u0_a99 u0_a99  2048 2026-04-19 12:34 prefs.xml\n";
+        let meta = parse_ls_la_output(output).unwrap();
+        assert_eq!(meta.size_bytes, 2048);
+        assert_eq!(meta.mode, "-rw-------");
+        assert_eq!(meta.modified.as_deref(), Some("2026-04-19 12:34"));
     }
 
     #[test]

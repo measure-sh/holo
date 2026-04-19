@@ -23,6 +23,13 @@ pub struct Device {
     pub connected: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct FileMeta {
+    pub size_bytes: u64,
+    pub modified: Option<String>,
+    pub mode: String,
+}
+
 pub trait Adb: Send + Sync {
     fn list_devices(&self) -> Result<Vec<Device>>;
     fn get_battery_level(&self, serial: &str) -> Result<u8>;
@@ -46,6 +53,8 @@ pub trait Adb: Send + Sync {
     fn get_app_version(&self, serial: &str, package: &str) -> Result<(String, String)>;
     fn list_files(&self, serial: &str, package: &str, path: &str) -> Result<Vec<(String, bool)>>;
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()>;
+    fn stat_file(&self, serial: &str, package: &str, remote_path: &str) -> Result<FileMeta>;
+    fn cat_file(&self, serial: &str, package: &str, remote_path: &str, max_bytes: u64) -> Result<Vec<u8>>;
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo>;
     fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32>;
     fn start_trace(&self, serial: &str, config: &str) -> Result<()>;
