@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{
@@ -12,7 +12,7 @@ use ratatui::{
 use crate::database::{DatabaseState, ReplLine, TreeNode};
 use crate::panel;
 use crate::theme;
-use crate::ui::panel_title;
+use crate::ui::{panel_title, render_focus_rail, render_pane_chip};
 
 pub fn render_database_panel(
     frame: &mut Frame,
@@ -51,6 +51,7 @@ pub fn render_database_panel(
     frame.render_widget(block, area);
 
     let tree_focused = focused && !db_state.detail_focused && !db_state.repl_active;
+    let detail_active = focused && db_state.detail_focused;
 
     if db_state.detail_open {
         let chunks = Layout::default()
@@ -61,7 +62,7 @@ pub fn render_database_panel(
         if db_state.repl_active {
             render_repl(frame, chunks[1], db_state, focused);
         } else {
-            render_detail(frame, chunks[1], db_state);
+            render_detail(frame, chunks[1], db_state, detail_active);
         }
     } else if db_state.repl_active {
         render_repl(frame, inner, db_state, focused);
@@ -85,13 +86,6 @@ fn build_title(state: &DatabaseState, focused: bool) -> Line<'static> {
     {
         let mut spans = base.spans;
         spans.push(Span::styled(format!("› {} ", db), Style::new().fg(t.muted)));
-        return Line::from(spans);
-    }
-    if let Some((db, table)) = &state.selected_table
-        && state.detail_open
-    {
-        let mut spans = base.spans;
-        spans.push(Span::styled(format!("› {}/{} ", db, table), Style::new().fg(t.muted)));
         return Line::from(spans);
     }
     base
@@ -198,9 +192,20 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active:
     let muted = Style::new().fg(t.muted);
     let fg = Style::new().fg(t.fg);
 
+    let (rail_area, content_area) = split_rail(area);
+    render_focus_rail(frame, rail_area, active);
+    if content_area.width == 0 || content_area.height == 0 {
+        return;
+    }
+    let (chip_area, body_area) = split_chip(content_area);
+    render_pane_chip(frame, chip_area, "tables", active);
+    if body_area.width == 0 || body_area.height == 0 {
+        return;
+    }
+
     if state.databases.is_empty() {
         let item = ListItem::new(Line::from(Span::styled("detecting databases…", muted)));
-        frame.render_widget(List::new(vec![item]), area);
+        frame.render_widget(List::new(vec![item]), body_area);
         return;
     }
 
@@ -210,7 +215,7 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active:
         state.tree_cursor = total - 1;
     }
 
-    let visible_height = area.height as usize;
+    let visible_height = body_area.height as usize;
     let start = if state.tree_cursor >= visible_height {
         state.tree_cursor - visible_height + 1
     } else {
@@ -257,61 +262,82 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active:
         })
         .collect();
 
-    frame.render_widget(List::new(items), area);
+    frame.render_widget(List::new(items), body_area);
 
-    if total > visible_height && area.height > 0 && area.width > 0 {
+    if total > visible_height && body_area.height > 0 && body_area.width > 0 {
         let mut scrollbar_state =
             ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
             .thumb_style(Style::new().fg(t.muted))
             .track_style(Style::new().fg(t.surface));
-        frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        frame.render_stateful_widget(scrollbar, body_area, &mut scrollbar_state);
     }
 }
 
-fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState) {
+fn split_rail(area: Rect) -> (Rect, Rect) {
+    if area.width == 0 {
+        return (area, area);
+    }
+    let rail = Rect { x: area.x, y: area.y, width: 1, height: area.height };
+    let content = Rect {
+        x: area.x + 1,
+        y: area.y,
+        width: area.width - 1,
+        height: area.height,
+    };
+    (rail, content)
+}
+
+fn split_chip(area: Rect) -> (Rect, Rect) {
+    if area.height == 0 {
+        return (area, area);
+    }
+    let chip = Rect { x: area.x, y: area.y, width: area.width, height: 1 };
+    let body = Rect {
+        x: area.x,
+        y: area.y + 1,
+        width: area.width,
+        height: area.height - 1,
+    };
+    (chip, body)
+}
+
+fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active: bool) {
     let t = theme::current();
     let fg = Style::new().fg(t.fg);
     let muted = Style::new().fg(t.muted);
     let header_style = Style::new().fg(t.accent).add_modifier(Modifier::BOLD);
     let danger = Style::new().fg(t.danger);
 
-    let sep_color = if state.detail_focused { t.accent } else { t.muted };
-    let separator = Block::default()
-        .borders(Borders::LEFT)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(sep_color));
-    let detail_inner = separator.inner(area);
-    frame.render_widget(separator, area);
-
-    if detail_inner.height == 0 || detail_inner.width == 0 {
+    let (rail_area, detail_inner) = split_rail(area);
+    render_focus_rail(frame, rail_area, active);
+    if detail_inner.width == 0 || detail_inner.height == 0 {
         return;
     }
 
     let Some((_, table)) = state.selected_table.clone() else {
+        let (chip_area, body_area) = split_chip(detail_inner);
+        render_pane_chip(frame, chip_area, "detail", active);
         let item = ListItem::new(Line::from(Span::styled(" select a table", muted)));
-        frame.render_widget(List::new(vec![item]), detail_inner);
+        frame.render_widget(List::new(vec![item]), body_area);
         return;
     };
 
-    let title_text = if let Some(data) = &state.table_data {
-        format!(
-            " {}  loaded {}/{}",
-            table,
-            data.rows.len(),
-            data.row_count,
-        )
-    } else {
-        format!(" {}", table)
-    };
-    let title_area = Rect { x: detail_inner.x, y: detail_inner.y, width: detail_inner.width, height: 1 };
-    frame.render_widget(Line::from(Span::styled(title_text, header_style)), title_area);
+    let (chip_area, rest) = split_chip(detail_inner);
+    render_pane_chip(frame, chip_area, &table, active);
+    let stats_text = state
+        .table_data
+        .as_ref()
+        .map(|d| format!("{}/{} rows ", d.rows.len(), d.row_count))
+        .unwrap_or_else(|| "loading… ".to_string());
+    let stats_line = Line::from(Span::styled(stats_text, muted)).alignment(Alignment::Right);
+    frame.render_widget(stats_line, chip_area);
 
     let body_area = Rect {
-        x: detail_inner.x,
-        y: detail_inner.y + 1,
-        width: detail_inner.width,
-        height: detail_inner.height.saturating_sub(1),
+        x: rest.x,
+        y: rest.y + 1,
+        width: rest.width,
+        height: rest.height.saturating_sub(1),
     };
     if body_area.height == 0 {
         return;
@@ -433,6 +459,8 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState) {
         };
         let mut hbar = ScrollbarState::new(max_h_scroll).position(h_off);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::HorizontalBottom)
+            .thumb_symbol("━")
+            .track_symbol(Some("─"))
             .thumb_style(Style::new().fg(t.muted))
             .track_style(Style::new().fg(t.surface));
         frame.render_stateful_widget(scrollbar, hbar_area, &mut hbar);
@@ -486,18 +514,14 @@ fn render_repl(frame: &mut Frame, area: Rect, state: &mut DatabaseState, focused
     let fg = Style::new().fg(t.fg);
     let danger = Style::new().fg(t.danger);
 
-    let repl_inner = if state.detail_open {
-        let sep_color = if focused { t.accent } else { t.muted };
-        let separator = Block::default()
-            .borders(Borders::LEFT)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(sep_color));
-        let inner = separator.inner(area);
-        frame.render_widget(separator, area);
-        inner
-    } else {
-        area
-    };
+    let (rail_area, after_rail) = split_rail(area);
+    render_focus_rail(frame, rail_area, focused);
+    if after_rail.width == 0 || after_rail.height == 0 {
+        return;
+    }
+    let (chip_area, repl_inner) = split_chip(after_rail);
+    let chip_label = state.repl_db.as_deref().unwrap_or("repl");
+    render_pane_chip(frame, chip_area, chip_label, focused);
 
     if repl_inner.height == 0 {
         return;

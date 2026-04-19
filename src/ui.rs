@@ -80,6 +80,32 @@ pub fn panel_block(panel_number: u8, focused: bool) -> Block<'static> {
         .border_style(Style::new().fg(color))
 }
 
+pub fn render_focus_rail(frame: &mut Frame, area: Rect, active: bool) {
+    if !active || area.width == 0 || area.height == 0 {
+        return;
+    }
+    let t = theme::current();
+    let style = Style::new().fg(t.accent);
+    let rail: Vec<Line> = (0..area.height)
+        .map(|_| Line::from(Span::styled("\u{258E}", style)))
+        .collect();
+    frame.render_widget(ratatui::widgets::Paragraph::new(rail), area);
+}
+
+pub fn render_pane_chip(frame: &mut Frame, area: Rect, label: &str, active: bool) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let t = theme::current();
+    let style = if active {
+        Style::new().fg(t.bg).bg(t.accent).add_modifier(Modifier::BOLD)
+    } else {
+        Style::new().fg(t.muted).add_modifier(Modifier::BOLD)
+    };
+    let text = format!(" {label} ");
+    frame.render_widget(Line::from(Span::styled(text, style)), area);
+}
+
 pub fn wrap_line(line: Line<'_>, width: usize, pad: usize) -> Vec<Line<'_>> {
     if width == 0 {
         return vec![line];
