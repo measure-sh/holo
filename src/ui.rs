@@ -779,10 +779,10 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            files_ui::render_files_panel(frame, cols[0], is_focused(app, panel::FILES), app.files_state());
+            files_ui::render_files_panel(frame, cols[0], is_focused(app, panel::FILES), app.files_state_mut());
             database_ui::render_database_panel(frame, cols[1], is_focused(app, panel::DATABASE), app.database_state_mut());
         }
-        (true, false) => files_ui::render_files_panel(frame, area, is_focused(app, panel::FILES), app.files_state()),
+        (true, false) => files_ui::render_files_panel(frame, area, is_focused(app, panel::FILES), app.files_state_mut()),
         (false, true) => database_ui::render_database_panel(frame, area, is_focused(app, panel::DATABASE), app.database_state_mut()),
         (false, false) => {}
     }

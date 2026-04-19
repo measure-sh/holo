@@ -434,10 +434,6 @@ impl App {
         &mut self.permissions_state
     }
 
-    pub fn files_state(&self) -> &FilesState {
-        &self.files_state
-    }
-
     pub fn files_state_mut(&mut self) -> &mut FilesState {
         &mut self.files_state
     }
