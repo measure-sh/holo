@@ -151,6 +151,15 @@ impl FilesState {
                 self.detail_focused = true;
                 Some(Action::Noop)
             }
+            KeyCode::Char('o') => {
+                if !self.selected_is_dir()
+                    && let Some(path) = self.selected_path()
+                {
+                    Some(Action::OpenFile(path))
+                } else {
+                    Some(Action::Noop)
+                }
+            }
             KeyCode::Char('r') => {
                 self.error = None;
                 self.root_children = None;
@@ -858,6 +867,32 @@ mod tests {
             assert_eq!(state.selected_file, pinned, "cursor nav must not change selected_file");
             assert!(!state.loading_meta, "cursor nav must not start a load");
         }
+    }
+
+    #[test]
+    fn o_in_tree_opens_file_under_cursor() {
+        let mut state = make_state_with_children();
+        state.selected_index = 2; // config.xml
+        let action = state.handle_key(key(KeyCode::Char('o')));
+        assert!(matches!(&action, Some(Action::OpenFile(p)) if p == "config.xml"));
+    }
+
+    #[test]
+    fn o_on_directory_is_noop() {
+        let mut state = make_state_with_children();
+        state.selected_index = 0; // cache/
+        let action = state.handle_key(key(KeyCode::Char('o')));
+        assert!(matches!(action, Some(Action::Noop)));
+    }
+
+    #[test]
+    fn o_in_detail_mode_opens_selected_file() {
+        let mut state = make_state_with_children();
+        state.selected_index = 2;
+        state.handle_key(key(KeyCode::Enter)); // open detail
+        state.handle_key(key(KeyCode::Tab));   // focus detail
+        let action = state.handle_key(key(KeyCode::Char('o')));
+        assert!(matches!(&action, Some(Action::OpenFile(p)) if p == "config.xml"));
     }
 
     #[test]

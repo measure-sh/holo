@@ -98,6 +98,9 @@ fn build_bottom_bar(
     } else {
         spans.extend([
             Span::styled(" ↩", accent),
+            Span::styled(" detail ", muted),
+            Span::styled("───", border_fg),
+            Span::styled(" o", accent),
             Span::styled(" open ", muted),
         ]);
     }
@@ -106,7 +109,7 @@ fn build_bottom_bar(
         spans.extend([
             Span::styled("───", border_fg),
             Span::styled(" tab", accent),
-            Span::styled(" detail ", muted),
+            Span::styled(" focus ", muted),
         ]);
     }
 
