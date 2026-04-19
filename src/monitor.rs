@@ -41,6 +41,7 @@ pub struct MeasureMemory {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum Trend {
     Rising,
     Falling,
@@ -79,6 +80,7 @@ impl MonitorState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn trend_u64(&self, extract: fn(&MonitorSample) -> u64) -> Trend {
         if self.history.len() < 3 {
             return Trend::Stable;

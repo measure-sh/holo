@@ -98,7 +98,12 @@ pub fn wrap_line(line: Line<'_>, width: usize, pad: usize) -> Vec<Line<'_>> {
         let style = span.style;
         let mut pos = 0;
         while pos < content.len() {
-            let remaining_in_line = width - current_width;
+            let remaining_in_line = width.saturating_sub(current_width);
+            if remaining_in_line == 0 {
+                result.push(Line::from(std::mem::take(&mut current_spans)));
+                current_width = pad;
+                continue;
+            }
             let chunk_end = (pos + remaining_in_line).min(content.len());
             let chunk = &content[pos..chunk_end];
             current_spans.push(Span::styled(chunk.to_string(), style));

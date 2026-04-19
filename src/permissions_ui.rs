@@ -96,7 +96,7 @@ pub fn render_permissions_panel(
 
     frame.render_widget(List::new(items), inner);
 
-    if total > visible_height {
+    if total > visible_height && inner.height > 0 && inner.width > 0 {
         let mut scrollbar_state =
             ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)

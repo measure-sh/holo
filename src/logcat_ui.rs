@@ -87,7 +87,7 @@ pub fn render_logcat_panel(
     let items: Vec<ListItem> = display_lines.into_iter().skip(start).take(end - start).collect();
     frame.render_widget(List::new(items), inner);
 
-    if total_display > visible_height {
+    if total_display > visible_height && inner.height > 0 && inner.width > 0 {
         let mut scrollbar_state =
             ScrollbarState::new(total_display.saturating_sub(visible_height)).position(start);
         let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
