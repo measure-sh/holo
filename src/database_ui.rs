@@ -12,7 +12,7 @@ use ratatui::{
 use crate::database::{DatabaseState, ReplLine, TreeNode};
 use crate::panel;
 use crate::theme;
-use crate::ui::{panel_title, render_focus_rail, render_pane_chip};
+use crate::ui::{panel_title, render_focus_rail, render_pane_chip, split_chip, split_rail};
 
 pub fn render_database_panel(
     frame: &mut Frame,
@@ -272,34 +272,6 @@ fn render_tree(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active:
             .track_style(Style::new().fg(t.surface));
         frame.render_stateful_widget(scrollbar, body_area, &mut scrollbar_state);
     }
-}
-
-fn split_rail(area: Rect) -> (Rect, Rect) {
-    if area.width == 0 {
-        return (area, area);
-    }
-    let rail = Rect { x: area.x, y: area.y, width: 1, height: area.height };
-    let content = Rect {
-        x: area.x + 1,
-        y: area.y,
-        width: area.width - 1,
-        height: area.height,
-    };
-    (rail, content)
-}
-
-fn split_chip(area: Rect) -> (Rect, Rect) {
-    if area.height == 0 {
-        return (area, area);
-    }
-    let chip = Rect { x: area.x, y: area.y, width: area.width, height: 1 };
-    let body = Rect {
-        x: area.x,
-        y: area.y + 1,
-        width: area.width,
-        height: area.height - 1,
-    };
-    (chip, body)
 }
 
 fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, active: bool) {

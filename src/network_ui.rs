@@ -9,7 +9,7 @@ use ratatui::{
 use crate::network::{NetworkEntry, NetworkState};
 use crate::panel;
 use crate::theme;
-use crate::ui::{panel_title, wrap_line};
+use crate::ui::{panel_title, render_focus_rail, render_pane_chip, split_chip, split_rail, wrap_line};
 
 pub fn format_latency(ms: u64) -> String {
     if ms >= 1000 {
@@ -110,7 +110,7 @@ pub fn render_network_panel(
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(inner);
-        render_detail(frame, chunks[1], state);
+        render_detail(frame, chunks[1], state, focused);
         let filtered = state.filtered_entries();
         render_list(frame, chunks[0], &filtered, state, focused);
     } else {
@@ -119,15 +119,27 @@ pub fn render_network_panel(
     }
 }
 
+
 fn render_list(frame: &mut Frame, area: Rect, filtered: &[(usize, &NetworkEntry)], state: &NetworkState, focused: bool) {
     let t = theme::current();
+    let list_active = focused && !state.detail_focused;
+
+    let (rail_area, content_area) = split_rail(area);
+    render_focus_rail(frame, rail_area, list_active);
+    if content_area.width == 0 || content_area.height == 0 {
+        return;
+    }
+    let (chip_area, area) = split_chip(content_area);
+    render_pane_chip(frame, chip_area, "requests", list_active);
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
     let visible_height = area.height as usize;
     let width = area.width as usize;
     let total = filtered.len();
     let selected = state.selected;
     let search = &state.search;
-
-    let list_active = focused && !state.detail_focused;
 
     let build_entry_line = |entry: &NetworkEntry, is_selected: bool| -> Line {
         let style = if is_selected && list_active {
@@ -258,13 +270,36 @@ fn highlight_spans(spans: &mut Vec<Span<'_>>, text: &str, base: Style, highlight
     }
 }
 
-fn render_detail(frame: &mut Frame, area: Rect, state: &mut NetworkState) {
+fn render_detail(frame: &mut Frame, area: Rect, state: &mut NetworkState, focused: bool) {
     let t = theme::current();
+    let detail_active = focused && state.detail_focused;
+
+    let (rail_area, content_area) = split_rail(area);
+    render_focus_rail(frame, rail_area, detail_active);
+    if content_area.width == 0 || content_area.height == 0 {
+        return;
+    }
+    let (chip_area, detail_inner) = split_chip(content_area);
 
     let entry = match state.entries.get(state.selected) {
         Some(e) => e,
-        None => return,
+        None => {
+            render_pane_chip(frame, chip_area, "detail", detail_active);
+            return;
+        }
     };
+
+    let method_label = entry.method.to_uppercase();
+    render_pane_chip(frame, chip_area, &method_label, detail_active);
+    let status_latency = Line::from(vec![
+        Span::styled(
+            format!("{} ", entry.status_code),
+            Style::new().fg(theme::status_color(entry.status_code)),
+        ),
+        Span::styled(format!("{} ", format_latency(entry.latency_ms)), Style::new().fg(t.muted)),
+    ])
+    .alignment(Alignment::Right);
+    frame.render_widget(status_latency, chip_area);
 
     let style = Style::new().fg(t.fg);
     let header_style = Style::new().fg(t.accent).add_modifier(Modifier::BOLD);
@@ -272,16 +307,6 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut NetworkState) {
     let key_style = Style::new().fg(t.muted);
 
     let mut lines: Vec<Line> = Vec::new();
-
-    // Method + Status + Latency
-    lines.push(Line::from(vec![
-        Span::styled(format!(" {} ", entry.method.to_uppercase()), header_style),
-        Span::styled(
-            format!("{} ", entry.status_code),
-            Style::new().fg(theme::status_color(entry.status_code)),
-        ),
-        Span::styled(format_latency(entry.latency_ms), style),
-    ]));
 
     // URL
     lines.push(Line::from(Span::styled(format!(" {}", &entry.url), style)));
@@ -321,14 +346,6 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut NetworkState) {
     lines.push(Line::from(Span::styled(" Response Body", header_style)));
     push_body_lines(&mut lines, &entry.response_body, style, muted);
 
-    // Separator line on the left edge
-    let sep_color = if state.detail_focused { t.accent } else { t.muted };
-    let separator = Block::default()
-        .borders(Borders::LEFT)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(sep_color));
-
-    let detail_inner = separator.inner(area);
     let visible_height = detail_inner.height as usize;
     let total = lines.len();
 
@@ -341,7 +358,6 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut NetworkState) {
         .map(ListItem::new)
         .collect();
 
-    frame.render_widget(separator, area);
     frame.render_widget(List::new(items), detail_inner);
 
     if total > visible_height && detail_inner.height > 0 && detail_inner.width > 0 {
