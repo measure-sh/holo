@@ -33,17 +33,19 @@ fn sparkline(samples: &[f64], width: usize) -> String {
         return String::new();
     }
     let visible: Vec<f64> = samples.iter().rev().take(width).copied().collect();
-    let max = visible.iter().copied().fold(0.0_f64, f64::max);
+    let min = visible.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = visible.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let range = max - min;
     let pad = width.saturating_sub(visible.len());
     let mut out = String::with_capacity(width);
     for _ in 0..pad {
         out.push(' ');
     }
     for &v in visible.iter().rev() {
-        let idx = if max <= 0.0 {
+        let idx = if range <= 0.0 {
             0
         } else {
-            ((v / max) * (BLOCKS.len() - 1) as f64).round() as usize
+            ((v - min) / range * (BLOCKS.len() - 1) as f64).round() as usize
         };
         out.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
     }
@@ -185,10 +187,11 @@ mod tests {
 
     #[test]
     fn sparkline_constant_nonzero_values() {
+        // Flat (non-varying) data renders as a flat low bar so stable
+        // metrics don't visually look maxed out.
         let s = sparkline(&[50.0, 50.0, 50.0], 5);
-        // all three map to the max bucket (index 7)
         let last_three: String = s.chars().skip(2).collect();
-        assert!(last_three.chars().all(|c| c == '█'));
+        assert!(last_three.chars().all(|c| c == '▁'));
     }
 
     #[test]

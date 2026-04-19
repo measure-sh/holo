@@ -501,17 +501,19 @@ fn sparkline(samples: &[u64], width: usize) -> String {
         return String::new();
     }
     let visible: Vec<u64> = samples.iter().rev().take(width).copied().collect();
+    let min = visible.iter().copied().min().unwrap_or(0);
     let max = visible.iter().copied().max().unwrap_or(0);
+    let range = max.saturating_sub(min);
     let pad = width.saturating_sub(visible.len());
     let mut out = String::with_capacity(width);
     for _ in 0..pad {
         out.push(' ');
     }
     for &v in visible.iter().rev() {
-        let idx = if max == 0 {
+        let idx = if range == 0 {
             0
         } else {
-            ((v as f64 / max as f64) * (BLOCKS.len() - 1) as f64).round() as usize
+            ((v.saturating_sub(min)) as f64 / range as f64 * (BLOCKS.len() - 1) as f64).round() as usize
         };
         out.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
     }
