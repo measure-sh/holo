@@ -72,7 +72,9 @@ fn metric_row(
     let mut spark = Sparkline::default()
         .data(reversed)
         .direction(RenderDirection::RightToLeft)
-        .style(Style::new().fg(color));
+        .style(Style::new().fg(color))
+        .absent_value_symbol("▁")
+        .absent_value_style(Style::new().fg(color));
     if max > 0 {
         spark = spark.max(max);
     }
