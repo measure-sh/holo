@@ -371,6 +371,12 @@ fn parse_optional(value: &str) -> Option<String> {
     if value == "null" { None } else { Some(value.to_string()) }
 }
 
+fn is_rn_inspector_url(url: &str) -> bool {
+    let path = url.split('?').next().unwrap_or(url);
+    path.rsplit_once("/inspector/device")
+        .is_some_and(|(_, tail)| tail.is_empty())
+}
+
 pub fn parse_http_data(line: &str) -> Option<NetworkEntry> {
     let parsed = logcat::parse(line)?;
     if parsed.tag != "Measure" {
@@ -386,6 +392,9 @@ pub fn parse_http_data(line: &str) -> Option<NetworkEntry> {
     let data = &msg[start..end];
 
     let url = find_field_value(data, FIELD_KEYS[0], Some(FIELD_KEYS[1]))?.to_string();
+    if is_rn_inspector_url(&url) {
+        return None;
+    }
     let method = find_field_value(data, FIELD_KEYS[1], Some(FIELD_KEYS[2]))?.to_string();
     let status_str = find_field_value(data, FIELD_KEYS[2], Some(FIELD_KEYS[3]))?;
     let start_time_str = find_field_value(data, FIELD_KEYS[3], Some(FIELD_KEYS[4]))?;
@@ -492,6 +501,19 @@ mod tests {
     fn parse_malformed_line() {
         let line = "not a logcat line at all";
         assert!(parse_http_data(line).is_none());
+    }
+
+    #[test]
+    fn parse_drops_rn_inspector() {
+        let line = "04-08 09:17:37.261 23922 23938 D Measure : EventProcessor: HTTP, HttpData(url=http://localhost:8081/inspector/device?name=Pixel&app=com.foo.debug&device=abc&profiling=false, method=get, status_code=200, start_time=1, end_time=2, failure_reason=null, failure_description=null, request_headers={}, response_headers={}, request_body=null, response_body=null, client=okhttp)";
+        assert!(parse_http_data(line).is_none());
+    }
+
+    #[test]
+    fn parse_keeps_similar_urls() {
+        let line = "04-08 09:17:37.261 23922 23938 D Measure : EventProcessor: HTTP, HttpData(url=https://api.example.com/inspector/devices/42, method=get, status_code=200, start_time=1, end_time=2, failure_reason=null, failure_description=null, request_headers={}, response_headers={}, request_body=null, response_body=null, client=okhttp)";
+        let entry = parse_http_data(line).unwrap();
+        assert_eq!(entry.url, "https://api.example.com/inspector/devices/42");
     }
 
     #[test]
