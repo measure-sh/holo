@@ -26,6 +26,10 @@ pub struct NetworkState {
     pub wrap: bool,
     pub failure_count: usize,
     pub detail_open: bool,
+    pub detail_focused: bool,
+    pub detail_scroll: usize,
+    pub search: String,
+    pub editing_search: bool,
 }
 
 impl NetworkState {
@@ -36,11 +40,44 @@ impl NetworkState {
             wrap: false,
             failure_count: 0,
             detail_open: false,
+            detail_focused: false,
+            detail_scroll: 0,
+            search: String::new(),
+            editing_search: false,
         }
     }
 
     fn is_failure(entry: &NetworkEntry) -> bool {
         entry.status_code >= 400 || entry.failure_reason.is_some()
+    }
+
+    pub fn matches_search(entry: &NetworkEntry, search: &str) -> bool {
+        if search.is_empty() {
+            return true;
+        }
+        let lower = search.to_lowercase();
+        entry.url.to_lowercase().contains(&lower)
+            || entry.method.to_lowercase().contains(&lower)
+            || entry.status_code.to_string().contains(&lower)
+    }
+
+    pub fn filtered_entries(&self) -> Vec<(usize, &NetworkEntry)> {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| Self::matches_search(e, &self.search))
+            .collect()
+    }
+
+    fn close_detail(&mut self) {
+        self.detail_open = false;
+        self.detail_focused = false;
+        self.detail_scroll = 0;
+    }
+
+    pub fn clamp_detail_scroll(&mut self, total_lines: usize, visible_height: usize) {
+        let max = total_lines.saturating_sub(visible_height);
+        self.detail_scroll = self.detail_scroll.min(max);
     }
 
     pub fn push(&mut self, entry: NetworkEntry) {
@@ -65,16 +102,32 @@ impl NetworkState {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
-        if self.detail_open {
+        if self.editing_search {
+            match key.code {
+                KeyCode::Char(c) => self.search.push(c),
+                KeyCode::Backspace => { self.search.pop(); }
+                KeyCode::Enter | KeyCode::Esc => self.editing_search = false,
+                _ => {}
+            }
+            return Some(Action::Noop);
+        }
+
+        if self.detail_open && self.detail_focused {
             return match key.code {
                 KeyCode::Up | KeyCode::Char('k') => {
-                    self.selected = self.selected.saturating_sub(1);
+                    self.detail_scroll = self.detail_scroll.saturating_sub(1);
                     Some(Action::Noop)
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    if !self.entries.is_empty() {
-                        self.selected = (self.selected + 1).min(self.entries.len() - 1);
-                    }
+                    self.detail_scroll += 1;
+                    Some(Action::Noop)
+                }
+                KeyCode::Char(' ') => {
+                    self.detail_scroll += 20;
+                    Some(Action::Noop)
+                }
+                KeyCode::Tab => {
+                    self.detail_focused = false;
                     Some(Action::Noop)
                 }
                 KeyCode::Char('o') => {
@@ -82,8 +135,47 @@ impl NetworkState {
                         Action::OpenInEditor(Self::format_detail(entry))
                     })
                 }
+                KeyCode::Enter => {
+                    self.close_detail();
+                    Some(Action::Noop)
+                }
                 KeyCode::Esc => {
-                    self.detail_open = false;
+                    self.detail_focused = false;
+                    Some(Action::Noop)
+                }
+                _ => Some(Action::Noop),
+            };
+        }
+
+        if self.detail_open {
+            return match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.selected = self.selected.saturating_sub(1);
+                    self.detail_scroll = 0;
+                    Some(Action::Noop)
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if !self.entries.is_empty() {
+                        self.selected = (self.selected + 1).min(self.entries.len() - 1);
+                        self.detail_scroll = 0;
+                    }
+                    Some(Action::Noop)
+                }
+                KeyCode::Tab => {
+                    self.detail_focused = true;
+                    Some(Action::Noop)
+                }
+                KeyCode::Char('o') => {
+                    self.entries.get(self.selected).map(|entry| {
+                        Action::OpenInEditor(Self::format_detail(entry))
+                    })
+                }
+                KeyCode::Enter => {
+                    self.close_detail();
+                    Some(Action::Noop)
+                }
+                KeyCode::Esc => {
+                    self.close_detail();
                     Some(Action::Unfocus)
                 }
                 _ => Some(Action::Noop),
@@ -116,6 +208,10 @@ impl NetworkState {
             }
             KeyCode::Char('w') => {
                 self.wrap = !self.wrap;
+                Some(Action::Noop)
+            }
+            KeyCode::Char('/') => {
+                self.editing_search = true;
                 Some(Action::Noop)
             }
             KeyCode::Esc => Some(Action::Unfocus),

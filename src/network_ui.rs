@@ -68,8 +68,22 @@ pub fn render_network_panel(
     if focused {
         let accent = Style::new().fg(t.danger);
         let action_muted = Style::new().fg(t.muted);
-        if state.detail_open {
+        if state.detail_open && state.detail_focused {
             block = block.title_bottom(Line::from(vec![
+                Span::styled(" tab", accent),
+                Span::styled(" list ", action_muted),
+                Span::styled("───", Style::new().fg(color)),
+                Span::styled(" o", accent),
+                Span::styled("pen ", action_muted),
+                Span::styled("───", Style::new().fg(color)),
+                Span::styled(" esc", accent),
+                Span::styled(" back ", action_muted),
+            ]));
+        } else if state.detail_open {
+            block = block.title_bottom(Line::from(vec![
+                Span::styled(" tab", accent),
+                Span::styled(" detail ", action_muted),
+                Span::styled("───", Style::new().fg(color)),
                 Span::styled(" o", accent),
                 Span::styled("pen ", action_muted),
                 Span::styled("───", Style::new().fg(color)),
@@ -77,16 +91,7 @@ pub fn render_network_panel(
                 Span::styled(" close ", action_muted),
             ]));
         } else {
-            block = block.title_bottom(Line::from(vec![
-                Span::styled(" ↩", accent),
-                Span::styled(" detail ", action_muted),
-                Span::styled("───", Style::new().fg(color)),
-                Span::styled(" o", accent),
-                Span::styled("pen ", action_muted),
-                Span::styled("───", Style::new().fg(color)),
-                Span::styled(" w", accent),
-                Span::styled("rap ", action_muted),
-            ]));
+            block = block.title_bottom(network_filter_bar(state, color));
         }
     }
 
@@ -105,43 +110,59 @@ pub fn render_network_panel(
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
             .split(inner);
-        render_list(frame, chunks[0], state, focused);
-        if let Some(entry) = state.entries.get(state.selected) {
-            render_detail(frame, chunks[1], entry);
-        }
+        render_detail(frame, chunks[1], state);
+        let filtered = state.filtered_entries();
+        render_list(frame, chunks[0], &filtered, state, focused);
     } else {
-        render_list(frame, inner, state, focused);
+        let filtered = state.filtered_entries();
+        render_list(frame, inner, &filtered, state, focused);
     }
 }
 
-fn render_list(frame: &mut Frame, area: Rect, state: &NetworkState, focused: bool) {
+fn render_list(frame: &mut Frame, area: Rect, filtered: &[(usize, &NetworkEntry)], state: &NetworkState, focused: bool) {
     let t = theme::current();
     let visible_height = area.height as usize;
     let width = area.width as usize;
-    let total = state.entries.len();
+    let total = filtered.len();
     let selected = state.selected;
+    let search = &state.search;
+
+    let list_active = focused && !state.detail_focused;
 
     let build_entry_line = |entry: &NetworkEntry, is_selected: bool| -> Line {
-        let style = if is_selected {
+        let style = if is_selected && list_active {
             Style::new().fg(t.accent).add_modifier(Modifier::BOLD)
+        } else if is_selected {
+            Style::new().fg(t.muted).add_modifier(Modifier::BOLD)
         } else {
             Style::new().fg(t.fg)
         };
-        let prefix = if is_selected && focused { "▸ " } else { "  " };
+        let prefix = if is_selected && list_active { "▸ " } else { "  " };
         let method = format!("{:<6}", entry.method.to_uppercase());
         let status = format!("{:<3}", entry.status_code);
         let latency = format!("{:>6}", format_latency(entry.latency_ms));
 
-        Line::from(vec![
+        let highlight_style = Style::new()
+            .fg(t.bg)
+            .bg(t.warning)
+            .add_modifier(Modifier::UNDERLINED);
+        let lower_search = search.to_lowercase();
+
+        let status_style = Style::new().fg(theme::status_color(entry.status_code));
+
+        let mut spans = vec![
             Span::styled(prefix, style),
             Span::styled(format!("{:<12} ", &entry.timestamp), if is_selected { style } else { Style::new().fg(t.muted) }),
-            Span::styled(format!("{method} "), style),
-            Span::styled(status, Style::new().fg(theme::status_color(entry.status_code))),
-            Span::styled("  ", Style::new()),
-            Span::styled(latency, style),
-            Span::styled("  ", Style::new()),
-            Span::styled(entry.url.clone(), style),
-        ])
+        ];
+
+        highlight_spans(&mut spans, &format!("{method} "), style, highlight_style, &lower_search);
+        highlight_spans(&mut spans, &status, status_style, highlight_style, &lower_search);
+        spans.push(Span::styled("  ", Style::new()));
+        spans.push(Span::styled(latency, style));
+        spans.push(Span::styled("  ", Style::new()));
+        highlight_spans(&mut spans, &entry.url, style, highlight_style, &lower_search);
+
+        Line::from(spans)
     };
 
     // indent(2) + timestamp(13) + method(7) + status(3) + gap(2) + latency(6) + gap(2)
@@ -151,11 +172,11 @@ fn render_list(frame: &mut Frame, area: Rect, state: &NetworkState, focused: boo
         let mut display_lines: Vec<ListItem> = Vec::new();
         let mut selected_display_start = 0;
         let mut selected_display_count = 0;
-        for (i, entry) in state.entries.iter().enumerate() {
-            let is_selected = i == selected && focused;
+        for (_, (orig_idx, entry)) in filtered.iter().enumerate() {
+            let is_selected = *orig_idx == selected && focused;
             let line = build_entry_line(entry, is_selected);
             let wrapped = wrap_line(line, width, network_pad);
-            if i == selected {
+            if *orig_idx == selected {
                 selected_display_start = display_lines.len();
                 selected_display_count = wrapped.len();
             }
@@ -173,7 +194,7 @@ fn render_list(frame: &mut Frame, area: Rect, state: &NetworkState, focused: boo
         let items: Vec<ListItem> = display_lines.into_iter().skip(start).take(end - start).collect();
         frame.render_widget(List::new(items), area);
 
-        if total_display > visible_height {
+        if total_display > visible_height && area.height > 0 && area.width > 0 {
             let mut scrollbar_state =
                 ScrollbarState::new(total_display.saturating_sub(visible_height)).position(start);
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -182,26 +203,26 @@ fn render_list(frame: &mut Frame, area: Rect, state: &NetworkState, focused: boo
             frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
         }
     } else {
-        let start = if selected >= visible_height {
-            selected - visible_height + 1
+        // Find the position of the selected entry in the filtered list
+        let selected_pos = filtered.iter().position(|(idx, _)| *idx == selected).unwrap_or(0);
+        let start = if selected_pos >= visible_height {
+            selected_pos - visible_height + 1
         } else {
             0
         };
         let end = (start + visible_height).min(total);
 
-        let items: Vec<ListItem> = state.entries[start..end]
+        let items: Vec<ListItem> = filtered[start..end]
             .iter()
-            .enumerate()
-            .map(|(i, entry)| {
-                let actual = start + i;
-                let is_selected = actual == selected && focused;
+            .map(|(orig_idx, entry)| {
+                let is_selected = *orig_idx == selected && focused;
                 ListItem::new(build_entry_line(entry, is_selected))
             })
             .collect();
 
         frame.render_widget(List::new(items), area);
 
-        if total > visible_height {
+        if total > visible_height && area.height > 0 && area.width > 0 {
             let mut scrollbar_state =
                 ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
             let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
@@ -212,8 +233,39 @@ fn render_list(frame: &mut Frame, area: Rect, state: &NetworkState, focused: boo
     }
 }
 
-fn render_detail(frame: &mut Frame, area: Rect, entry: &NetworkEntry) {
+fn highlight_spans(spans: &mut Vec<Span<'_>>, text: &str, base: Style, highlight: Style, lower_search: &str) {
+    if lower_search.is_empty() {
+        spans.push(Span::styled(text.to_string(), base));
+        return;
+    }
+    let lower_text = text.to_lowercase();
+    let mut last_end = 0;
+    for (start, _) in lower_text.match_indices(lower_search) {
+        if start > last_end {
+            spans.push(Span::styled(text[last_end..start].to_string(), base));
+        }
+        spans.push(Span::styled(
+            text[start..start + lower_search.len()].to_string(),
+            highlight,
+        ));
+        last_end = start + lower_search.len();
+    }
+    if last_end < text.len() {
+        spans.push(Span::styled(text[last_end..].to_string(), base));
+    }
+    if last_end == 0 {
+        spans.push(Span::styled(text.to_string(), base));
+    }
+}
+
+fn render_detail(frame: &mut Frame, area: Rect, state: &mut NetworkState) {
     let t = theme::current();
+
+    let entry = match state.entries.get(state.selected) {
+        Some(e) => e,
+        None => return,
+    };
+
     let style = Style::new().fg(t.fg);
     let header_style = Style::new().fg(t.accent).add_modifier(Modifier::BOLD);
     let muted = Style::new().fg(t.muted);
@@ -238,7 +290,7 @@ fn render_detail(frame: &mut Frame, area: Rect, entry: &NetworkEntry) {
     if let Some(reason) = &entry.failure_reason {
         lines.push(Line::from(vec![
             Span::styled(" Failure: ", Style::new().fg(t.danger).add_modifier(Modifier::BOLD)),
-            Span::styled(reason.as_str(), Style::new().fg(t.danger)),
+            Span::styled(reason.clone(), Style::new().fg(t.danger)),
         ]));
     }
     if let Some(desc) = &entry.failure_description {
@@ -269,22 +321,37 @@ fn render_detail(frame: &mut Frame, area: Rect, entry: &NetworkEntry) {
     lines.push(Line::from(Span::styled(" Response Body", header_style)));
     push_body_lines(&mut lines, &entry.response_body, style, muted);
 
-    // Truncate to available height
-    let items: Vec<ListItem> = lines
-        .into_iter()
-        .take(area.height as usize)
-        .map(ListItem::new)
-        .collect();
-
     // Separator line on the left edge
+    let sep_color = if state.detail_focused { t.accent } else { t.muted };
     let separator = Block::default()
         .borders(Borders::LEFT)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(t.muted));
+        .border_style(Style::new().fg(sep_color));
 
     let detail_inner = separator.inner(area);
+    let visible_height = detail_inner.height as usize;
+    let total = lines.len();
+
+    state.clamp_detail_scroll(total, visible_height);
+
+    let items: Vec<ListItem> = lines
+        .into_iter()
+        .skip(state.detail_scroll)
+        .take(visible_height)
+        .map(ListItem::new)
+        .collect();
+
     frame.render_widget(separator, area);
     frame.render_widget(List::new(items), detail_inner);
+
+    if total > visible_height && detail_inner.height > 0 && detail_inner.width > 0 {
+        let mut scrollbar_state =
+            ScrollbarState::new(total.saturating_sub(visible_height)).position(state.detail_scroll);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::new().fg(t.muted))
+            .track_style(Style::new().fg(t.surface));
+        frame.render_stateful_widget(scrollbar, detail_inner, &mut scrollbar_state);
+    }
 }
 
 /// Parse headers from the `{key1=value1, key2=value2}` map format
@@ -333,6 +400,44 @@ fn push_body_lines<'a>(lines: &mut Vec<Line<'a>>, raw: &str, style: Style, muted
     for line in raw.lines() {
         lines.push(Line::from(Span::styled(format!("   {line}"), style)));
     }
+}
+
+fn network_filter_bar(state: &NetworkState, color: ratatui::style::Color) -> Line<'static> {
+    let t = theme::current();
+    let accent = Style::new().fg(t.danger);
+    let muted = Style::new().fg(t.muted);
+    let border = Style::new().fg(color);
+
+    let mut spans = Vec::new();
+
+    spans.push(Span::styled(" /", accent));
+    if state.editing_search {
+        let search_text = if state.search.is_empty() { String::new() } else { state.search.clone() };
+        spans.push(Span::styled(search_text, Style::new().fg(t.fg)));
+        spans.push(Span::styled("_", Style::new().fg(t.fg)));
+        spans.push(Span::styled(" ↩ ", Style::new().fg(t.danger)));
+    } else if state.search.is_empty() {
+        spans.push(Span::styled("search ", muted));
+    } else {
+        spans.push(Span::styled(format!("{} ", state.search), Style::new().fg(t.fg)));
+    }
+
+    spans.push(Span::styled("───", border));
+
+    spans.push(Span::styled(" ↩", accent));
+    spans.push(Span::styled(" detail ", muted));
+
+    spans.push(Span::styled("───", border));
+
+    spans.push(Span::styled(" o", accent));
+    spans.push(Span::styled("pen ", muted));
+
+    spans.push(Span::styled("───", border));
+
+    spans.push(Span::styled(" w", accent));
+    spans.push(Span::styled("rap ", muted));
+
+    Line::from(spans)
 }
 
 fn is_empty_value(value: &str) -> bool {
