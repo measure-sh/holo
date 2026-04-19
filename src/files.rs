@@ -139,11 +139,27 @@ impl FilesState {
 
     pub fn collapse_selected(&mut self) {
         let flat = self.flatten_visible();
-        if let Some(entry) = flat.get(self.selected_index)
-            && entry.is_dir && entry.expanded
-            && let Some(node) = find_node_mut(self.root_children.as_mut().unwrap(), &entry.path)
-        {
-            node.expanded = false;
+        let Some(entry) = flat.get(self.selected_index) else {
+            return;
+        };
+        if entry.is_dir && entry.expanded {
+            let path = entry.path.clone();
+            if let Some(root) = self.root_children.as_mut()
+                && let Some(node) = find_node_mut(root, &path)
+            {
+                node.expanded = false;
+            }
+            return;
+        }
+        if entry.depth == 0 {
+            return;
+        }
+        let target_depth = entry.depth - 1;
+        for i in (0..self.selected_index).rev() {
+            if flat[i].depth == target_depth {
+                self.selected_index = i;
+                return;
+            }
         }
     }
 
@@ -432,6 +448,42 @@ mod tests {
         assert!(!flat[0].is_last_sibling);
         assert!(!flat[1].is_last_sibling);
         assert!(flat[2].is_last_sibling);
+    }
+
+    #[test]
+    fn collapse_on_child_moves_to_parent() {
+        let mut state = make_state_with_children();
+        state.set_children("cache", vec![
+            ("images".into(), true),
+            ("tmp.dat".into(), false),
+        ]);
+        find_node_mut(state.root_children.as_mut().unwrap(), "cache").unwrap().expanded = true;
+
+        state.selected_index = 2;
+        state.collapse_selected();
+        assert_eq!(state.selected_index, 0);
+        let cache = find_node_mut(state.root_children.as_mut().unwrap(), "cache").unwrap();
+        assert!(cache.expanded, "parent should remain expanded on first Left");
+    }
+
+    #[test]
+    fn collapse_on_expanded_dir_collapses_in_place() {
+        let mut state = make_state_with_children();
+        state.set_children("cache", vec![("a.txt".into(), false)]);
+        find_node_mut(state.root_children.as_mut().unwrap(), "cache").unwrap().expanded = true;
+
+        state.selected_index = 0;
+        state.collapse_selected();
+        let cache = find_node_mut(state.root_children.as_mut().unwrap(), "cache").unwrap();
+        assert!(!cache.expanded);
+    }
+
+    #[test]
+    fn collapse_on_root_level_file_is_noop() {
+        let mut state = make_state_with_children();
+        state.selected_index = 2;
+        state.collapse_selected();
+        assert_eq!(state.selected_index, 2);
     }
 
     #[test]
