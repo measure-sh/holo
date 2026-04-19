@@ -166,7 +166,7 @@ fn logcat_filter_bar(filter: &LogcatFilter, editing: Option<LogcatEditTarget>) -
     Line::from(spans)
 }
 
-const TAG_WIDTH: usize = 10;
+const TAG_WIDTH: usize = 15;
 
 fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
     let t = theme::current();
