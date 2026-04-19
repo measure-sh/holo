@@ -4,7 +4,7 @@ use std::process::Command;
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
-use super::{Adb, Device, MemInfo};
+use super::{Adb, Device, MemInfo, NetworkBytes};
 
 fn emulator_path() -> PathBuf {
     std::env::var_os("ANDROID_HOME")
@@ -683,13 +683,71 @@ impl Adb for RealAdb {
     }
 
     fn has_measure_sdk(&self, serial: &str, package: &str) -> bool {
-        Command::new("adb")
-            .args(["-s", serial, "shell", "dumpsys", "package", package])
-            .output()
-            .ok()
-            .map(|o| String::from_utf8_lossy(&o.stdout).contains("sh.measure"))
+        dumpsys_package(serial, package)
+            .map(|s| s.contains("sh.measure"))
             .unwrap_or(false)
     }
+
+    fn get_network_bytes(&self, serial: &str, package: &str) -> Result<NetworkBytes> {
+        let pkg_dump = dumpsys_package(serial, package)
+            .ok_or_else(|| color_eyre::eyre::eyre!("dumpsys package failed"))?;
+        let uid = parse_uid(&pkg_dump)
+            .ok_or_else(|| color_eyre::eyre::eyre!("could not resolve uid for {package}"))?;
+
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "netstats", "detail"])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("dumpsys netstats failed: {stderr}");
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(parse_netstats_for_uid(&stdout, uid))
+    }
+}
+
+fn dumpsys_package(serial: &str, package: &str) -> Option<String> {
+    Command::new("adb")
+        .args(["-s", serial, "shell", "dumpsys", "package", package])
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+}
+
+fn parse_uid(dumpsys_output: &str) -> Option<u32> {
+    for line in dumpsys_output.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("userId=") {
+            return rest.split_whitespace().next()?.parse().ok();
+        }
+    }
+    None
+}
+
+fn parse_netstats_for_uid(output: &str, uid: u32) -> NetworkBytes {
+    let needle = format!("uid={uid}");
+    let mut rx = 0u64;
+    let mut tx = 0u64;
+    for line in output.lines() {
+        if !line.contains(&needle) {
+            continue;
+        }
+        rx = rx.saturating_add(extract_kv_u64(line, "rxBytes=").unwrap_or(0));
+        tx = tx.saturating_add(extract_kv_u64(line, "txBytes=").unwrap_or(0));
+    }
+    NetworkBytes { rx, tx }
+}
+
+fn extract_kv_u64(line: &str, key: &str) -> Option<u64> {
+    let start = line.find(key)? + key.len();
+    let rest = &line[start..];
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    if end == 0 {
+        return None;
+    }
+    rest[..end].parse().ok()
 }
 
 fn parse_du_output(output: &str) -> (u64, u64) {
@@ -1235,5 +1293,53 @@ VmSwap:\t       0 kB
         let output = "List of devices attached\nemulator-5554 device\n\n";
         let devices = parse_device_list(output);
         assert!(devices[0].connected);
+    }
+
+    #[test]
+    fn parses_uid_from_dumpsys_package() {
+        let output = "Package [com.example.app] (abc123):\n  userId=10234\n  pkg=Package{...}\n";
+        assert_eq!(parse_uid(output), Some(10234));
+    }
+
+    #[test]
+    fn parse_uid_takes_first_match() {
+        let output = "  userId=10234\n  appId=10234\n  userId=99999\n";
+        assert_eq!(parse_uid(output), Some(10234));
+    }
+
+    #[test]
+    fn parse_uid_none_when_missing() {
+        assert_eq!(parse_uid("Package [com.example.app]\n"), None);
+    }
+
+    #[test]
+    fn parses_netstats_sums_uid_entries() {
+        let output = "\
+Active interfaces:
+  iface=wlan0 ident=...
+Active UID stats:
+  ident=[...] uid=10234 set=DEFAULT tag=0x0 metered=N defaultNetwork=Y rxBytes=12345 rxPackets=10 txBytes=678 txPackets=5
+  ident=[...] uid=10234 set=FOREGROUND tag=0x0 metered=N defaultNetwork=Y rxBytes=1000 rxPackets=2 txBytes=200 txPackets=1
+  ident=[...] uid=99999 set=DEFAULT tag=0x0 metered=N defaultNetwork=Y rxBytes=99999 rxPackets=99 txBytes=99999 txPackets=99
+";
+        let bytes = parse_netstats_for_uid(output, 10234);
+        assert_eq!(bytes.rx, 13345);
+        assert_eq!(bytes.tx, 878);
+    }
+
+    #[test]
+    fn parses_netstats_zero_when_uid_absent() {
+        let output = "  ident=[...] uid=99999 rxBytes=100 txBytes=200\n";
+        let bytes = parse_netstats_for_uid(output, 10234);
+        assert_eq!(bytes.rx, 0);
+        assert_eq!(bytes.tx, 0);
+    }
+
+    #[test]
+    fn parses_netstats_handles_missing_fields() {
+        let output = "  ident=[...] uid=10234 rxBytes=500\n";
+        let bytes = parse_netstats_for_uid(output, 10234);
+        assert_eq!(bytes.rx, 500);
+        assert_eq!(bytes.tx, 0);
     }
 }
