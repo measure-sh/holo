@@ -260,6 +260,8 @@ impl DatabaseState {
                 Some(Action::Noop)
             }
             KeyCode::Enter => Some(self.handle_tree_enter()),
+            KeyCode::Right => Some(self.handle_tree_expand()),
+            KeyCode::Left => Some(self.handle_tree_collapse()),
             KeyCode::Tab if self.detail_open => {
                 self.detail_focused = true;
                 Some(Action::Noop)
@@ -324,6 +326,46 @@ impl DatabaseState {
             }
             TreeNode::Loading { .. } | TreeNode::NoTables { .. } => Action::Noop,
         }
+    }
+
+    fn handle_tree_expand(&mut self) -> Action {
+        let tree = self.flatten_tree();
+        let Some(node) = tree.get(self.tree_cursor).cloned() else {
+            return Action::Noop;
+        };
+        if let TreeNode::Database { name, expanded: false } = node {
+            self.expanded.insert(name.clone());
+            if self.tables.contains_key(&name) {
+                return Action::Noop;
+            }
+            self.tables_loading.insert(name.clone());
+            return Action::DbFetchTables(name);
+        }
+        Action::Noop
+    }
+
+    fn handle_tree_collapse(&mut self) -> Action {
+        let tree = self.flatten_tree();
+        let Some(node) = tree.get(self.tree_cursor).cloned() else {
+            return Action::Noop;
+        };
+        match node {
+            TreeNode::Database { name, expanded: true } => {
+                self.expanded.remove(&name);
+                self.clamp_cursor();
+            }
+            TreeNode::Table { db, .. }
+            | TreeNode::Loading { db }
+            | TreeNode::NoTables { db } => {
+                if let Some(idx) = tree.iter().position(
+                    |n| matches!(n, TreeNode::Database { name, .. } if name == &db),
+                ) {
+                    self.tree_cursor = idx;
+                }
+            }
+            _ => {}
+        }
+        Action::Noop
     }
 
     fn cursor_up(&mut self) {
@@ -899,6 +941,45 @@ mod tests {
         s.tables.insert("a.db".into(), vec!["t".into()]);
         let action = s.handle_key(key(KeyCode::Enter)).unwrap();
         assert!(matches!(action, Action::Noop));
+        assert!(s.expanded.contains("a.db"));
+    }
+
+    #[test]
+    fn right_on_collapsed_db_expands_and_fetches() {
+        let mut s = state_with_dbs(&["a.db"]);
+        let action = s.handle_key(key(KeyCode::Right)).unwrap();
+        assert!(matches!(action, Action::DbFetchTables(ref d) if d == "a.db"));
+        assert!(s.expanded.contains("a.db"));
+    }
+
+    #[test]
+    fn right_on_expanded_db_does_nothing() {
+        let mut s = state_with_dbs(&["a.db"]);
+        s.expanded.insert("a.db".into());
+        s.tables.insert("a.db".into(), vec!["t".into()]);
+        let action = s.handle_key(key(KeyCode::Right)).unwrap();
+        assert!(matches!(action, Action::Noop));
+        assert!(s.expanded.contains("a.db"));
+    }
+
+    #[test]
+    fn left_on_expanded_db_collapses() {
+        let mut s = state_with_dbs(&["a.db"]);
+        s.expanded.insert("a.db".into());
+        s.tables.insert("a.db".into(), vec!["t".into()]);
+        let action = s.handle_key(key(KeyCode::Left)).unwrap();
+        assert!(matches!(action, Action::Noop));
+        assert!(!s.expanded.contains("a.db"));
+    }
+
+    #[test]
+    fn left_on_table_moves_cursor_to_parent_db() {
+        let mut s = state_with_dbs(&["a.db"]);
+        s.expanded.insert("a.db".into());
+        s.tables.insert("a.db".into(), vec!["users".into()]);
+        s.tree_cursor = 1;
+        s.handle_key(key(KeyCode::Left)).unwrap();
+        assert_eq!(s.tree_cursor, 0);
         assert!(s.expanded.contains("a.db"));
     }
 
