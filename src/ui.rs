@@ -178,19 +178,12 @@ pub fn render_app(
             .add_modifier(Modifier::BOLD),
     );
 
-    let mut hint_spans = if app.confirming_settings() {
-        vec![
-            Span::styled(" s", Style::new().fg(t.danger)),
-            Span::styled(" to confirm ", Style::new().fg(t.fg)),
-        ]
-    } else {
-        vec![
-            Span::styled(" ^q ", Style::new().fg(t.danger)),
-            Span::styled("quit ", Style::new().fg(t.muted)),
-            Span::styled(" ss", Style::new().fg(t.danger)),
-            Span::styled("ettings ", Style::new().fg(t.muted)),
-        ]
-    };
+    let mut hint_spans = vec![
+        Span::styled(" ^q ", Style::new().fg(t.danger)),
+        Span::styled("quit ", Style::new().fg(t.muted)),
+        Span::styled(" ^, ", Style::new().fg(t.danger)),
+        Span::styled("settings ", Style::new().fg(t.muted)),
+    ];
     if app.focused_panel().is_some() {
         let label = if app.is_zoomed() { "zoom out " } else { "zoom in " };
         hint_spans.push(Span::styled(" ^z ", Style::new().fg(t.danger)));

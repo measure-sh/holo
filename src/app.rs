@@ -74,7 +74,6 @@ pub struct App {
     pointer_location: bool,
     gpu_rendering: bool,
     talkback: bool,
-    confirming_settings: bool,
     pub settings_open: bool,
     pub settings_cursor: usize,
     trace_state: TraceState,
@@ -109,7 +108,6 @@ impl App {
             pointer_location: false,
             gpu_rendering: false,
             talkback: false,
-            confirming_settings: false,
             settings_open: false,
             settings_cursor: 0,
             trace_state: TraceState::new(pkg),
@@ -194,6 +192,10 @@ impl App {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match code {
                 KeyCode::Char('q') => return Action::Quit,
+                KeyCode::Char(',') => {
+                    self.settings_open = true;
+                    return Action::Noop;
+                }
                 KeyCode::Char('d') => {
                     self.toolbar.open_devices();
                     return Action::FetchDevices;
@@ -219,14 +221,6 @@ impl App {
                 ToolbarAction::LaunchEmulator(name) => Action::LaunchEmulator(name),
                 ToolbarAction::Close | ToolbarAction::None => Action::Noop,
             };
-        }
-
-        if self.confirming_settings {
-            self.confirming_settings = false;
-            if code == KeyCode::Char('s') {
-                self.settings_open = true;
-            }
-            return Action::Noop;
         }
 
         if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -265,10 +259,6 @@ impl App {
         }
 
         match code {
-            KeyCode::Char('s') => {
-                self.confirming_settings = true;
-                Action::Noop
-            }
             KeyCode::Char('0') => {
                 self.saved_visibility = None;
                 self.commands.visible = !self.commands.visible;
@@ -548,10 +538,6 @@ impl App {
         self.measure_sdk_detected = v;
     }
 
-    pub fn confirming_settings(&self) -> bool {
-        self.confirming_settings
-    }
-
     pub fn commands(&self) -> &CommandsState {
         &self.commands
     }
@@ -582,7 +568,6 @@ impl App {
 
         self.focused = None;
         self.dialog = None;
-        self.confirming_settings = false;
         self.settings_open = false;
     }
 
