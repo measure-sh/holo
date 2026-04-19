@@ -101,14 +101,6 @@ impl MonitorState {
         }
     }
 
-    pub fn sparkline_u64(&self, extract: fn(&MonitorSample) -> u64) -> Vec<u64> {
-        self.history.iter().map(extract).collect()
-    }
-
-    pub fn sparkline_f32(&self, extract: fn(&MonitorSample) -> f32) -> Vec<f32> {
-        self.history.iter().map(extract).collect()
-    }
-
     pub fn push_measure_cpu(&mut self, percent: f32, num_cores: u8) {
         let mut sample = self.history.last().copied().unwrap_or_default();
         sample.cpu_percent = percent;
@@ -309,14 +301,6 @@ mod tests {
             state.push(sample(1000 + i));
         }
         assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Stable);
-    }
-
-    #[test]
-    fn sparkline_extracts_values() {
-        let mut state = MonitorState::new();
-        state.push(sample(100));
-        state.push(sample(120));
-        assert_eq!(state.sparkline_u64(|m| m.rss_kb), vec![100, 120]);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::Style,
     text::{Line, Span},
     widgets::Paragraph,
@@ -10,8 +10,6 @@ use crate::monitor::MonitorState;
 use crate::panel;
 use crate::theme;
 use crate::ui::panel_block;
-
-pub(crate) const SPARK_CHARS: [char; 8] = ['▁', '▁', '▂', '▂', '▃', '▃', '▄', '▄'];
 
 fn format_mb(kb: u64) -> String {
     let mb = kb as f64 / 1024.0;
@@ -27,296 +25,115 @@ fn format_mb_precise(kb: u64) -> String {
     format!("{:.2} MB", mb)
 }
 
-pub(crate) fn sparkline_str(data: &[u64], width: usize) -> (String, u64, u64) {
-    if data.is_empty() {
-        return (String::new(), 0, 0);
+/// Render the last `width` values of `samples` as unicode sparkline characters.
+/// Right-aligned: the most recent sample is the rightmost character.
+fn sparkline(samples: &[f64], width: usize) -> String {
+    const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    if width == 0 {
+        return String::new();
     }
-    let start = data.len().saturating_sub(width);
-    let slice = &data[start..];
-    let min = *slice.iter().min().unwrap();
-    let max = *slice.iter().max().unwrap();
-    let range = max.saturating_sub(min);
-
-    let spark: String = slice
-        .iter()
-        .map(|&v| {
-            if range == 0 {
-                SPARK_CHARS[3]
-            } else {
-                let idx = ((v - min) * 7 / range).min(7) as usize;
-                SPARK_CHARS[idx]
-            }
-        })
-        .collect();
-    let pad = width.saturating_sub(spark.chars().count());
-    let s = format!("{}{}", " ".repeat(pad), spark);
-    (s, min, max)
-}
-
-pub(crate) fn sparkline_str_f32(data: &[f32], width: usize) -> (String, f32, f32) {
-    if data.is_empty() {
-        return (String::new(), 0.0, 0.0);
+    let visible: Vec<f64> = samples.iter().rev().take(width).copied().collect();
+    let max = visible.iter().copied().fold(0.0_f64, f64::max);
+    let pad = width.saturating_sub(visible.len());
+    let mut out = String::with_capacity(width);
+    for _ in 0..pad {
+        out.push(' ');
     }
-    let start = data.len().saturating_sub(width);
-    let slice = &data[start..];
-    let min = slice.iter().copied().reduce(f32::min).unwrap();
-    let max = slice.iter().copied().reduce(f32::max).unwrap();
-    let range = max - min;
-
-    let spark: String = slice
-        .iter()
-        .map(|&v| {
-            if range < 0.01 {
-                SPARK_CHARS[3]
-            } else {
-                let idx = (((v - min) / range * 7.0) as usize).min(7);
-                SPARK_CHARS[idx]
-            }
-        })
-        .collect();
-    let pad = width.saturating_sub(spark.chars().count());
-    let s = format!("{}{}", " ".repeat(pad), spark);
-    (s, min, max)
-}
-
-/// Splits a 2+ row area into a 1-row label area on top and the rest for the chart.
-fn split_label_chart(area: Rect) -> (Rect, Rect) {
-    let label = Rect { height: 1, ..area };
-    let chart = Rect {
-        y: area.y + 1,
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    (label, chart)
-}
-
-fn render_cpu_chart(frame: &mut Frame, area: Rect, data: &[f32]) {
-    let t = theme::current();
-    let current = data.last().copied().unwrap_or(0.0);
-    let (label_area, spark_area) = split_label_chart(area);
-
-    let label = Line::from(Span::styled(
-        format!(" CPU {:.1}%", current),
-        Style::new().fg(t.fg),
-    ));
-    frame.render_widget(Paragraph::new(label), label_area);
-
-    if spark_area.height > 0 {
-        let width = spark_area.width.saturating_sub(1) as usize;
-        let (spark, _, _) = sparkline_str_f32(data, width);
-        let spark_line = Line::from(Span::styled(
-            format!(" {spark}"),
-            Style::new().fg(t.sparkline),
-        ));
-        frame.render_widget(Paragraph::new(spark_line), spark_area);
-    }
-}
-
-fn render_mem_chart(frame: &mut Frame, area: Rect, label: &str, data: &[u64]) {
-    let t = theme::current();
-    let current = data.last().copied().unwrap_or(0);
-    let (label_area, spark_area) = split_label_chart(area);
-
-    let label = Line::from(Span::styled(
-        format!(" {} {}", label, format_mb(current)),
-        Style::new().fg(t.fg),
-    ));
-    frame.render_widget(Paragraph::new(label), label_area);
-
-    if spark_area.height > 0 {
-        let width = spark_area.width.saturating_sub(1) as usize;
-        let (spark, _, _) = sparkline_str(data, width);
-        let spark_line = Line::from(Span::styled(
-            format!(" {spark}"),
-            Style::new().fg(t.sparkline),
-        ));
-        frame.render_widget(Paragraph::new(spark_line), spark_area);
-    }
-}
-
-fn render_disk_chart(frame: &mut Frame, area: Rect, data: &[u64]) {
-    let t = theme::current();
-    let current = data.last().copied().unwrap_or(0);
-    let (label_area, spark_area) = split_label_chart(area);
-
-    let label = Line::from(Span::styled(
-        format!(" Disk {}", format_mb_precise(current)),
-        Style::new().fg(t.fg),
-    ));
-    frame.render_widget(Paragraph::new(label), label_area);
-
-    if spark_area.height > 0 {
-        let width = spark_area.width.saturating_sub(1) as usize;
-        let (spark, _, _) = sparkline_str(data, width);
-        let spark_line = Line::from(Span::styled(
-            format!(" {spark}"),
-            Style::new().fg(t.sparkline),
-        ));
-        frame.render_widget(Paragraph::new(spark_line), spark_area);
-    }
-}
-
-fn render_bar_metric(frame: &mut Frame, area: Rect, label: &str, used_kb: u64, total_kb: u64) {
-    let t = theme::current();
-    let (label_area, bar_area) = split_label_chart(area);
-
-    let value_str = format!("{}/{}", format_mb(used_kb), format_mb(total_kb));
-    let label_line = Line::from(vec![
-        Span::styled(format!(" {label}"), Style::new().fg(t.fg)),
-        Span::styled(format!(" {value_str}"), Style::new().fg(t.muted)),
-    ]);
-    frame.render_widget(Paragraph::new(label_line), label_area);
-
-    if bar_area.height > 0 {
-        let bar_width = bar_area.width.saturating_sub(1) as usize;
-        let filled = if total_kb > 0 {
-            ((used_kb as f64 / total_kb as f64) * bar_width as f64).round() as usize
-        } else {
+    for &v in visible.iter().rev() {
+        let idx = if max <= 0.0 {
             0
-        };
-        let filled = filled.min(bar_width);
-        let empty = bar_width - filled;
-
-        let bar_color = if total_kb > 0 && used_kb * 100 / total_kb >= 85 {
-            t.danger
         } else {
-            t.sparkline
+            ((v / max) * (BLOCKS.len() - 1) as f64).round() as usize
         };
-
-        let bar_line = Line::from(vec![
-            Span::raw(" "),
-            Span::styled("█".repeat(filled), Style::new().fg(bar_color)),
-            Span::styled("░".repeat(empty), Style::new().fg(t.surface)),
-        ]);
-        frame.render_widget(Paragraph::new(bar_line), bar_area);
+        out.push(BLOCKS[idx.min(BLOCKS.len() - 1)]);
     }
+    out
 }
 
-fn split_two_columns(area: Rect) -> (Rect, Rect) {
-    let cols = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
-    (cols[0], cols[1])
+fn metric_line<'a>(
+    label: String,
+    label_width: usize,
+    samples: &[f64],
+    width: usize,
+    text_style: Style,
+    spark_style: Style,
+) -> Line<'a> {
+    let label_cols = label.chars().count();
+    let pad = label_width.saturating_sub(label_cols);
+    let padded = format!("{}{}", label, " ".repeat(pad));
+    let spark_cols = width.saturating_sub(padded.chars().count());
+    let spark = sparkline(samples, spark_cols);
+    Line::from(vec![
+        Span::styled(padded, text_style),
+        Span::styled(spark, spark_style),
+    ])
 }
 
 fn render_charts(frame: &mut Frame, inner: Rect, state: &MonitorState, measure_sdk: bool) {
-    let h = inner.height as usize;
-    let cpu_data = state.sparkline_f32(|m| m.cpu_percent);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+
+    let t = theme::current();
+    let text_style = Style::new().fg(t.fg);
+    let spark_style = Style::new().fg(t.sparkline);
+    let width = inner.width as usize;
+
+    let cpu_series: Vec<f64> = state.history.iter().map(|m| m.cpu_percent as f64).collect();
+    let cpu_now = cpu_series.last().copied().unwrap_or(0.0);
+
+    let rss_series: Vec<f64> = state.history.iter().map(|m| m.rss_kb as f64).collect();
+    let rss_now = rss_series.last().copied().unwrap_or(0.0) as u64;
+    let rss_label = if measure_sdk { "Mem" } else { "RSS" };
+
+    let disk_series: Vec<f64> = state.history.iter().map(|m| m.data_kb as f64).collect();
+    let disk_now = disk_series.last().copied().unwrap_or(0.0) as u64;
+
+    let mut rows: Vec<(String, Vec<f64>)> = Vec::new();
+    rows.push((format!(" CPU {:.1}%  ", cpu_now), cpu_series));
+    rows.push((format!(" {} {}  ", rss_label, format_mb(rss_now)), rss_series));
 
     if measure_sdk {
-        let rss_data = state.sparkline_u64(|m| m.rss_kb);
-        let disk_data = state.sparkline_u64(|m| m.data_kb);
-        let last = state.history.last().unwrap();
-        let java_used = last.java_total_heap_kb.saturating_sub(last.java_free_heap_kb);
-        let native_used = last.native_total_heap_kb.saturating_sub(last.native_free_heap_kb);
+        let last = state.history.last().copied().unwrap_or_default();
+        let java_used_now = last.java_total_heap_kb.saturating_sub(last.java_free_heap_kb);
+        let java_series: Vec<f64> = state
+            .history
+            .iter()
+            .map(|m| m.java_total_heap_kb.saturating_sub(m.java_free_heap_kb) as f64)
+            .collect();
+        rows.push((
+            format!(" Java {}/{}  ", format_mb(java_used_now), format_mb(last.java_max_heap_kb)),
+            java_series,
+        ));
 
-        if h < 2 {
-            // Ultra-compact: single summary line
-            let t = theme::current();
-            let cpu = cpu_data.last().copied().unwrap_or(0.0);
-            let rss = rss_data.last().copied().unwrap_or(0);
-            let line = Line::from(Span::styled(
-                format!(" CPU {:.1}%  Mem {}", cpu, format_mb(rss)),
-                Style::new().fg(t.fg),
-            ));
-            frame.render_widget(Paragraph::new(line), inner);
-        } else {
-            // Build vertical layout: CPU+Mem(2), sep(1), Java+Native(2), sep(1), Disk(2)
-            let mut constraints: Vec<Constraint> = Vec::new();
-            constraints.push(Constraint::Length(2)); // CPU + Mem
-            if h >= 5 {
-                constraints.push(Constraint::Length(1)); // separator
-                constraints.push(Constraint::Length(2)); // Java + Native
-            }
-            if h >= 7 {
-                constraints.push(Constraint::Length(1)); // separator
-            }
-            if h >= 4 {
-                constraints.push(Constraint::Length(2)); // Disk
-            }
-            if h >= 9 {
-                constraints.push(Constraint::Min(0)); // absorb extra space
-            }
-
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(constraints)
-                .split(inner);
-
-            let mut idx = 0;
-
-            // CPU + Mem side by side
-            let (cpu_area, mem_area) = split_two_columns(rows[idx]);
-            render_cpu_chart(frame, cpu_area, &cpu_data);
-            render_mem_chart(frame, mem_area, "Mem", &rss_data);
-            idx += 1;
-
-            // Java + Native
-            if h >= 5 {
-                idx += 1; // skip separator
-                let (java_area, native_area) = split_two_columns(rows[idx]);
-                render_bar_metric(frame, java_area, "Java", java_used, last.java_max_heap_kb);
-                render_bar_metric(frame, native_area, "Native", native_used, last.native_total_heap_kb);
-                idx += 1;
-            }
-
-            // Disk
-            if h >= 4 {
-                if h >= 7 {
-                    idx += 1; // skip separator
-                }
-                render_disk_chart(frame, rows[idx], &disk_data);
-            }
-        }
-    } else {
-        let rss_data = state.sparkline_u64(|m| m.rss_kb);
-        let disk_data = state.sparkline_u64(|m| m.data_kb);
-
-        if h < 2 {
-            let t = theme::current();
-            let cpu = cpu_data.last().copied().unwrap_or(0.0);
-            let rss = rss_data.last().copied().unwrap_or(0);
-            let line = Line::from(Span::styled(
-                format!(" CPU {:.1}%  RSS {}", cpu, format_mb(rss)),
-                Style::new().fg(t.fg),
-            ));
-            frame.render_widget(Paragraph::new(line), inner);
-        } else {
-            let mut constraints: Vec<Constraint> = Vec::new();
-            constraints.push(Constraint::Length(2)); // CPU + Mem
-            if h >= 4 {
-                constraints.push(Constraint::Length(1)); // separator
-            }
-            if h >= 3 {
-                constraints.push(Constraint::Length(2)); // Disk
-            }
-            if h >= 6 {
-                constraints.push(Constraint::Min(0)); // absorb extra space
-            }
-
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(constraints)
-                .split(inner);
-
-            let mut idx = 0;
-
-            // CPU + RSS side by side
-            let (cpu_area, mem_area) = split_two_columns(rows[idx]);
-            render_cpu_chart(frame, cpu_area, &cpu_data);
-            render_mem_chart(frame, mem_area, "RSS", &rss_data);
-            idx += 1;
-
-            // Disk
-            if h >= 3 {
-                if h >= 4 {
-                    idx += 1; // skip separator
-                }
-                render_disk_chart(frame, rows[idx], &disk_data);
-            }
-        }
+        let native_used_now = last
+            .native_total_heap_kb
+            .saturating_sub(last.native_free_heap_kb);
+        let native_series: Vec<f64> = state
+            .history
+            .iter()
+            .map(|m| m.native_total_heap_kb.saturating_sub(m.native_free_heap_kb) as f64)
+            .collect();
+        rows.push((
+            format!(
+                " Native {}/{}  ",
+                format_mb(native_used_now),
+                format_mb(last.native_total_heap_kb)
+            ),
+            native_series,
+        ));
     }
+
+    rows.push((format!(" Disk {}  ", format_mb_precise(disk_now)), disk_series));
+
+    let label_width = rows.iter().map(|(l, _)| l.chars().count()).max().unwrap_or(0);
+    let max_rows = inner.height as usize;
+    let lines: Vec<Line> = rows
+        .iter()
+        .take(max_rows)
+        .map(|(label, data)| metric_line(label.clone(), label_width, data, width, text_style, spark_style))
+        .collect();
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState, measure_sdk: bool) {
@@ -349,50 +166,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sparkline_single_value() {
-        let (s, _, _) = sparkline_str(&[100], 10);
-        // padded to width 10: 9 spaces + 1 spark char
-        assert_eq!(s.chars().count(), 10);
-        assert_eq!(s.trim_start().chars().count(), 1);
+    fn sparkline_empty_is_empty() {
+        assert_eq!(sparkline(&[], 10), "          ");
     }
 
     #[test]
-    fn sparkline_constant_values() {
-        let (s, min, max) = sparkline_str(&[50, 50, 50], 10);
-        // padded to width 10: 7 spaces + 3 spark chars
-        assert!(s.trim_start().chars().all(|c| c == SPARK_CHARS[3]));
-        assert_eq!(min, max);
+    fn sparkline_zero_width() {
+        assert_eq!(sparkline(&[1.0, 2.0, 3.0], 0), "");
+    }
+
+    #[test]
+    fn sparkline_pads_short_series() {
+        let s = sparkline(&[100.0], 5);
+        assert_eq!(s.chars().count(), 5);
+        assert_eq!(s.chars().take(4).collect::<String>(), "    ");
+    }
+
+    #[test]
+    fn sparkline_constant_nonzero_values() {
+        let s = sparkline(&[50.0, 50.0, 50.0], 5);
+        // all three map to the max bucket (index 7)
+        let last_three: String = s.chars().skip(2).collect();
+        assert!(last_three.chars().all(|c| c == '█'));
+    }
+
+    #[test]
+    fn sparkline_all_zero() {
+        let s = sparkline(&[0.0, 0.0, 0.0], 3);
+        assert_eq!(s, "▁▁▁");
     }
 
     #[test]
     fn sparkline_range_values() {
-        let (s, min, max) = sparkline_str(&[0, 100], 10);
+        let s = sparkline(&[0.0, 100.0], 2);
         let chars: Vec<char> = s.chars().collect();
-        // 8 spaces of padding, then 2 spark chars
-        assert_eq!(chars[8], SPARK_CHARS[0]);
-        assert_eq!(chars[9], SPARK_CHARS[7]);
-        assert_eq!(min, 0);
-        assert_eq!(max, 100);
+        assert_eq!(chars[0], '▁');
+        assert_eq!(chars[1], '█');
     }
 
     #[test]
     fn sparkline_caps_to_width() {
-        let data: Vec<u64> = (0..20).collect();
-        let (s, min, max) = sparkline_str(&data, 5);
+        let data: Vec<f64> = (0..20).map(|i| i as f64).collect();
+        let s = sparkline(&data, 5);
         assert_eq!(s.chars().count(), 5);
-        assert_eq!(min, 15);
-        assert_eq!(max, 19);
-    }
-
-    #[test]
-    fn sparkline_f32_range() {
-        let (s, min, max) = sparkline_str_f32(&[0.0, 50.0, 100.0], 10);
-        let chars: Vec<char> = s.chars().collect();
-        // 7 spaces of padding, then 3 spark chars
-        assert_eq!(chars[7], SPARK_CHARS[0]);
-        assert_eq!(chars[9], SPARK_CHARS[7]);
-        assert_eq!(min, 0.0);
-        assert_eq!(max, 100.0);
     }
 
     #[test]
@@ -404,5 +220,4 @@ mod tests {
     fn format_mb_large() {
         assert_eq!(format_mb(128000), "125 MB");
     }
-
 }
