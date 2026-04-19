@@ -66,6 +66,7 @@ pub struct DatabaseState {
     pub table_loading: bool,
     pub table_error: Option<String>,
     pub last_refresh: Option<Instant>,
+    pub panel_visible: bool,
 
     pub repl_active: bool,
     pub repl_db: Option<String>,
@@ -109,6 +110,7 @@ impl DatabaseState {
             table_loading: false,
             table_error: None,
             last_refresh: None,
+            panel_visible: true,
             repl_active: false,
             repl_db: None,
             history: Vec::new(),
@@ -403,7 +405,7 @@ impl DatabaseState {
     /// Fires for the initial load, and periodically when the user is parked
     /// at the tail (loaded bottom == table tail) so new rows append in place.
     pub fn needs_table_refresh(&self) -> bool {
-        if self.repl_active || self.table_loading || !self.detail_open {
+        if !self.panel_visible || self.repl_active || self.table_loading || !self.detail_open {
             return false;
         }
         if self.selected_table.is_none() {
@@ -421,7 +423,7 @@ impl DatabaseState {
     /// Returns the offset of the previous chunk to fetch when the user has
     /// scrolled near the top of the loaded window and older rows remain.
     pub fn needs_previous_rows(&self) -> Option<usize> {
-        if self.repl_active || self.table_loading || !self.detail_open {
+        if !self.panel_visible || self.repl_active || self.table_loading || !self.detail_open {
             return None;
         }
         let data = self.table_data.as_ref()?;
@@ -437,7 +439,7 @@ impl DatabaseState {
     /// Returns the offset of the next chunk to fetch when the user has
     /// scrolled near the bottom of the loaded window and newer rows remain.
     pub fn needs_next_rows(&self) -> Option<usize> {
-        if self.repl_active || self.table_loading || !self.detail_open {
+        if !self.panel_visible || self.repl_active || self.table_loading || !self.detail_open {
             return None;
         }
         let data = self.table_data.as_ref()?;
@@ -1191,6 +1193,27 @@ mod tests {
         });
         s.detail_scroll = 30;
         assert!(s.needs_table_refresh());
+    }
+
+    #[test]
+    fn fetches_skipped_when_panel_not_visible() {
+        let mut s = DatabaseState::new();
+        s.detail_open = true;
+        s.selected_table = Some(("a.db".into(), "t".into()));
+        s.detail_visible_rows = 20;
+        s.table_data = Some(TableData {
+            db: "a.db".into(),
+            table: "t".into(),
+            columns: vec![],
+            rows: (0..50).map(|_| vec![]).collect(),
+            row_count: 500,
+            offset: 0,
+        });
+        s.detail_scroll = 0;
+        s.panel_visible = false;
+        assert!(!s.needs_table_refresh());
+        assert!(s.needs_previous_rows().is_none());
+        assert!(s.needs_next_rows().is_none());
     }
 
     #[test]

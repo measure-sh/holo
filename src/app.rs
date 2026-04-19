@@ -351,7 +351,7 @@ impl App {
         }
     }
 
-    fn is_panel_visible(&self, n: u8) -> bool {
+    pub fn is_panel_visible(&self, n: u8) -> bool {
         if n == panel::COMMANDS {
             return self.commands.visible;
         }

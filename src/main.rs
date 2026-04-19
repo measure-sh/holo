@@ -115,6 +115,8 @@ fn run_app(
             }
         }
 
+        app.database_state_mut().panel_visible = app.is_panel_visible(panel::DATABASE);
+
         if let (Some(d), Some(s), Some(p)) = (&mut ctx.data, &serial, &package) {
             if app.database_state().needs_table_refresh()
                 && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
