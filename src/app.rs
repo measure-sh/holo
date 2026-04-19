@@ -255,6 +255,9 @@ impl App {
         if let Some(action) = self.delegate_to_focused(panel::NETWORK, key) {
             return action;
         }
+        if let Some(action) = self.delegate_to_focused(panel::MONITOR, key) {
+            return action;
+        }
 
         match code {
             KeyCode::Char('0') => {
@@ -305,7 +308,6 @@ impl App {
                 self.focused = None;
                 Some(Action::Noop)
             }
-            KeyCode::Char('0'..='9') => None,
             _ => Some(Action::Noop),
         }
     }
@@ -1361,6 +1363,7 @@ mod tests {
         app.handle_key(ctrl('z'));
         assert!(app.is_zoomed());
 
+        app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('2')));
         assert!(!app.is_zoomed());
     }
@@ -1388,6 +1391,7 @@ mod tests {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
         assert_eq!(app.focused_panel(), Some(panel::LOGCAT));
+        app.handle_key(key(KeyCode::Esc));
         app.handle_key(key(KeyCode::Char('1')));
         assert_eq!(app.focused_panel(), None);
     }
