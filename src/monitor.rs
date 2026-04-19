@@ -11,7 +11,7 @@ use crate::panel;
 pub const POLL_SYSTEM: u8 = 1;
 pub const POLL_DISK: u8 = 2;
 
-const MAX_SAMPLES: usize = 60;
+const MAX_SAMPLES: usize = 120;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MonitorSample {
@@ -261,11 +261,11 @@ mod tests {
     #[test]
     fn push_caps_at_max_samples() {
         let mut state = MonitorState::new();
-        for i in 0..70 {
+        for i in 0..130 {
             state.push(sample(i));
         }
         assert_eq!(state.history.len(), MAX_SAMPLES);
-        assert_eq!(state.history.last().unwrap().rss_kb, 69);
+        assert_eq!(state.history.last().unwrap().rss_kb, 129);
     }
 
     #[test]
