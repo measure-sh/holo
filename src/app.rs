@@ -185,8 +185,9 @@ impl App {
             return self.logcat_state.handle_key(key).unwrap_or(Action::Noop);
         }
 
-        if self.database_state.editing_query {
-            return self.database_state.handle_key(key).unwrap_or(Action::Noop);
+        if self.database_state.editing_query || self.database_state.confirming_pull.is_some() {
+            let result = self.database_state.handle_key(key);
+            return self.dispatch_panel_key(result).unwrap_or(Action::Noop);
         }
 
         if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -233,11 +234,8 @@ impl App {
         if let Some(action) = self.delegate_to_focused(panel::COMMANDS, key) {
             return action;
         }
-        if self.database_state.confirming_pull.is_some() || self.focused == Some(panel::DATABASE) {
-            let result = self.database_state.handle_key(key);
-            if let Some(action) = self.dispatch_panel_key(result) {
-                return action;
-            }
+        if let Some(action) = self.delegate_to_focused(panel::DATABASE, key) {
+            return action;
         }
         if let Some(action) = self.delegate_to_focused(panel::FILES, key) {
             return action;
@@ -295,6 +293,7 @@ impl App {
             panel::ISSUES => self.issues_state.handle_key(key),
             panel::NETWORK => self.network_state.handle_key(key),
             panel::MONITOR => self.monitor_state.handle_key(key),
+            panel::DATABASE => self.database_state.handle_key(key),
             _ => None,
         };
         if let Some(action) = self.dispatch_panel_key(result) {
