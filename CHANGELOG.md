@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+Re-release of 0.2.0 to attach prebuilt binaries that were missing from the
+0.2.0 GitHub release. No code changes.
+
 ## 0.2.0
 
 ### New panels
