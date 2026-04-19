@@ -160,11 +160,11 @@ pub fn status_color(code: u16) -> Color {
 pub fn level_color(level: char) -> Color {
     let t = current();
     match level {
-        'V' => t.muted,
-        'D' => t.secondary,
-        'I' => t.info,
-        'W' => t.warning,
-        'E' | 'F' => t.danger,
+        'V' => t.spark_cpu,
+        'D' => t.spark_mem,
+        'I' => t.spark_disk,
+        'W' => t.spark_rx,
+        'E' | 'F' => t.spark_tx,
         _ => t.muted,
     }
 }
