@@ -125,7 +125,6 @@ fn render_list(frame: &mut Frame, area: Rect, filtered: &[(usize, &NetworkEntry)
 
     let visible_height = area.height as usize;
     let width = area.width as usize;
-    let total = filtered.len();
     let selected = state.selected;
     let search = &state.search;
 
@@ -168,68 +167,38 @@ fn render_list(frame: &mut Frame, area: Rect, filtered: &[(usize, &NetworkEntry)
     // indent(2) + timestamp(13) + method(7) + status(3) + gap(2) + latency(6) + gap(2)
     let network_pad = 2 + 13 + 7 + 3 + 2 + 6 + 2;
 
-    if state.wrap {
-        let mut display_lines: Vec<ListItem> = Vec::new();
-        let mut selected_display_start = 0;
-        let mut selected_display_count = 0;
-        for (_, (orig_idx, entry)) in filtered.iter().enumerate() {
-            let is_selected = *orig_idx == selected && focused;
-            let line = build_entry_line(entry, is_selected);
-            let wrapped = wrap_line(line, width, network_pad);
-            if *orig_idx == selected {
-                selected_display_start = display_lines.len();
-                selected_display_count = wrapped.len();
-            }
-            for w in wrapped {
-                display_lines.push(ListItem::new(w));
-            }
+    let mut display_lines: Vec<ListItem> = Vec::new();
+    let mut selected_display_start = 0;
+    let mut selected_display_count = 0;
+    for (_, (orig_idx, entry)) in filtered.iter().enumerate() {
+        let is_selected = *orig_idx == selected && focused;
+        let line = build_entry_line(entry, is_selected);
+        let wrapped = wrap_line(line, width, network_pad);
+        if *orig_idx == selected {
+            selected_display_start = display_lines.len();
+            selected_display_count = wrapped.len();
         }
-        let total_display = display_lines.len();
-        let start = if selected_display_start + selected_display_count > visible_height {
-            (selected_display_start + selected_display_count).saturating_sub(visible_height)
-        } else {
-            0
-        };
-        let end = (start + visible_height).min(total_display);
-        let items: Vec<ListItem> = display_lines.into_iter().skip(start).take(end - start).collect();
-        frame.render_widget(List::new(items), area);
-
-        if total_display > visible_height && area.height > 0 && area.width > 0 {
-            let mut scrollbar_state =
-                ScrollbarState::new(total_display.saturating_sub(visible_height)).position(start);
-            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .thumb_style(Style::new().fg(t.muted))
-                .track_style(Style::new().fg(t.surface));
-            frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        for w in wrapped {
+            display_lines.push(ListItem::new(w));
         }
+    }
+    let total_display = display_lines.len();
+    let start = if selected_display_start + selected_display_count > visible_height {
+        (selected_display_start + selected_display_count).saturating_sub(visible_height)
     } else {
-        // Find the position of the selected entry in the filtered list
-        let selected_pos = filtered.iter().position(|(idx, _)| *idx == selected).unwrap_or(0);
-        let start = if selected_pos >= visible_height {
-            selected_pos - visible_height + 1
-        } else {
-            0
-        };
-        let end = (start + visible_height).min(total);
+        0
+    };
+    let end = (start + visible_height).min(total_display);
+    let items: Vec<ListItem> = display_lines.into_iter().skip(start).take(end - start).collect();
+    frame.render_widget(List::new(items), area);
 
-        let items: Vec<ListItem> = filtered[start..end]
-            .iter()
-            .map(|(orig_idx, entry)| {
-                let is_selected = *orig_idx == selected && focused;
-                ListItem::new(build_entry_line(entry, is_selected))
-            })
-            .collect();
-
-        frame.render_widget(List::new(items), area);
-
-        if total > visible_height && area.height > 0 && area.width > 0 {
-            let mut scrollbar_state =
-                ScrollbarState::new(total.saturating_sub(visible_height)).position(start);
-            let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-                .thumb_style(Style::new().fg(t.muted))
-                .track_style(Style::new().fg(t.surface));
-            frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
-        }
+    if total_display > visible_height && area.height > 0 && area.width > 0 {
+        let mut scrollbar_state =
+            ScrollbarState::new(total_display.saturating_sub(visible_height)).position(start);
+        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .thumb_style(Style::new().fg(t.muted))
+            .track_style(Style::new().fg(t.surface));
+        frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
     }
 }
 
@@ -439,11 +408,6 @@ fn network_filter_bar(state: &NetworkState, color: ratatui::style::Color) -> Lin
 
     spans.push(Span::styled(" o", accent));
     spans.push(Span::styled("pen ", muted));
-
-    spans.push(Span::styled("───", border));
-
-    spans.push(Span::styled(" w", accent));
-    spans.push(Span::styled("rap ", muted));
 
     Line::from(spans)
 }

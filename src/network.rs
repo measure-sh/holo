@@ -36,7 +36,6 @@ pub struct NetworkEntry {
 pub struct NetworkState {
     pub entries: Vec<NetworkEntry>,
     pub selected: usize,
-    pub wrap: bool,
     pub failure_count: usize,
     pub detail_open: bool,
     pub detail_focused: bool,
@@ -52,7 +51,6 @@ impl NetworkState {
         Self {
             entries: Vec::new(),
             selected: 0,
-            wrap: false,
             failure_count: 0,
             detail_open: false,
             detail_focused: false,
@@ -233,10 +231,6 @@ impl NetworkState {
                 self.entries.get(self.selected).map(|entry| {
                     Action::OpenInEditor(Self::format_detail(entry))
                 })
-            }
-            KeyCode::Char('w') => {
-                self.wrap = !self.wrap;
-                Some(Action::Noop)
             }
             KeyCode::Char('/') => {
                 self.editing_search = true;

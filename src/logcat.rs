@@ -154,7 +154,6 @@ impl LogcatFilter {
 pub struct LogcatState {
     pub filter: LogcatFilter,
     pub scroll: usize,
-    pub wrap: bool,
     pub editing: Option<LogcatEditTarget>,
 }
 
@@ -163,7 +162,6 @@ impl LogcatState {
         Self {
             filter: LogcatFilter::new(),
             scroll: 0,
-            wrap: false,
             editing: None,
         }
     }
@@ -227,10 +225,6 @@ impl LogcatState {
                 self.reset();
                 Some(Action::ResetLogcat)
             }
-            KeyCode::Char('w') => {
-                self.wrap = !self.wrap;
-                Some(Action::Noop)
-            }
             _ => None,
         }
     }
@@ -238,7 +232,6 @@ impl LogcatState {
     pub fn reset(&mut self) {
         self.filter = LogcatFilter::new();
         self.scroll = 0;
-        self.wrap = false;
     }
 
     pub fn cycle_level(&mut self, forward: bool) {
