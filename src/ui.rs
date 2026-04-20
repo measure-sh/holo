@@ -122,7 +122,7 @@ pub fn wrap_line(line: Line<'_>, width: usize, pad: usize) -> Vec<Line<'_>> {
     if width == 0 {
         return vec![line];
     }
-    let total_width: usize = line.spans.iter().map(|s| s.content.len()).sum();
+    let total_width: usize = line.spans.iter().map(|s| s.content.chars().count()).sum();
     if total_width <= width {
         return vec![line];
     }
@@ -132,21 +132,34 @@ pub fn wrap_line(line: Line<'_>, width: usize, pad: usize) -> Vec<Line<'_>> {
     let mut current_width = 0;
 
     for span in line.spans {
-        let content = span.content.to_string();
         let style = span.style;
-        let mut pos = 0;
-        while pos < content.len() {
+        let mut chars = span.content.chars();
+        loop {
             let remaining_in_line = width.saturating_sub(current_width);
             if remaining_in_line == 0 {
                 result.push(Line::from(std::mem::take(&mut current_spans)));
                 current_width = pad;
+                if pad > 0 && pad < width {
+                    current_spans.push(Span::raw(" ".repeat(pad)));
+                }
                 continue;
             }
-            let chunk_end = (pos + remaining_in_line).min(content.len());
-            let chunk = &content[pos..chunk_end];
-            current_spans.push(Span::styled(chunk.to_string(), style));
-            current_width += chunk.len();
-            pos = chunk_end;
+            let mut chunk = String::new();
+            let mut taken = 0;
+            while taken < remaining_in_line {
+                match chars.next() {
+                    Some(c) => {
+                        chunk.push(c);
+                        taken += 1;
+                    }
+                    None => break,
+                }
+            }
+            if taken == 0 {
+                break;
+            }
+            current_spans.push(Span::styled(chunk, style));
+            current_width += taken;
             if current_width >= width {
                 result.push(Line::from(std::mem::take(&mut current_spans)));
                 current_width = pad;
