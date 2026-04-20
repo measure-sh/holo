@@ -133,33 +133,21 @@ pub fn wrap_line(line: Line<'_>, width: usize, pad: usize) -> Vec<Line<'_>> {
 
     for span in line.spans {
         let style = span.style;
-        let mut chars = span.content.chars();
-        loop {
-            let remaining_in_line = width.saturating_sub(current_width);
-            if remaining_in_line == 0 {
-                result.push(Line::from(std::mem::take(&mut current_spans)));
-                current_width = pad;
-                if pad > 0 && pad < width {
-                    current_spans.push(Span::raw(" ".repeat(pad)));
-                }
-                continue;
-            }
+        let mut chars = span.content.chars().peekable();
+        while chars.peek().is_some() {
             let mut chunk = String::new();
-            let mut taken = 0;
-            while taken < remaining_in_line {
+            while current_width < width {
                 match chars.next() {
                     Some(c) => {
                         chunk.push(c);
-                        taken += 1;
+                        current_width += 1;
                     }
                     None => break,
                 }
             }
-            if taken == 0 {
-                break;
+            if !chunk.is_empty() {
+                current_spans.push(Span::styled(chunk, style));
             }
-            current_spans.push(Span::styled(chunk, style));
-            current_width += taken;
             if current_width >= width {
                 result.push(Line::from(std::mem::take(&mut current_spans)));
                 current_width = pad;
