@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+Fix a panic when wrapping lines that contain multi-byte UTF-8 characters
+(e.g. curly quotes in logcat output).
+
 ## 0.2.1
 
 Re-release of 0.2.0 to attach prebuilt binaries that were missing from the
