@@ -58,6 +58,7 @@ pub struct MonitorState {
 impl MonitorState {
     pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
+            KeyCode::Enter => Some(Action::ZoomIn),
             KeyCode::Esc => Some(Action::Unfocus),
             _ => None,
         }
@@ -400,6 +401,24 @@ mod tests {
         let last = state.history.last().unwrap();
         assert_eq!(last.data_kb, 500);
         assert_eq!(last.cache_kb, 100);
+    }
+
+    fn key_event(code: KeyCode) -> KeyEvent {
+        KeyEvent::from(code)
+    }
+
+    #[test]
+    fn handle_key_enter_zooms_in() {
+        let mut state = MonitorState::new();
+        let action = state.handle_key(key_event(KeyCode::Enter));
+        assert!(matches!(action, Some(Action::ZoomIn)));
+    }
+
+    #[test]
+    fn handle_key_esc_unfocuses() {
+        let mut state = MonitorState::new();
+        let action = state.handle_key(key_event(KeyCode::Esc));
+        assert!(matches!(action, Some(Action::Unfocus)));
     }
 
     #[test]
