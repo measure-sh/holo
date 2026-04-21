@@ -24,6 +24,9 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             bin: holo
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            bin: holo
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             bin: holo.exe
