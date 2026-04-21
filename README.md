@@ -28,6 +28,12 @@ settings directly from the TUI with simple commands.
 curl -sSL https://raw.githubusercontent.com/measure-sh/holo/main/install.sh | sh
 ```
 
+**Windows**
+
+Download the latest `holo-x86_64-pc-windows-msvc.zip` from the
+[Releases page](https://github.com/measure-sh/holo/releases/latest), extract
+`holo.exe`, and place it somewhere on your `PATH`.
+
 **From source (any platform with Rust)**
 
 ```sh
