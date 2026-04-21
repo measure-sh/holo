@@ -18,14 +18,9 @@ main() {
     esac
 
     case "$arch" in
-        x86_64)         arch_target="x86_64" ;;
-        arm64|aarch64)
-            if [ "$os" = "Linux" ]; then
-                err "unsupported architecture: $arch on Linux"
-            fi
-            arch_target="aarch64"
-            ;;
-        *)  err "unsupported architecture: $arch" ;;
+        x86_64)        arch_target="x86_64" ;;
+        arm64|aarch64) arch_target="aarch64" ;;
+        *)             err "unsupported architecture: $arch" ;;
     esac
 
     target="${arch_target}-${os_target}"
