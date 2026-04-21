@@ -44,11 +44,15 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../holo-${{ matrix.target }}.tar.gz ${{ matrix.bin }}
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a ../../../holo-${{ matrix.target }}.zip ${{ matrix.bin }}
+          else
+            tar czf ../../../holo-${{ matrix.target }}.tar.gz ${{ matrix.bin }}
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: holo-${{ matrix.target }}
-          path: holo-${{ matrix.target }}.tar.gz
+          path: holo-${{ matrix.target }}.*
 
   release:
     needs: build
@@ -66,4 +70,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "$TAG" \
             --generate-notes \
-            holo-*.tar.gz
+            holo-*.tar.gz holo-*.zip
