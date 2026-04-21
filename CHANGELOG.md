@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- Linux arm64 (`aarch64-unknown-linux-gnu`) prebuilt binary added to releases,
+  thanks to [@budius](https://github.com/budius) for the nudge in #1.
+  The `install.sh` script picks it up automatically on arm64 Linux.
+- Windows x86_64 (`x86_64-pc-windows-msvc`) prebuilt binary added to releases,
+  packaged as a `.zip`. Download from the Releases page and place `holo.exe`
+  on your `PATH`.
+- CI now cross-builds every release target on each PR, catching breakage
+  before tagging.
+
 ## 0.2.2
 
 Fix a panic when wrapping lines that contain multi-byte UTF-8 characters
