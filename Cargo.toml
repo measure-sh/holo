@@ -10,11 +10,11 @@ keywords = ["android", "adb", "tui", "terminal"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 color-eyre = "0.6"
 chrono = "0.4.44"
-tui-textarea = { version = "0.7", features = ["crossterm"] }
+ratatui-textarea = { version = "0.9", features = ["crossterm"] }
 open = "5.3.3"
 dirs = "6"
 arboard = { version = "3.6.1", default-features = false }

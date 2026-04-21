@@ -4,7 +4,7 @@ use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent};
-use tui_textarea::TextArea;
+use ratatui_textarea::TextArea;
 
 use crate::adb::Adb;
 use crate::app::Action;
