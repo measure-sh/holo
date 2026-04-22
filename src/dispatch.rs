@@ -117,6 +117,12 @@ impl DispatchContext {
                     spawn_app_action(&self.adb, s, p, "Failed to open app", &self.command_tx, None, |adb, s, p| adb.launch_app(s, p));
                 }
             }
+            Action::OpenAppInfo => {
+                if let (Some(s), Some(p)) = (&serial, &package) {
+                    app.set_status_flash("Opening app info...".into(), false);
+                    spawn_app_action(&self.adb, s, p, "Failed to open app info", &self.command_tx, None, |adb, s, p| adb.open_app_info(s, p));
+                }
+            }
             Action::KillApp => {
                 if let (Some(s), Some(p)) = (&serial, &package) {
                     app.set_status_flash("Killing app...".into(), false);

@@ -9,6 +9,7 @@ type CommandEntry = (&'static str, char, fn() -> Action);
 
 const COMMAND_LIST: &[CommandEntry] = &[
     ("open app", 'o', || Action::OpenApp),
+    ("app info", 'j', || Action::OpenAppInfo),
     ("kill app", 'k', || Action::KillApp),
     ("clear data", 'x', || Action::ClearData),
     ("wakeup", 'w', || Action::WakeScreen),

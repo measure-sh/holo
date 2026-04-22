@@ -36,6 +36,7 @@ pub trait Adb: Send + Sync {
     fn list_packages(&self, serial: &str) -> Result<Vec<String>>;
     fn pidof(&self, serial: &str, package: &str) -> Result<Option<u32>>;
     fn launch_app(&self, serial: &str, package: &str) -> Result<()>;
+    fn open_app_info(&self, serial: &str, package: &str) -> Result<()>;
     fn kill_app(&self, serial: &str, package: &str) -> Result<()>;
     fn clear_app_data(&self, serial: &str, package: &str) -> Result<()>;
     fn uninstall_app(&self, serial: &str, package: &str) -> Result<()>;

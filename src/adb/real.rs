@@ -81,6 +81,22 @@ impl Adb for RealAdb {
         Ok(())
     }
 
+    fn open_app_info(&self, serial: &str, package: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args([
+                "-s", serial, "shell", "am", "start",
+                "-a", "android.settings.APPLICATION_DETAILS_SETTINGS",
+                "-d", &format!("package:{package}"),
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb open app info failed: {stderr}");
+        }
+        Ok(())
+    }
+
     fn kill_app(&self, serial: &str, package: &str) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "am", "force-stop", package])

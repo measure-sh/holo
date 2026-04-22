@@ -23,6 +23,7 @@ pub enum Action {
     Noop,
     Unfocus,
     OpenApp,
+    OpenAppInfo,
     KillApp,
     ClearData,
     ResetLogcat,
