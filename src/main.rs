@@ -72,6 +72,7 @@ fn run_app(
         pending_emulator_rx: None,
         command_tx,
         command_rx,
+        pending_redraw: false,
     };
 
     if let Some(device) = &initial_device {
@@ -169,6 +170,10 @@ fn run_app(
             let action = app.handle_key(key);
             if ctx.dispatch(action, &mut app) {
                 return Ok(());
+            }
+            if ctx.pending_redraw {
+                terminal.clear()?;
+                ctx.pending_redraw = false;
             }
             if let Some(d) = &ctx.data {
                 d.update_monitor_visibility(app.panel_visibility());

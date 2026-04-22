@@ -24,6 +24,7 @@ pub struct DispatchContext {
     pub pending_emulator_rx: Option<mpsc::Receiver<Device>>,
     pub command_tx: mpsc::Sender<CommandResult>,
     pub command_rx: mpsc::Receiver<CommandResult>,
+    pub pending_redraw: bool,
 }
 
 impl DispatchContext {
@@ -270,7 +271,9 @@ impl DispatchContext {
                         .cloned()
                         .collect::<Vec<_>>()
                         .join("\n");
-                    open_in_editor(text, package.as_deref(), "logcat", "log");
+                    if open_in_editor(text, package.as_deref(), "logcat", "log") {
+                        self.pending_redraw = true;
+                    }
                 }
             }
             Action::ZoomIn => {
@@ -360,7 +363,9 @@ impl DispatchContext {
                 }
             }
             Action::OpenInEditor(text) => {
-                open_in_editor(text, package.as_deref(), "issues", "txt");
+                if open_in_editor(text, package.as_deref(), "issues", "txt") {
+                    self.pending_redraw = true;
+                }
             }
             Action::Noop | Action::Unfocus => {}
         }
@@ -368,26 +373,76 @@ impl DispatchContext {
     }
 }
 
-fn open_in_editor(text: String, package: Option<&str>, subdir: &str, ext: &str) {
-    let package = package.unwrap_or("unknown").to_string();
-    let subdir = subdir.to_string();
-    let ext = ext.to_string();
-    std::thread::spawn(move || {
-        let dir = std::env::temp_dir().join("holo").join(&package).join(&subdir);
-        let _ = std::fs::create_dir_all(&dir);
-        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let path = dir.join(format!("{timestamp}.{ext}"));
-        if std::fs::write(&path, &text).is_ok() {
-            if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
-                let _ = std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(format!("{} \"{}\"", editor, path.display()))
-                    .spawn();
-            } else {
-                let _ = open::that(&path);
-            }
+/// Writes `text` to a temp file and opens it in `$EDITOR` (or `$VISUAL`).
+/// Returns `true` when a terminal editor was launched synchronously, so the
+/// caller can force ratatui to redraw after the editor exits.
+fn open_in_editor(text: String, package: Option<&str>, subdir: &str, ext: &str) -> bool {
+    let package = package.unwrap_or("unknown");
+    let dir = std::env::temp_dir().join("holo").join(package).join(subdir);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return false;
+    }
+    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+    let path = dir.join(format!("{timestamp}.{ext}"));
+    if std::fs::write(&path, &text).is_err() {
+        return false;
+    }
+    launch_editor(&path)
+}
+
+/// Opens `path` in the user's editor. Terminal editors (nvim, vim, nano, …)
+/// are run synchronously with holo's raw-mode + alt-screen suspended so they
+/// don't fight holo for the tty. GUI editors are spawned detached.
+fn launch_editor(path: &std::path::Path) -> bool {
+    let editor = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok());
+    match editor {
+        Some(ref e) if is_terminal_editor(e) => {
+            run_editor_synchronously(e, path);
+            true
         }
-    });
+        Some(e) => {
+            let _ = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(format!("{} \"{}\"", e, path.display()))
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            false
+        }
+        None => {
+            let _ = open::that(path);
+            false
+        }
+    }
+}
+
+fn is_terminal_editor(cmd: &str) -> bool {
+    let first = cmd.split_whitespace().next().unwrap_or("");
+    let name = std::path::Path::new(first)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+    matches!(
+        name,
+        "nvim" | "vim" | "vi" | "nano" | "micro" | "helix" | "hx"
+            | "kak" | "kakoune" | "emacs" | "joe" | "pico" | "ed"
+    )
+}
+
+fn run_editor_synchronously(editor: &str, path: &std::path::Path) {
+    use crossterm::{
+        execute,
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    };
+    let _ = disable_raw_mode();
+    let _ = execute!(std::io::stdout(), LeaveAlternateScreen);
+    let _ = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("{} \"{}\"", editor, path.display()))
+        .status();
+    let _ = enable_raw_mode();
+    let _ = execute!(std::io::stdout(), EnterAlternateScreen);
 }
 
 struct ToggleOpts {
