@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 
 use crossterm::event::{KeyCode, KeyEvent};
@@ -545,7 +546,7 @@ pub fn spawn_pull_file(
     serial: String,
     package: String,
     remote_path: String,
-) -> mpsc::Receiver<Result<String, String>> {
+) -> mpsc::Receiver<Result<PathBuf, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let file_name = std::path::Path::new(&remote_path)
@@ -560,17 +561,7 @@ pub fn spawn_pull_file(
             .join(format!("{timestamp}_{file_name}"));
         let result = adb
             .pull_file(&serial, &package, &remote_path, &dest)
-            .map(|_| {
-                if let Some(editor) = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok()) {
-                    let _ = std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(format!("{} \"{}\"", editor, dest.display()))
-                        .spawn();
-                } else {
-                    let _ = open::that(&dest);
-                }
-                format!("{}", dest.display())
-            })
+            .map(|_| dest)
             .map_err(|e| e.to_string());
         let _ = tx.send(result);
     });

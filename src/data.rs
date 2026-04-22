@@ -45,9 +45,10 @@ pub struct DataSources {
     permissions_rx: mpsc::Receiver<Result<Vec<(String, bool)>, String>>,
 
     files_list_rx: Option<mpsc::Receiver<files::DirListResult>>,
-    files_pull_rx: Option<mpsc::Receiver<Result<String, String>>>,
+    files_pull_rx: Option<mpsc::Receiver<Result<PathBuf, String>>>,
     files_stat_rx: Option<mpsc::Receiver<files::StatResult>>,
     files_cat_rx: Option<mpsc::Receiver<files::CatResult>>,
+    pending_editor_open: Option<PathBuf>,
 
     monitor_rx: mpsc::Receiver<MonitorSample>,
     monitor_visibility: Arc<AtomicU8>,
@@ -124,6 +125,7 @@ impl DataSources {
             files_pull_rx: None,
             files_stat_rx: None,
             files_cat_rx: None,
+            pending_editor_open: None,
             monitor_rx: monitor::spawn_poller(
                 adb.clone(),
                 serial.to_string(),
@@ -277,9 +279,10 @@ impl DataSources {
         }
         if let Some(result) = try_poll(&mut self.files_pull_rx) {
             match result {
-                Ok(_) => {
+                Ok(path) => {
                     app.files_state_mut().action_flash =
                         Some(("opening...", std::time::Instant::now()));
+                    self.pending_editor_open = Some(path);
                 }
                 Err(e) => app.files_state_mut().error = Some(e),
             }
@@ -376,6 +379,10 @@ impl DataSources {
 
     pub fn files_stat_in_flight(&self) -> bool {
         self.files_stat_rx.is_some()
+    }
+
+    pub fn take_pending_editor_open(&mut self) -> Option<PathBuf> {
+        self.pending_editor_open.take()
     }
 
     pub fn start_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, preset: trace::TracePreset) {

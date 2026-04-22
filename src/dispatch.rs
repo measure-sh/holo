@@ -393,7 +393,7 @@ fn open_in_editor(text: String, package: Option<&str>, subdir: &str, ext: &str) 
 /// Opens `path` in the user's editor. Terminal editors (nvim, vim, nano, …)
 /// are run synchronously with holo's raw-mode + alt-screen suspended so they
 /// don't fight holo for the tty. GUI editors are spawned detached.
-fn launch_editor(path: &std::path::Path) -> bool {
+pub(crate) fn launch_editor(path: &std::path::Path) -> bool {
     let editor = std::env::var("EDITOR").ok().or_else(|| std::env::var("VISUAL").ok());
     match editor {
         Some(ref e) if is_terminal_editor(e) => {

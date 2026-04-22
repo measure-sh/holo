@@ -106,6 +106,11 @@ fn run_app(
             let was_connected = d.device_connected;
             d.poll(&mut app, s);
             app.toolbar_mut().device_connected = d.device_connected;
+            if let Some(path) = d.take_pending_editor_open()
+                && dispatch::launch_editor(&path)
+            {
+                ctx.pending_redraw = true;
+            }
             if !was_connected && d.device_connected
                 && let Some(device) = app.toolbar().device.clone()
                 && let Some(pkg) = package.clone()
@@ -152,6 +157,11 @@ fn run_app(
         let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);
         let logcat_lines: &[String] = ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines);
 
+        if ctx.pending_redraw {
+            terminal.clear()?;
+            ctx.pending_redraw = false;
+        }
+
         terminal.draw(|frame| {
             ui::render_app(frame, &ctx.title, battery_level, &mut app, logcat_lines)
         })?;
@@ -170,10 +180,6 @@ fn run_app(
             let action = app.handle_key(key);
             if ctx.dispatch(action, &mut app) {
                 return Ok(());
-            }
-            if ctx.pending_redraw {
-                terminal.clear()?;
-                ctx.pending_redraw = false;
             }
             if let Some(d) = &ctx.data {
                 d.update_monitor_visibility(app.panel_visibility());
