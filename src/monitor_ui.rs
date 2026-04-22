@@ -50,6 +50,21 @@ fn format_rate(bps: u64) -> String {
     }
 }
 
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    if bytes < KB {
+        format!("{} B", bytes)
+    } else if bytes < MB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else if bytes < GB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    }
+}
+
 /// Range-shift a series so stable non-zero values render as a flat low bar
 /// instead of clipping to the top, and zero samples render as absent (e.g.
 /// the app wasn't running yet). Returns bars in chronological order plus the
@@ -95,6 +110,9 @@ struct Metric {
     sample_interval_s: u64,
     color: Color,
     scale: MetricScale,
+    /// Cumulative bytes transferred since holo started watching. Only set
+    /// for network rx/tx; None for CPU/mem/disk.
+    total_bytes: Option<u64>,
 }
 
 fn format_scale(value: f64, scale: MetricScale) -> String {
@@ -116,7 +134,12 @@ fn format_ago(secs: u64) -> String {
     }
 }
 
-fn build_metrics(state: &MonitorState, traffic: &[TrafficSample], measure_sdk: bool) -> Vec<Metric> {
+fn build_metrics(
+    state: &MonitorState,
+    traffic: &[TrafficSample],
+    traffic_baseline: Option<(u64, u64)>,
+    measure_sdk: bool,
+) -> Vec<Metric> {
     let t = theme::current();
     let mut metrics = Vec::new();
 
@@ -136,6 +159,7 @@ fn build_metrics(state: &MonitorState, traffic: &[TrafficSample], measure_sdk: b
         sample_interval_s: 1,
         color: t.spark_cpu,
         scale: MetricScale::Percent,
+        total_bytes: None,
     });
 
     let (mem_name, mem_label_prefix, mem_samples) = if measure_sdk {
@@ -156,6 +180,7 @@ fn build_metrics(state: &MonitorState, traffic: &[TrafficSample], measure_sdk: b
         sample_interval_s: 1,
         color: t.spark_mem,
         scale: MetricScale::MemKb,
+        total_bytes: None,
     });
 
     let disk_samples: Vec<u64> = state.history.iter().map(|m| m.data_kb).collect();
@@ -170,10 +195,17 @@ fn build_metrics(state: &MonitorState, traffic: &[TrafficSample], measure_sdk: b
         sample_interval_s: 1,
         color: t.spark_disk,
         scale: MetricScale::DiskKb,
+        total_bytes: None,
     });
 
     if !traffic.is_empty() {
         let last = *traffic.last().unwrap();
+        let rx_total = traffic_baseline
+            .map(|(b, _)| last.rx_total.saturating_sub(b))
+            .unwrap_or(0);
+        let tx_total = traffic_baseline
+            .map(|(_, b)| last.tx_total.saturating_sub(b))
+            .unwrap_or(0);
         let rx_samples: Vec<SparklineBar> = traffic
             .iter()
             .map(|s| SparklineBar::from(Some(s.rx_bps)))
@@ -186,23 +218,25 @@ fn build_metrics(state: &MonitorState, traffic: &[TrafficSample], measure_sdk: b
         let tx_max = traffic.iter().map(|s| s.tx_bps).max().unwrap_or(0);
         metrics.push(Metric {
             name: "↓",
-            label: format!(" ↓ {}  ", format_rate(last.rx_bps)),
+            label: format!(" ↓ {} ({})  ", format_rate(last.rx_bps), format_bytes(rx_total)),
             sparkline_data: rx_samples,
             sparkline_max: rx_max,
             values: traffic.iter().map(|s| s.rx_bps as f64).collect(),
             sample_interval_s: 2,
             color: t.spark_rx,
             scale: MetricScale::RateBps,
+            total_bytes: Some(rx_total),
         });
         metrics.push(Metric {
             name: "↑",
-            label: format!(" ↑ {}  ", format_rate(last.tx_bps)),
+            label: format!(" ↑ {} ({})  ", format_rate(last.tx_bps), format_bytes(tx_total)),
             sparkline_data: tx_samples,
             sparkline_max: tx_max,
             values: traffic.iter().map(|s| s.tx_bps as f64).collect(),
             sample_interval_s: 2,
             color: t.spark_tx,
             scale: MetricScale::RateBps,
+            total_bytes: Some(tx_total),
         });
     }
 
@@ -386,6 +420,7 @@ fn render_charts(
     inner: Rect,
     state: &MonitorState,
     traffic: &[TrafficSample],
+    traffic_baseline: Option<(u64, u64)>,
     measure_sdk: bool,
     focused: bool,
     zoomed: bool,
@@ -394,7 +429,7 @@ fn render_charts(
         return;
     }
 
-    let metrics = build_metrics(state, traffic, measure_sdk);
+    let metrics = build_metrics(state, traffic, traffic_baseline, measure_sdk);
     if metrics.is_empty() {
         return;
     }
@@ -457,20 +492,31 @@ fn render_pair_detail(
         return;
     }
 
+    let t = theme::current();
     let (chip_area, body) = split_chip(area);
     render_pane_chip(frame, chip_area, "Network", focused, false);
 
     let rx_current = *rx.values.last().unwrap_or(&0.0);
     let tx_current = *tx.values.last().unwrap_or(&0.0);
+    let rx_total = rx.total_bytes.unwrap_or(0);
+    let tx_total = tx.total_bytes.unwrap_or(0);
     let stats_line = Line::from(vec![
         Span::styled(
             format!("{} {}", rx.name, format_scale(rx_current, rx.scale)),
             Style::new().fg(rx.color).add_modifier(Modifier::BOLD),
         ),
+        Span::styled(
+            format!(" ({})", format_bytes(rx_total)),
+            Style::new().fg(t.muted),
+        ),
         Span::raw("   "),
         Span::styled(
             format!("{} {}", tx.name, format_scale(tx_current, tx.scale)),
             Style::new().fg(tx.color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" ({})", format_bytes(tx_total)),
+            Style::new().fg(t.muted),
         ),
     ])
     .alignment(Alignment::Right);
@@ -568,6 +614,7 @@ pub fn render_monitor_panel(
     focused: bool,
     state: &MonitorState,
     traffic: &[TrafficSample],
+    traffic_baseline: Option<(u64, u64)>,
     measure_sdk: bool,
     zoomed: bool,
 ) {
@@ -592,7 +639,7 @@ pub fn render_monitor_panel(
         return;
     }
 
-    render_charts(frame, inner, state, traffic, measure_sdk, focused, zoomed);
+    render_charts(frame, inner, state, traffic, traffic_baseline, measure_sdk, focused, zoomed);
 }
 
 #[cfg(test)]
