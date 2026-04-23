@@ -59,7 +59,9 @@ pub struct DatabaseState {
     pub detail_open: bool,
     pub detail_focused: bool,
     pub detail_scroll: usize,
+    pub detail_max_scroll: usize,
     pub detail_h_scroll: usize,
+    pub detail_max_h_scroll: usize,
     pub detail_visible_rows: usize,
     pub selected_table: Option<(String, String)>,
     pub table_data: Option<TableData>,
@@ -75,6 +77,7 @@ pub struct DatabaseState {
     pub query_history: Vec<String>,
     pub history_index: Option<usize>,
     pub repl_scroll: usize,
+    pub repl_max_scroll: usize,
     pub editing_query: bool,
 
     pub confirming_pull: Option<String>,
@@ -103,7 +106,9 @@ impl DatabaseState {
             detail_open: false,
             detail_focused: false,
             detail_scroll: 0,
+            detail_max_scroll: 0,
             detail_h_scroll: 0,
+            detail_max_h_scroll: 0,
             detail_visible_rows: 0,
             selected_table: None,
             table_data: None,
@@ -118,6 +123,7 @@ impl DatabaseState {
             query_history: Vec::new(),
             history_index: None,
             repl_scroll: 0,
+            repl_max_scroll: 0,
             editing_query: false,
             confirming_pull: None,
             copied_at: None,
@@ -174,7 +180,9 @@ impl DatabaseState {
         if self.repl_active {
             match code {
                 KeyCode::Char('e') => self.editing_query = true,
-                KeyCode::Up => self.repl_scroll += 1,
+                KeyCode::Up => {
+                    self.repl_scroll = (self.repl_scroll + 1).min(self.repl_max_scroll);
+                }
                 KeyCode::Down => self.repl_scroll = self.repl_scroll.saturating_sub(1),
                 KeyCode::Char('c') => {
                     if let Some(text) = self.history_text() {
@@ -214,7 +222,7 @@ impl DatabaseState {
                     Action::Noop
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    self.detail_scroll = self.detail_scroll.saturating_add(1);
+                    self.detail_scroll = (self.detail_scroll + 1).min(self.detail_max_scroll);
                     Action::Noop
                 }
                 KeyCode::Left | KeyCode::Char('h') => {
@@ -222,11 +230,11 @@ impl DatabaseState {
                     Action::Noop
                 }
                 KeyCode::Right | KeyCode::Char('l') => {
-                    self.detail_h_scroll += 4;
+                    self.detail_h_scroll = (self.detail_h_scroll + 4).min(self.detail_max_h_scroll);
                     Action::Noop
                 }
                 KeyCode::Char(' ') => {
-                    self.detail_scroll = self.detail_scroll.saturating_add(20);
+                    self.detail_scroll = (self.detail_scroll + 20).min(self.detail_max_scroll);
                     Action::Noop
                 }
                 KeyCode::Tab => {
@@ -661,8 +669,8 @@ impl DatabaseState {
     }
 
     pub fn clamp_repl_scroll(&mut self, total: usize, visible: usize) {
-        let max = total.saturating_sub(visible);
-        self.repl_scroll = self.repl_scroll.min(max);
+        self.repl_max_scroll = total.saturating_sub(visible);
+        self.repl_scroll = self.repl_scroll.min(self.repl_max_scroll);
     }
 
     pub fn refresh(&mut self) {
@@ -1176,6 +1184,7 @@ mod tests {
         let mut s = DatabaseState::new();
         s.detail_open = true;
         s.detail_focused = true;
+        s.detail_max_scroll = 100;
         s.handle_key(key(KeyCode::Down));
         assert_eq!(s.detail_scroll, 1);
         s.handle_key(key(KeyCode::Up));

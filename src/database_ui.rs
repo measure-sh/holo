@@ -341,6 +341,7 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, activ
     let total_width: usize = col_widths.iter().sum::<usize>()
         + col_widths.len().saturating_sub(1) * gutter;
     let max_h_scroll = total_width.saturating_sub(data_view_width);
+    state.detail_max_h_scroll = max_h_scroll;
     if state.detail_h_scroll > max_h_scroll {
         state.detail_h_scroll = max_h_scroll;
     }
@@ -387,6 +388,7 @@ fn render_detail(frame: &mut Frame, area: Rect, state: &mut DatabaseState, activ
         (rows_area.height as usize).saturating_sub(if need_hbar { 1 } else { 0 });
     state.detail_visible_rows = data_rows_visible;
     let max_v_scroll = row_lines.len().saturating_sub(data_rows_visible);
+    state.detail_max_scroll = max_v_scroll;
     if state.detail_scroll > max_v_scroll {
         state.detail_scroll = max_v_scroll;
     }

@@ -327,9 +327,9 @@ fn render_detail(
 
     let visible_rows = body_area.height as usize;
     state.detail_visible_rows = visible_rows;
-    let max_scroll = lines.len().saturating_sub(visible_rows);
-    if state.detail_scroll > max_scroll {
-        state.detail_scroll = max_scroll;
+    state.detail_max_scroll = lines.len().saturating_sub(visible_rows);
+    if state.detail_scroll > state.detail_max_scroll {
+        state.detail_scroll = state.detail_max_scroll;
     }
     let start = state.detail_scroll;
     let end = (start + visible_rows).min(lines.len());

@@ -951,6 +951,7 @@ mod tests {
     fn scroll_up_increments_offset() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
+        app.logcat_state_mut().max_scroll = 100;
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.logcat_state().scroll, 1);
         app.handle_key(key(KeyCode::Up));
@@ -961,6 +962,7 @@ mod tests {
     fn scroll_down_decrements_offset() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
+        app.logcat_state_mut().max_scroll = 100;
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Down));
@@ -971,6 +973,7 @@ mod tests {
     fn j_k_scroll_logcat() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
+        app.logcat_state_mut().max_scroll = 100;
         app.handle_key(key(KeyCode::Char('k')));
         assert_eq!(app.logcat_state().scroll, 1);
         app.handle_key(key(KeyCode::Char('k')));
@@ -983,6 +986,7 @@ mod tests {
     fn space_scrolls_page() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
+        app.logcat_state_mut().max_scroll = 100;
         app.handle_key(key(KeyCode::Char(' ')));
         assert_eq!(app.logcat_state().scroll, 20);
     }
@@ -999,6 +1003,7 @@ mod tests {
     fn esc_resets_scroll_to_zero() {
         let mut app = App::new(None, Some("com.test"));
         app.handle_key(key(KeyCode::Char('l')));
+        app.logcat_state_mut().max_scroll = 100;
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Up));
@@ -1039,6 +1044,7 @@ mod tests {
         assert_eq!(app.logcat_state().filter.tag, "a");
         assert_eq!(app.logcat_state().filter.search, "b");
         assert!(app.logcat_state().filter.level.is_some());
+        app.logcat_state_mut().max_scroll = 100;
         app.handle_key(key(KeyCode::Up));
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.logcat_state().scroll, 2);
@@ -1170,6 +1176,7 @@ mod tests {
             crate::database::ReplLine::Input("SELECT 1".into()),
             crate::database::ReplLine::Output("1".into()),
         ];
+        app.database_state_mut().repl_max_scroll = 100;
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.database_state().repl_scroll, 1);
     }

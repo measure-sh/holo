@@ -154,6 +154,7 @@ impl LogcatFilter {
 pub struct LogcatState {
     pub filter: LogcatFilter,
     pub scroll: usize,
+    pub max_scroll: usize,
     pub editing: Option<LogcatEditTarget>,
 }
 
@@ -162,6 +163,7 @@ impl LogcatState {
         Self {
             filter: LogcatFilter::new(),
             scroll: 0,
+            max_scroll: 0,
             editing: None,
         }
     }
@@ -186,7 +188,7 @@ impl LogcatState {
 
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
-                self.scroll += 1;
+                self.scroll = (self.scroll + 1).min(self.max_scroll);
                 Some(Action::Noop)
             }
             KeyCode::Down | KeyCode::Char('j') => {
@@ -194,7 +196,7 @@ impl LogcatState {
                 Some(Action::Noop)
             }
             KeyCode::Char(' ') => {
-                self.scroll += 20;
+                self.scroll = (self.scroll + 20).min(self.max_scroll);
                 Some(Action::Noop)
             }
             KeyCode::Esc if self.scroll > 0 => {
@@ -245,8 +247,8 @@ impl LogcatState {
     }
 
     pub fn clamp_scroll(&mut self, total_lines: usize, visible_height: usize) {
-        let max = total_lines.saturating_sub(visible_height);
-        self.scroll = self.scroll.min(max);
+        self.max_scroll = total_lines.saturating_sub(visible_height);
+        self.scroll = self.scroll.min(self.max_scroll);
     }
 
     pub fn adjust_scroll_for_new_lines(&mut self, count: usize) {

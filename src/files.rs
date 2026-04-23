@@ -44,6 +44,7 @@ pub struct FilesState {
     pub detail_open: bool,
     pub detail_focused: bool,
     pub detail_scroll: usize,
+    pub detail_max_scroll: usize,
     pub detail_visible_rows: usize,
     pub selected_file: Option<String>,
     pub selected_meta: Option<FileMeta>,
@@ -65,6 +66,7 @@ impl FilesState {
             detail_open: false,
             detail_focused: false,
             detail_scroll: 0,
+            detail_max_scroll: 0,
             detail_visible_rows: 0,
             selected_file: None,
             selected_meta: None,
@@ -87,11 +89,11 @@ impl FilesState {
                     Action::Noop
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    self.detail_scroll = self.detail_scroll.saturating_add(1);
+                    self.detail_scroll = (self.detail_scroll + 1).min(self.detail_max_scroll);
                     Action::Noop
                 }
                 KeyCode::Char(' ') => {
-                    self.detail_scroll = self.detail_scroll.saturating_add(20);
+                    self.detail_scroll = (self.detail_scroll + 20).min(self.detail_max_scroll);
                     Action::Noop
                 }
                 KeyCode::Tab => {
