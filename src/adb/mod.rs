@@ -58,6 +58,7 @@ pub trait Adb: Send + Sync {
     fn cat_file(&self, serial: &str, package: &str, remote_path: &str, max_bytes: u64) -> Result<Vec<u8>>;
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo>;
     fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32>;
+    fn get_num_cores(&self, serial: &str) -> Result<u8>;
     fn start_trace(&self, serial: &str, config: &str) -> Result<()>;
     fn stop_and_pull_trace(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
     fn take_screenshot(&self, serial: &str, dest: &std::path::Path) -> Result<()>;

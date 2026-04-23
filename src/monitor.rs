@@ -104,7 +104,7 @@ impl MonitorState {
 
     pub fn push_measure_cpu(&mut self, percent: f32, num_cores: u8) {
         let mut sample = self.history.last().copied().unwrap_or_default();
-        sample.cpu_percent = percent;
+        sample.cpu_percent = percent.clamp(0.0, 100.0);
         sample.num_cores = num_cores;
         sample.data_kb = self.disk_kb;
         sample.cache_kb = self.cache_kb;
@@ -154,6 +154,7 @@ pub fn spawn_poller(
         let mut last_data_kb: u64 = 0;
         let mut last_cache_kb: u64 = 0;
         let debuggable = adb.is_debuggable(&serial, &package);
+        let num_cores = adb.get_num_cores(&serial).unwrap_or(1).max(1);
         loop {
             let mask = visibility.load(Ordering::Relaxed);
             if mask == 0 {
@@ -177,7 +178,8 @@ pub fn spawn_poller(
                     sample.rss_kb = mem.rss_kb;
                 }
                 if let Some(Ok(Ok(cpu))) = cpu.map(|h| h.join()) {
-                    sample.cpu_percent = cpu;
+                    sample.cpu_percent = (cpu / num_cores as f32).clamp(0.0, 100.0);
+                    sample.num_cores = num_cores;
                 }
                 if let Some(Ok(Ok((data, cache)))) = disk.map(|h| h.join()) {
                     last_data_kb = data;

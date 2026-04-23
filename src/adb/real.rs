@@ -321,6 +321,24 @@ impl Adb for RealAdb {
         Ok(parse_top_cpu(&stdout, package))
     }
 
+    fn get_num_cores(&self, serial: &str) -> Result<u8> {
+        let output = Command::new("adb")
+            .args([
+                "-s", serial, "shell",
+                "nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo",
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("nproc failed: {stderr}");
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        parse_num_cores(&stdout)
+            .ok_or_else(|| color_eyre::eyre::eyre!("could not parse core count"))
+    }
+
     fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
         let cmd = format!(
             "PID=$(pidof -s {0}); [ -n \"$PID\" ] && cat /proc/$PID/status 2>/dev/null; true",
@@ -1042,6 +1060,13 @@ fn parse_battery_level(output: &str) -> Option<u8> {
     })
 }
 
+fn parse_num_cores(output: &str) -> Option<u8> {
+    output.lines().find_map(|line| {
+        let n: u8 = line.trim().parse().ok()?;
+        (n > 0).then_some(n)
+    })
+}
+
 fn parse_top_cpu(output: &str, package: &str) -> f32 {
     for line in output.lines() {
         let trimmed = line.trim();
@@ -1389,6 +1414,19 @@ VmSwap:\t       0 kB
   890 u0_a456      20   0  10G  50M  30M S  0.3   1.0   0:01.00 com.other.app
 ";
         assert!((parse_top_cpu(output, "com.example.app") - 5.2).abs() < 0.01);
+    }
+
+    #[test]
+    fn parses_num_cores_nproc() {
+        assert_eq!(parse_num_cores("8\n"), Some(8));
+        assert_eq!(parse_num_cores("1"), Some(1));
+    }
+
+    #[test]
+    fn parses_num_cores_rejects_zero_and_invalid() {
+        assert_eq!(parse_num_cores("0\n"), None);
+        assert_eq!(parse_num_cores(""), None);
+        assert_eq!(parse_num_cores("oops\n"), None);
     }
 
     #[test]
