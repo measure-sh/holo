@@ -171,18 +171,24 @@ fn run_app(
         } else {
             Duration::from_secs(1)
         };
-        if event::poll(poll_timeout)?
-            && let Event::Key(key) = event::read()?
-        {
-            if key.kind != KeyEventKind::Press {
-                continue;
-            }
-            let action = app.handle_key(key);
-            if ctx.dispatch(action, &mut app) {
-                return Ok(());
-            }
-            if let Some(d) = &ctx.data {
-                d.update_monitor_visibility(app.panel_visibility());
+        if event::poll(poll_timeout)? {
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind != KeyEventKind::Press {
+                        continue;
+                    }
+                    let action = app.handle_key(key);
+                    if ctx.dispatch(action, &mut app) {
+                        return Ok(());
+                    }
+                    if let Some(d) = &ctx.data {
+                        d.update_monitor_visibility(app.panel_visibility());
+                    }
+                }
+                Event::Resize(_, _) => {
+                    terminal.clear()?;
+                }
+                _ => {}
             }
         }
     }
