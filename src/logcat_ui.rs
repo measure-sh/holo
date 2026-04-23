@@ -158,7 +158,7 @@ const TAG_WIDTH: usize = 15;
 fn style_logcat_line<'a>(raw: &'a str, search: &str) -> Line<'a> {
     let t = theme::current();
     let Some(parsed) = logcat::parse(raw) else {
-        return Line::from(raw.replace('\t', "  "));
+        return Line::from(Span::styled(raw.replace('\t', "  "), Style::new().fg(t.fg)));
     };
 
     let level_fg = theme::level_color(parsed.level);
