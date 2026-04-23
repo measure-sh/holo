@@ -270,13 +270,20 @@ fn sparkline_row(frame: &mut Frame, area: Rect, metric: &Metric, label_width: u1
 }
 
 fn render_compact_list(frame: &mut Frame, area: Rect, metrics: &[Metric]) {
-    let visible_rows = metrics.len().min(area.height as usize);
-    if visible_rows == 0 {
+    if metrics.is_empty() || area.height == 0 {
         return;
     }
+    // Prefer a 1-line gap between rows; if height is too tight, drop the gap
+    // so more metrics still fit.
+    let spaced_rows = ((area.height as usize + 1) / 2).min(metrics.len());
+    let (visible_rows, spacing) = if spaced_rows == metrics.len() {
+        (metrics.len(), 1)
+    } else {
+        (metrics.len().min(area.height as usize), 0)
+    };
     let label_width = metrics.iter().map(|m| m.label.chars().count()).max().unwrap_or(0) as u16;
     let constraints: Vec<Constraint> = (0..visible_rows).map(|_| Constraint::Length(1)).collect();
-    let chunks = Layout::vertical(constraints).split(area);
+    let chunks = Layout::vertical(constraints).spacing(spacing).split(area);
 
     for (i, metric) in metrics.iter().take(visible_rows).enumerate() {
         sparkline_row(frame, chunks[i], metric, label_width);
