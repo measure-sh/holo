@@ -58,7 +58,7 @@ pub fn render_database_panel(
     if db_state.detail_open {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(30), Constraint::Percentage(70)])
+            .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
             .split(inner);
         render_tree(frame, chunks[0], db_state, tree_focused, true, tree_hint);
         if db_state.repl_active {
