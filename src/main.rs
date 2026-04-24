@@ -177,7 +177,10 @@ fn run_app(
         } else {
             Duration::from_secs(1)
         };
-        if event::poll(poll_timeout)? {
+        if !event::poll(poll_timeout)? {
+            continue;
+        }
+        loop {
             match event::read()? {
                 Event::Key(key) => {
                     if key.kind != KeyEventKind::Press {
@@ -209,6 +212,9 @@ fn run_app(
                     terminal.clear()?;
                 }
                 _ => {}
+            }
+            if !event::poll(Duration::ZERO)? {
+                break;
             }
         }
     }
