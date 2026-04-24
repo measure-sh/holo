@@ -36,7 +36,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyEventKind};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseEventKind,
+};
+use crossterm::execute;
 
 use adb::{Adb, RealAdb};
 use app::App;
@@ -50,7 +54,9 @@ fn main() -> Result<()> {
         .and_then(|mut d| if !d.is_empty() { Some(d.swap_remove(0)) } else { None });
 
     let terminal = ratatui::init();
+    let _ = execute!(std::io::stdout(), EnableMouseCapture);
     let result = run_app(terminal, adb, initial_device);
+    let _ = execute!(std::io::stdout(), DisableMouseCapture);
     ratatui::restore();
     result
 }
@@ -183,6 +189,20 @@ fn run_app(
                     }
                     if let Some(d) = &ctx.data {
                         d.update_monitor_visibility(app.panel_visibility());
+                    }
+                }
+                Event::Mouse(mouse) => {
+                    let code = match mouse.kind {
+                        MouseEventKind::ScrollUp => Some(KeyCode::Up),
+                        MouseEventKind::ScrollDown => Some(KeyCode::Down),
+                        _ => None,
+                    };
+                    if let Some(code) = code {
+                        let key = KeyEvent::new(code, KeyModifiers::NONE);
+                        let action = app.handle_key(key);
+                        if ctx.dispatch(action, &mut app) {
+                            return Ok(());
+                        }
                     }
                 }
                 Event::Resize(_, _) => {
