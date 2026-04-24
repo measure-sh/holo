@@ -46,7 +46,7 @@ Re-release of 0.2.0 to attach prebuilt binaries that were missing from the
 ### Updated Keybindings
 
 - `Ctrl+Q` quits (replaces the `qq` chord).
-- `Ctrl+,` opens settings (replaces `ss`).
+- `Ctrl+Space` opens settings (replaces `ss`).
 - `Ctrl+Z` toggles zoom (replaces bare `z`).
 - Command shortcuts in the commands panel now use the same accent color as
   the top-bar hints, so `^q` and `^o` read consistently.

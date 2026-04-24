@@ -194,7 +194,7 @@ impl App {
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match code {
                 KeyCode::Char('q') => return Action::Quit,
-                KeyCode::Char(',') => {
+                KeyCode::Char(' ') => {
                     self.settings_open = true;
                     return Action::Noop;
                 }

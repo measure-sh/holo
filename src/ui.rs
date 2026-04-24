@@ -182,7 +182,7 @@ pub fn render_app(
     let mut hint_spans = vec![
         Span::styled(" ^q ", Style::new().fg(t.danger)),
         Span::styled("quit ", Style::new().fg(t.muted)),
-        Span::styled(" ^, ", Style::new().fg(t.danger)),
+        Span::styled(" ^␣ ", Style::new().fg(t.danger)),
         Span::styled("settings ", Style::new().fg(t.muted)),
     ];
     if app.focused_panel().is_some() {
