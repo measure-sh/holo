@@ -106,8 +106,6 @@ struct Metric {
     /// "absent" for MemKb/DiskKb (app wasn't running); genuine for RateBps
     /// and Percent.
     values: Vec<f64>,
-    /// Seconds between consecutive samples; used to label the X axis.
-    sample_interval_s: u64,
     color: Color,
     scale: MetricScale,
     /// Cumulative bytes transferred since holo started watching. Only set
@@ -155,7 +153,6 @@ fn build_metrics(
         sparkline_data: cpu_spark,
         sparkline_max: 100,
         values: cpu_values,
-        sample_interval_s: 1,
         color: t.spark_cpu,
         scale: MetricScale::Percent,
         total_bytes: None,
@@ -170,7 +167,6 @@ fn build_metrics(
         sparkline_data: mem_spark,
         sparkline_max: mem_max,
         values: mem_samples.iter().map(|&v| v as f64).collect(),
-        sample_interval_s: 1,
         color: t.spark_mem,
         scale: MetricScale::MemKb,
         total_bytes: None,
@@ -185,7 +181,6 @@ fn build_metrics(
         sparkline_data: disk_spark,
         sparkline_max: disk_max,
         values: disk_samples.iter().map(|&v| v as f64).collect(),
-        sample_interval_s: 1,
         color: t.spark_disk,
         scale: MetricScale::DiskKb,
         total_bytes: None,
@@ -215,7 +210,6 @@ fn build_metrics(
             sparkline_data: rx_samples,
             sparkline_max: rx_max,
             values: traffic.iter().map(|s| s.rx_bps as f64).collect(),
-            sample_interval_s: 2,
             color: t.spark_rx,
             scale: MetricScale::RateBps,
             total_bytes: Some(rx_total),
@@ -226,7 +220,6 @@ fn build_metrics(
             sparkline_data: tx_samples,
             sparkline_max: tx_max,
             values: traffic.iter().map(|s| s.tx_bps as f64).collect(),
-            sample_interval_s: 2,
             color: t.spark_tx,
             scale: MetricScale::RateBps,
             total_bytes: Some(tx_total),
@@ -379,7 +372,7 @@ fn render_chart(frame: &mut Frame, area: Rect, metric: &Metric, min: f64, max: f
 
     // X labels: total duration ago → half ago → now. Width check avoids
     // cramped middle labels when the detail pane is narrow.
-    let total_secs = (metric.values.len().saturating_sub(1)) as u64 * metric.sample_interval_s;
+    let total_secs = metric.values.len().saturating_sub(1) as u64;
     let x_labels = if area.width >= 36 && total_secs >= 2 {
         vec![
             Line::from(format_ago(total_secs)),
@@ -566,7 +559,7 @@ fn render_combined_chart(frame: &mut Frame, area: Rect, rx: &Metric, tx: &Metric
 
     let sample_count = rx.values.len().max(tx.values.len());
     let x_max = sample_count.saturating_sub(1) as f64;
-    let total_secs = sample_count.saturating_sub(1) as u64 * rx.sample_interval_s;
+    let total_secs = sample_count.saturating_sub(1) as u64;
     let x_labels = if area.width >= 36 && total_secs >= 2 {
         vec![
             Line::from(format_ago(total_secs)),

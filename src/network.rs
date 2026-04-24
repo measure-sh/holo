@@ -8,7 +8,7 @@ use crate::app::Action;
 use crate::logcat;
 
 const MAX_ENTRIES: usize = 500;
-const MAX_TRAFFIC: usize = 240;
+const MAX_TRAFFIC: usize = 120;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TrafficSample {
@@ -439,7 +439,7 @@ pub fn spawn_traffic_poller(
 ) -> mpsc::Receiver<TrafficSample> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let interval = Duration::from_secs(2);
+        let interval = Duration::from_secs(1);
         let mut prev: Option<(u64, u64, Instant)> = None;
         loop {
             let now = Instant::now();
