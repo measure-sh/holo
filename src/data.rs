@@ -131,7 +131,6 @@ impl DataSources {
                 serial.to_string(),
                 package.to_string(),
                 monitor_visibility.clone(),
-                has_measure_sdk,
             ),
             trace_start_rx: None,
             trace_pull_rx: None,
@@ -182,12 +181,7 @@ impl DataSources {
             self.last_polled_pid = pid;
         }
         while let Ok(info) = self.monitor_rx.try_recv() {
-            if self.has_measure_sdk {
-                app.monitor_state_mut().update_disk(info.data_kb, info.cache_kb);
-                app.monitor_state_mut().debuggable = info.debuggable;
-            } else {
-                app.monitor_state_mut().push(info);
-            }
+            app.monitor_state_mut().push(info);
         }
 
         let current_pid = self.last_polled_pid;
@@ -205,14 +199,6 @@ impl DataSources {
             while let Ok(line) = handle.rx().try_recv() {
                 if let Some(entry) = network::parse_http_data(&line) {
                     app.network_state_mut().push(entry);
-                }
-                if self.has_measure_sdk {
-                    if let Some((cpu_pct, cores)) = monitor::parse_cpu_usage(&line) {
-                        app.monitor_state_mut().push_measure_cpu(cpu_pct, cores);
-                    }
-                    if let Some(mem) = monitor::parse_memory_usage(&line) {
-                        app.monitor_state_mut().push_measure_memory(mem);
-                    }
                 }
                 self.logcat_lines.push(line);
             }

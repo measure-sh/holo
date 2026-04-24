@@ -754,11 +754,11 @@ fn render_monitor_section(frame: &mut Frame, area: Rect, app: &mut App, monitor_
             let monitor_focused = is_focused(app, panel::MONITOR);
             let network_focused = is_focused(app, panel::NETWORK);
             let detected = app.measure_sdk_detected();
-            monitor_ui::render_monitor_panel(frame, cols[0], monitor_focused, app.monitor_state(), &app.network_state().traffic, app.network_state().traffic_baseline, detected, app.is_zoomed());
+            monitor_ui::render_monitor_panel(frame, cols[0], monitor_focused, app.monitor_state(), &app.network_state().traffic, app.network_state().traffic_baseline, app.is_zoomed());
             network_ui::render_network_panel(frame, cols[1], network_focused, app.network_state_mut(), detected);
         }
         (true, false) => {
-            monitor_ui::render_monitor_panel(frame, area, is_focused(app, panel::MONITOR), app.monitor_state(), &app.network_state().traffic, app.network_state().traffic_baseline, app.measure_sdk_detected(), app.is_zoomed());
+            monitor_ui::render_monitor_panel(frame, area, is_focused(app, panel::MONITOR), app.monitor_state(), &app.network_state().traffic, app.network_state().traffic_baseline, app.is_zoomed());
         }
         (false, true) => {
             let focused = is_focused(app, panel::NETWORK);

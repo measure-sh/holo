@@ -138,7 +138,6 @@ fn build_metrics(
     state: &MonitorState,
     traffic: &[TrafficSample],
     traffic_baseline: Option<(u64, u64)>,
-    measure_sdk: bool,
 ) -> Vec<Metric> {
     let t = theme::current();
     let mut metrics = Vec::new();
@@ -162,18 +161,12 @@ fn build_metrics(
         total_bytes: None,
     });
 
-    let (mem_name, mem_label_prefix, mem_samples) = if measure_sdk {
-        let s: Vec<u64> = state.history.iter().map(|m| m.total_pss_kb).collect();
-        ("PSS", "PSS", s)
-    } else {
-        let s: Vec<u64> = state.history.iter().map(|m| m.rss_kb).collect();
-        ("RSS", "RSS", s)
-    };
+    let mem_samples: Vec<u64> = state.history.iter().map(|m| m.rss_kb).collect();
     let mem_now = *mem_samples.last().unwrap_or(&0);
     let (mem_spark, mem_max) = range_shifted(&mem_samples);
     metrics.push(Metric {
-        name: mem_name,
-        label: format!(" {} {}  ", mem_label_prefix, format_mb(mem_now)),
+        name: "RSS",
+        label: format!(" RSS {}  ", format_mb(mem_now)),
         sparkline_data: mem_spark,
         sparkline_max: mem_max,
         values: mem_samples.iter().map(|&v| v as f64).collect(),
@@ -428,7 +421,6 @@ fn render_charts(
     state: &MonitorState,
     traffic: &[TrafficSample],
     traffic_baseline: Option<(u64, u64)>,
-    measure_sdk: bool,
     focused: bool,
     zoomed: bool,
 ) {
@@ -436,7 +428,7 @@ fn render_charts(
         return;
     }
 
-    let metrics = build_metrics(state, traffic, traffic_baseline, measure_sdk);
+    let metrics = build_metrics(state, traffic, traffic_baseline);
     if metrics.is_empty() {
         return;
     }
@@ -622,7 +614,6 @@ pub fn render_monitor_panel(
     state: &MonitorState,
     traffic: &[TrafficSample],
     traffic_baseline: Option<(u64, u64)>,
-    measure_sdk: bool,
     zoomed: bool,
 ) {
     let t = theme::current();
@@ -646,7 +637,7 @@ pub fn render_monitor_panel(
         return;
     }
 
-    render_charts(frame, inner, state, traffic, traffic_baseline, measure_sdk, focused, zoomed);
+    render_charts(frame, inner, state, traffic, traffic_baseline, focused, zoomed);
 }
 
 #[cfg(test)]
