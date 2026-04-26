@@ -49,9 +49,9 @@ the OS only lets us inject code into apps that opted in via
 
 There are three things at play:
 
-1. **The agent** — a ~50 KB native library (`agent/agent.cpp`, prebuilt under
-   `agent/prebuilt/{arm64-v8a,x86_64}/libholoagent.so`) that runs _inside_
-   the app process. It registers JVMTI callbacks for GC start and finish,
+1. **The agent** — a ~50 KB native library (`agent/agent.cpp`, cross-compiled
+   into the holo binary at build time — see below) that runs _inside_ the
+   app process. It registers JVMTI callbacks for GC start and finish,
    timestamps each pair, and puts a frame in a small ring buffer. A
    background pthread serves frames over an abstract Unix socket.
 
@@ -63,3 +63,27 @@ There are three things at play:
 3. **The host reader** — `src/vitals/reader.rs` reads length-prefixed
    binary frames off the TCP socket and turns them into `VitalsEvent::Gc`
    values, which `data.rs` forwards into the Monitor state for rendering.
+
+## How it's built and bundled
+
+`build.rs` cross-compiles `agent/agent.cpp` for both ABIs at `cargo build`
+time using the Android NDK's clang. The resulting `.so` files land in
+`OUT_DIR` and are embedded into the holo binary via `include_bytes!` (see
+`src/vitals/blobs.rs`). Nothing is committed to git — there is no
+`agent/prebuilt/`, and there is no separate build step for the agent.
+
+The build is gated on finding an NDK. `build.rs` probes
+`ANDROID_NDK_HOME`, `ANDROID_NDK_ROOT`, and `ANDROID_NDK_LATEST_HOME`, then
+falls back to `~/Library/Android/sdk/ndk/*` and `~/Android/Sdk/ndk/*`,
+picking the newest installed version. If no NDK is found, it writes
+zero-byte stubs and prints a `cargo:warning` — holo still builds, but
+`blobs::for_abi` returns `None` for every ABI, so GC marks won't appear at
+runtime. This keeps casual contributors who only touch the TUI from needing
+an NDK install.
+
+On CI, both `ci.yml` and `release.yml` install NDK r28 via
+`nttld/setup-ndk@v1` before `cargo build`, so PR checks and release
+artifacts always include a real agent. The link flags in `build.rs`
+(`-fno-exceptions`, `-fno-rtti`, the `-Wl,-z,*` page-size and segment
+flags) are load-bearing for 16KB-page support and ART's unwinder — read
+the comment in `build.rs` before changing them.
