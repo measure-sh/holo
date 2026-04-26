@@ -36,6 +36,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
