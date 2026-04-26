@@ -309,7 +309,7 @@ fn render_compact_list(frame: &mut Frame, area: Rect, metrics: &[Metric]) {
     }
     // Prefer a 1-line gap between rows; if height is too tight, drop the gap
     // so more metrics still fit.
-    let spaced_rows = ((area.height as usize + 1) / 2).min(metrics.len());
+    let spaced_rows = (area.height as usize).div_ceil(2).min(metrics.len());
     let (visible_rows, spacing) = if spaced_rows == metrics.len() {
         (metrics.len(), 1)
     } else {
