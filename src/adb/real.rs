@@ -70,13 +70,13 @@ impl Adb for RealAdb {
     }
 
     fn launch_app(&self, serial: &str, package: &str) -> Result<()> {
+        let component = resolve_launcher_component(serial, package)?;
         let output = Command::new("adb")
-            .args(["-s", serial, "shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1"])
+            .args(["-s", serial, "shell", "am", "start-activity", "-n", &component])
             .output()?;
-
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("adb monkey launch failed: {stderr}");
+            bail!("adb am start-activity failed: {stderr}");
         }
         Ok(())
     }
@@ -636,6 +636,90 @@ impl Adb for RealAdb {
             .unwrap_or(false)
     }
 
+    fn get_abi(&self, serial: &str) -> Result<String> {
+        let output = Command::new("adb")
+            .args(["-s", serial, "shell", "getprop", "ro.product.cpu.abi"])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("getprop ro.product.cpu.abi failed: {stderr}");
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    fn push_agent(&self, serial: &str, package: &str, bytes: &[u8]) -> Result<String> {
+        let mut local = std::env::temp_dir();
+        local.push(format!("holoagent-{}-{}.so", std::process::id(), package));
+        std::fs::write(&local, bytes)?;
+
+        let staged = "/data/local/tmp/libholoagent.so";
+        let push = Command::new("adb")
+            .args(["-s", serial, "push", local.to_string_lossy().as_ref(), staged])
+            .output()?;
+        let _ = std::fs::remove_file(&local);
+        if !push.status.success() {
+            let stderr = String::from_utf8_lossy(&push.stderr);
+            bail!("adb push agent failed: {stderr}");
+        }
+
+        // adb shell flattens its tail args with spaces, so the embedded sh
+        // command must be a single shell-safe string.
+        let inner = format!(
+            "run-as {package} sh -c 'cp /data/local/tmp/libholoagent.so ./libholoagent.so && chmod 700 ./libholoagent.so'"
+        );
+        let copy = Command::new("adb")
+            .args(["-s", serial, "shell", &inner])
+            .output()?;
+        if !copy.status.success() {
+            let stderr = String::from_utf8_lossy(&copy.stderr);
+            bail!("run-as cp failed: {stderr}");
+        }
+
+        Ok(format!("/data/data/{package}/libholoagent.so"))
+    }
+
+    fn attach_agent(&self, serial: &str, package: &str, so_path: &str) -> Result<()> {
+        let output = Command::new("adb")
+            .args([
+                "-s", serial, "shell",
+                "cmd", "activity", "attach-agent", package, so_path,
+            ])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("attach-agent failed: {stderr}");
+        }
+        Ok(())
+    }
+
+    fn forward_abstract(&self, serial: &str, abstract_name: &str) -> Result<u16> {
+        let remote = format!("localabstract:{abstract_name}");
+        let output = Command::new("adb")
+            .args(["-s", serial, "forward", "tcp:0", &remote])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb forward failed: {stderr}");
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        stdout
+            .trim()
+            .parse::<u16>()
+            .map_err(|_| color_eyre::eyre::eyre!("adb forward did not return a port: {stdout:?}"))
+    }
+
+    fn forward_remove(&self, serial: &str, local_port: u16) -> Result<()> {
+        let spec = format!("tcp:{local_port}");
+        let output = Command::new("adb")
+            .args(["-s", serial, "forward", "--remove", &spec])
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            bail!("adb forward --remove failed: {stderr}");
+        }
+        Ok(())
+    }
+
     fn get_show_taps(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "get", "system", "show_touches"])
@@ -784,6 +868,29 @@ impl Adb for RealAdb {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_netstats_for_uid(&stdout, uid))
     }
+}
+
+fn resolve_launcher_component(serial: &str, package: &str) -> Result<String> {
+    let output = Command::new("adb")
+        .args([
+            "-s", serial, "shell",
+            "cmd", "package", "resolve-activity", "--brief", package,
+        ])
+        .output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("resolve-activity failed: {stderr}");
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    parse_launcher_component(&stdout, package)
+        .ok_or_else(|| color_eyre::eyre::eyre!("could not resolve launcher activity for {package}"))
+}
+
+fn parse_launcher_component(output: &str, package: &str) -> Option<String> {
+    output.lines()
+        .map(str::trim)
+        .find(|l| l.starts_with(&format!("{package}/")))
+        .map(str::to_string)
 }
 
 fn dumpsys_package(serial: &str, package: &str) -> Option<String> {

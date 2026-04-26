@@ -31,6 +31,7 @@ mod toolbar;
 mod trace;
 mod trace_ui;
 mod ui;
+mod vitals;
 
 use std::sync::Arc;
 use std::time::Duration;

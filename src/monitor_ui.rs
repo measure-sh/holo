@@ -16,7 +16,9 @@ const BASELINE_BARS: symbols::bar::Set = symbols::bar::Set {
     ..symbols::bar::NINE_LEVELS
 };
 
-use crate::monitor::MonitorState;
+use std::time::Instant;
+
+use crate::monitor::{GcEvent, MonitorState};
 use crate::network::TrafficSample;
 use crate::panel;
 use crate::theme;
@@ -111,6 +113,34 @@ struct Metric {
     /// Cumulative bytes transferred since holo started watching. Only set
     /// for network rx/tx; None for CPU/mem/disk.
     total_bytes: Option<u64>,
+    /// Seconds-ago for each event to overlay on the sparkline (rightmost = now).
+    /// Empty for metrics without overlays.
+    tick_secs_ago: Vec<u32>,
+}
+
+fn gc_secs_ago(events: &[GcEvent]) -> Vec<u32> {
+    gc_secs_ago_at(Instant::now(), events)
+}
+
+fn gc_secs_ago_at(now: Instant, events: &[GcEvent]) -> Vec<u32> {
+    events
+        .iter()
+        .map(|e| now.saturating_duration_since(e.received_at).as_secs() as u32)
+        .collect()
+}
+
+/// Build the tick-overlay row: `width` cells wide with `◆` placed at columns
+/// matching each `secs_ago` value (rightmost column = "now"). Anything older
+/// than `width` seconds is clipped off the left.
+fn build_tick_row(width: usize, secs_ago: &[u32]) -> String {
+    let mut row = vec![' '; width];
+    for &secs in secs_ago {
+        if (secs as usize) < width {
+            let col = width - 1 - secs as usize;
+            row[col] = '◆';
+        }
+    }
+    row.into_iter().collect()
 }
 
 fn format_scale(value: f64, scale: MetricScale) -> String {
@@ -156,6 +186,7 @@ fn build_metrics(
         color: t.spark_cpu,
         scale: MetricScale::Percent,
         total_bytes: None,
+        tick_secs_ago: Vec::new(),
     });
 
     let mem_samples: Vec<u64> = state.history.iter().map(|m| m.rss_kb).collect();
@@ -170,6 +201,7 @@ fn build_metrics(
         color: t.spark_mem,
         scale: MetricScale::MemKb,
         total_bytes: None,
+        tick_secs_ago: gc_secs_ago(&state.gc_events),
     });
 
     let disk_samples: Vec<u64> = state.history.iter().map(|m| m.data_kb).collect();
@@ -184,6 +216,7 @@ fn build_metrics(
         color: t.spark_disk,
         scale: MetricScale::DiskKb,
         total_bytes: None,
+        tick_secs_ago: Vec::new(),
     });
 
     if !traffic.is_empty() {
@@ -213,6 +246,7 @@ fn build_metrics(
             color: t.spark_rx,
             scale: MetricScale::RateBps,
             total_bytes: Some(rx_total),
+            tick_secs_ago: Vec::new(),
         });
         metrics.push(Metric {
             name: "↑",
@@ -223,6 +257,7 @@ fn build_metrics(
             color: t.spark_tx,
             scale: MetricScale::RateBps,
             total_bytes: Some(tx_total),
+            tick_secs_ago: Vec::new(),
         });
     }
 
@@ -253,6 +288,19 @@ fn sparkline_row(frame: &mut Frame, area: Rect, metric: &Metric, label_width: u1
         spark = spark.max(metric.sparkline_max);
     }
     frame.render_widget(spark, chunks[1]);
+}
+
+/// Render '◆' marks above a sparkline area at columns matching seconds-ago,
+/// where the rightmost column represents "now."
+fn render_ticks(frame: &mut Frame, area: Rect, ticks: &[u32], color: Color) {
+    if area.width == 0 || area.height == 0 || ticks.is_empty() {
+        return;
+    }
+    let line = build_tick_row(area.width as usize, ticks);
+    frame.render_widget(
+        Paragraph::new(Line::styled(line, Style::new().fg(color))),
+        area,
+    );
 }
 
 fn render_compact_list(frame: &mut Frame, area: Rect, metrics: &[Metric]) {
@@ -286,7 +334,7 @@ fn render_metric_detail(frame: &mut Frame, area: Rect, metric: &Metric, focused:
     render_pane_chip(frame, chip_area, metric.name, focused, false);
 
     let (current, min, max, avg) = stats(metric);
-    let stats_line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(format_scale(current, metric.scale), Style::new().fg(metric.color).add_modifier(Modifier::BOLD)),
         Span::styled(
             format!("  min {}", format_scale(min, metric.scale)),
@@ -300,14 +348,57 @@ fn render_metric_detail(frame: &mut Frame, area: Rect, metric: &Metric, focused:
             format!("  avg {}", format_scale(avg, metric.scale)),
             Style::new().fg(t.muted),
         ),
-    ])
-    .alignment(Alignment::Right);
+    ];
+    if !metric.tick_secs_ago.is_empty() {
+        spans.push(Span::styled(
+            format!("  ◆ {} GC", metric.tick_secs_ago.len()),
+            Style::new().fg(metric.color),
+        ));
+    }
+    let stats_line = Line::from(spans).alignment(Alignment::Right);
     frame.render_widget(stats_line, chip_area);
 
     if body.height < 3 || body.width < 8 {
         return;
     }
-    render_chart(frame, body, metric, min, max);
+    let chart_area = if metric.tick_secs_ago.is_empty() || body.height < 5 {
+        body
+    } else {
+        let split = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).split(body);
+        // Y-axis labels eat the leftmost columns of the chart; offset the tick
+        // row by the same width so '◆' marks line up with sample columns.
+        let y_label_pad = chart_y_label_width(metric, min, max);
+        let tick_area = Rect {
+            x: split[0].x + y_label_pad,
+            y: split[0].y,
+            width: split[0].width.saturating_sub(y_label_pad),
+            height: 1,
+        };
+        render_ticks(frame, tick_area, &metric.tick_secs_ago, metric.color);
+        split[1]
+    };
+    render_chart(frame, chart_area, metric, min, max);
+}
+
+/// Width reserved for y-axis labels in the chart (max label string length + 1
+/// for spacing). Matches what ratatui's Chart computes from the labels we feed
+/// it in render_chart.
+fn chart_y_label_width(metric: &Metric, min: f64, max: f64) -> u16 {
+    let (y_lo, y_hi) = match metric.scale {
+        MetricScale::Percent => (0.0, 100.0),
+        _ => {
+            let span = (max - min).max(1.0);
+            let pad = span * 0.1;
+            ((min - pad).max(0.0), max + pad)
+        }
+    };
+    let y_mid = (y_lo + y_hi) / 2.0;
+    [y_lo, y_mid, y_hi]
+        .iter()
+        .map(|v| format_scale(*v, metric.scale).chars().count() as u16)
+        .max()
+        .unwrap_or(0)
+        + 1
 }
 
 /// Current/min/max/avg over the metric's values. For MemKb/DiskKb, zero
@@ -645,5 +736,54 @@ mod tests {
     #[test]
     fn format_mb_large() {
         assert_eq!(format_mb(128000), "125 MB");
+    }
+
+    use std::time::{Duration, Instant};
+
+    fn ev(received_at: Instant) -> GcEvent {
+        GcEvent { received_at, duration_us: 0 }
+    }
+
+    #[test]
+    fn gc_secs_ago_buckets_by_seconds() {
+        let now = Instant::now();
+        let events = [
+            ev(now),
+            ev(now - Duration::from_millis(1500)),
+            ev(now - Duration::from_secs(30)),
+        ];
+        assert_eq!(gc_secs_ago_at(now, &events), vec![0, 1, 30]);
+    }
+
+    #[test]
+    fn gc_secs_ago_handles_future_event_without_panic() {
+        // Event timestamp in the "future" relative to `now` should saturate
+        // to 0, not underflow.
+        let now = Instant::now();
+        let events = [ev(now + Duration::from_secs(5))];
+        assert_eq!(gc_secs_ago_at(now, &events), vec![0]);
+    }
+
+    #[test]
+    fn tick_row_places_marks_from_the_right() {
+        // width=10, ticks at 0/3/9 secs ago → cols 9, 6, 0.
+        assert_eq!(build_tick_row(10, &[0, 3, 9]), "◆     ◆  ◆");
+    }
+
+    #[test]
+    fn tick_row_drops_ticks_older_than_width() {
+        // width=5, tick at 7 secs ago → off the left edge, ignored.
+        assert_eq!(build_tick_row(5, &[7]), "     ");
+    }
+
+    #[test]
+    fn tick_row_collapses_duplicate_columns() {
+        // Two ticks at the same second yield one '◆' at the same column.
+        assert_eq!(build_tick_row(4, &[1, 1]), "  ◆ ");
+    }
+
+    #[test]
+    fn tick_row_empty_ticks_is_blank() {
+        assert_eq!(build_tick_row(6, &[]), "      ");
     }
 }

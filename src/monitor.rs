@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -31,8 +31,16 @@ pub enum Trend {
     Stable,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct GcEvent {
+    pub received_at: Instant,
+    #[allow(dead_code)]
+    pub duration_us: u32,
+}
+
 pub struct MonitorState {
     pub history: Vec<MonitorSample>,
+    pub gc_events: Vec<GcEvent>,
     pub debuggable: bool,
 }
 
@@ -48,6 +56,7 @@ impl MonitorState {
     pub fn new() -> Self {
         Self {
             history: Vec::new(),
+            gc_events: Vec::new(),
             debuggable: true,
         }
     }
@@ -58,6 +67,22 @@ impl MonitorState {
         if self.history.len() > MAX_SAMPLES {
             self.history.remove(0);
         }
+        self.evict_old_gc_events_at(Instant::now());
+    }
+
+    pub fn push_gc(&mut self, duration_us: u32) {
+        self.gc_events.push(GcEvent {
+            received_at: Instant::now(),
+            duration_us,
+        });
+        self.evict_old_gc_events_at(Instant::now());
+    }
+
+    fn evict_old_gc_events_at(&mut self, now: Instant) {
+        let cutoff = now
+            .checked_sub(Duration::from_secs(MAX_SAMPLES as u64))
+            .unwrap_or(now);
+        self.gc_events.retain(|e| e.received_at >= cutoff);
     }
 
     #[allow(dead_code)]
@@ -237,4 +262,57 @@ mod tests {
         assert!(matches!(action, Some(Action::Unfocus)));
     }
 
+    #[test]
+    fn push_gc_records_event() {
+        let mut state = MonitorState::new();
+        state.push_gc(1234);
+        assert_eq!(state.gc_events.len(), 1);
+        assert_eq!(state.gc_events[0].duration_us, 1234);
+    }
+
+    #[test]
+    fn evict_drops_events_older_than_window() {
+        let mut state = MonitorState::new();
+        let now = Instant::now();
+        state.gc_events = vec![
+            GcEvent {
+                received_at: now - Duration::from_secs(MAX_SAMPLES as u64 + 5),
+                duration_us: 1,
+            },
+            GcEvent {
+                received_at: now - Duration::from_secs(MAX_SAMPLES as u64 - 5),
+                duration_us: 2,
+            },
+            GcEvent { received_at: now, duration_us: 3 },
+        ];
+
+        state.evict_old_gc_events_at(now);
+
+        let durations: Vec<u32> = state.gc_events.iter().map(|e| e.duration_us).collect();
+        assert_eq!(durations, vec![2, 3]);
+    }
+
+    #[test]
+    fn evict_keeps_events_at_exact_cutoff() {
+        let mut state = MonitorState::new();
+        let now = Instant::now();
+        state.gc_events = vec![GcEvent {
+            received_at: now - Duration::from_secs(MAX_SAMPLES as u64),
+            duration_us: 99,
+        }];
+
+        state.evict_old_gc_events_at(now);
+        assert_eq!(state.gc_events.len(), 1);
+    }
+
+    #[test]
+    fn push_sample_evicts_stale_gc_events() {
+        let mut state = MonitorState::new();
+        state.gc_events.push(GcEvent {
+            received_at: Instant::now() - Duration::from_secs(MAX_SAMPLES as u64 + 10),
+            duration_us: 5,
+        });
+        state.push(MonitorSample::default());
+        assert!(state.gc_events.is_empty());
+    }
 }

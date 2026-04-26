@@ -16,6 +16,7 @@ use crate::network;
 use crate::permissions;
 use crate::processes;
 use crate::trace;
+use crate::vitals::{VitalsHandle, VitalsEvent};
 
 const MAX_LOGCAT_LINES: usize = 1000;
 
@@ -26,6 +27,7 @@ fn try_poll<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
 }
 
 pub struct DataSources {
+    adb: Arc<dyn Adb>,
     battery_rx: mpsc::Receiver<u8>,
     pub battery_level: Option<u8>,
 
@@ -35,6 +37,10 @@ pub struct DataSources {
     logcat_handle: Option<logcat::LogcatHandle>,
     pub logcat_lines: Vec<String>,
     pub monitored_pid: Option<u32>,
+
+    vitals_handle: Option<VitalsHandle>,
+    vitals_package: String,
+    vitals_debuggable: bool,
 
     db_detect_rx: Option<mpsc::Receiver<Result<Vec<String>, String>>>,
     db_query_rx: Option<mpsc::Receiver<Result<String, String>>>,
@@ -89,12 +95,14 @@ impl DataSources {
         let app_version = adb.get_app_version(serial, package).ok();
         let has_measure_sdk = adb.has_measure_sdk(serial, package);
         let monitor_visibility = Arc::new(AtomicU8::new(monitor::visibility_mask(panel_vis)));
+        let vitals_debuggable = adb.is_debuggable(serial, package);
         let traffic_rx = Some(network::spawn_traffic_poller(
             adb.clone(),
             serial.to_string(),
             package.to_string(),
         ));
         Self {
+            adb: adb.clone(),
             battery_rx: battery::spawn_poller(adb.clone(), serial.to_string()),
             battery_level: None,
             procs_rx: processes::spawn_poller(adb.clone(), serial.to_string(), package.to_string()),
@@ -102,6 +110,9 @@ impl DataSources {
             logcat_handle: None,
             logcat_lines: Vec::new(),
             monitored_pid: None,
+            vitals_handle: None,
+            vitals_package: package.to_string(),
+            vitals_debuggable,
             db_detect_rx: Some(database::spawn_db_detector(
                 adb.clone(),
                 serial.to_string(),
@@ -187,10 +198,30 @@ impl DataSources {
         let current_pid = self.last_polled_pid;
         if current_pid != self.monitored_pid {
             self.logcat_handle = None;
+            self.vitals_handle = None;
             self.monitored_pid = None;
             if let Some(pid) = current_pid {
                 self.logcat_handle = logcat::LogcatHandle::spawn(serial, pid);
                 self.monitored_pid = Some(pid);
+                if self.vitals_debuggable {
+                    self.vitals_handle = VitalsHandle::spawn(
+                        self.adb.clone(),
+                        serial.to_string(),
+                        self.vitals_package.clone(),
+                        pid,
+                    )
+                    .ok();
+                }
+            }
+        }
+
+        if let Some(handle) = &self.vitals_handle {
+            while let Ok(event) = handle.rx.try_recv() {
+                match event {
+                    VitalsEvent::Gc { duration_us, .. } => {
+                        app.monitor_state_mut().push_gc(duration_us);
+                    }
+                }
             }
         }
 

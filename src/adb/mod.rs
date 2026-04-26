@@ -73,6 +73,11 @@ pub trait Adb: Send + Sync {
     fn get_avd_name(&self, serial: &str) -> Result<String>;
     fn get_state(&self, serial: &str) -> Result<String>;
     fn is_debuggable(&self, serial: &str, package: &str) -> bool;
+    fn get_abi(&self, serial: &str) -> Result<String>;
+    fn push_agent(&self, serial: &str, package: &str, bytes: &[u8]) -> Result<String>;
+    fn attach_agent(&self, serial: &str, package: &str, so_path: &str) -> Result<()>;
+    fn forward_abstract(&self, serial: &str, abstract_name: &str) -> Result<u16>;
+    fn forward_remove(&self, serial: &str, local_port: u16) -> Result<()>;
     fn get_show_taps(&self, serial: &str) -> Result<bool>;
     fn set_show_taps(&self, serial: &str, enabled: bool) -> Result<()>;
     fn get_pointer_location(&self, serial: &str) -> Result<bool>;
