@@ -50,12 +50,13 @@ $ holo
 
 - **Logcat** — filter by tag, search text, or log level. Scroll back through history or tail live.
 - **SQLite databases** — open any app database and run SQL queries right in the TUI. Browse results or pull the whole db to your machine.
-- **Memory and CPU stats** — live CPU, memory, and disk usage with sparkline graphs. Spot leaks at a glance.
+- **Monitor** — live CPU, memory, disk, and network throughput with sparkline graphs. GC pauses stream in too via a runtime-attached JVMTI agent.
+- **Network requests** — for apps integrated with the Measure SDK, every OkHttp request shows up live with URL, method, status, timing, headers, and bodies in a split detail view.
 - **Perfetto traces** — start and stop system traces from the TUI. Open them in ui.perfetto.dev with one keystroke.
 - **File browser** — navigate your app's data directory as a tree. Pull any file to your machine with a single key.
 - **Crashes and ANRs** — see crash stack traces and ANR reasons as they happen.
 - **Permission management** — grant and revoke runtime permissions.
-- **Quick commands** — open, kill, uninstall, screenshot, toggle dark mode, layout bounds, show taps, and more.
+- **Quick commands** — open, kill, uninstall, app info, screenshot, toggle dark mode, layout bounds, show taps, and more.
 - **Device mirroring** via scrcpy.
 - **Wireless ADB** setup.
 - **Keyboard-driven** with vim-style navigation.
