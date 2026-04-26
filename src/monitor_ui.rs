@@ -130,13 +130,26 @@ fn gc_secs_ago_at(now: Instant, events: &[GcEvent]) -> Vec<u32> {
 }
 
 /// Build the tick-overlay row: `width` cells wide with `◆` placed at columns
-/// matching each `secs_ago` value (rightmost column = "now"). Anything older
-/// than `width` seconds is clipped off the left.
-fn build_tick_row(width: usize, secs_ago: &[u32]) -> String {
+/// proportional to each `secs_ago` value, matching how ratatui's Chart
+/// distributes sample indices `[0, window]` across `[0, width-1]`. The
+/// rightmost column is "now"; ticks older than `window` are dropped.
+///
+/// `window` is the visible time span in seconds, equal to `len(samples) - 1`
+/// at the current 1 Hz cadence. The naive 1-col-per-sec mapping only happens
+/// to align when `width == window`; otherwise marks drift.
+fn build_tick_row(width: usize, window: f64, secs_ago: &[u32]) -> String {
     let mut row = vec![' '; width];
+    if width == 0 || window <= 0.0 {
+        return row.into_iter().collect();
+    }
+    let last = (width - 1) as f64;
     for &secs in secs_ago {
-        if (secs as usize) < width {
-            let col = width - 1 - secs as usize;
+        let secs = secs as f64;
+        if secs > window {
+            continue;
+        }
+        let col = ((1.0 - secs / window) * last).round() as usize;
+        if col < width {
             row[col] = '◆';
         }
     }
@@ -290,13 +303,15 @@ fn sparkline_row(frame: &mut Frame, area: Rect, metric: &Metric, label_width: u1
     frame.render_widget(spark, chunks[1]);
 }
 
-/// Render '◆' marks above a sparkline area at columns matching seconds-ago,
-/// where the rightmost column represents "now."
-fn render_ticks(frame: &mut Frame, area: Rect, ticks: &[u32], color: Color) {
+/// Render '◆' marks above a chart body at columns matching each tick's
+/// position on the chart's x-axis (rightmost = "now"). `window` is the
+/// visible time span in seconds, used to scale tick positions to match the
+/// chart.
+fn render_ticks(frame: &mut Frame, area: Rect, ticks: &[u32], window: f64, color: Color) {
     if area.width == 0 || area.height == 0 || ticks.is_empty() {
         return;
     }
-    let line = build_tick_row(area.width as usize, ticks);
+    let line = build_tick_row(area.width as usize, window, ticks);
     frame.render_widget(
         Paragraph::new(Line::styled(line, Style::new().fg(color))),
         area,
@@ -374,7 +389,8 @@ fn render_metric_detail(frame: &mut Frame, area: Rect, metric: &Metric, focused:
             width: split[0].width.saturating_sub(y_label_pad),
             height: 1,
         };
-        render_ticks(frame, tick_area, &metric.tick_secs_ago, metric.color);
+        let window = metric.values.len().saturating_sub(1) as f64;
+        render_ticks(frame, tick_area, &metric.tick_secs_ago, window, metric.color);
         split[1]
     };
     render_chart(frame, chart_area, metric, min, max);
@@ -766,24 +782,55 @@ mod tests {
 
     #[test]
     fn tick_row_places_marks_from_the_right() {
-        // width=10, ticks at 0/3/9 secs ago → cols 9, 6, 0.
-        assert_eq!(build_tick_row(10, &[0, 3, 9]), "◆     ◆  ◆");
+        // width=10, window=9, ticks at 0/3/9 secs ago → cols 9, 6, 0.
+        assert_eq!(build_tick_row(10, 9.0, &[0, 3, 9]), "◆     ◆  ◆");
     }
 
     #[test]
-    fn tick_row_drops_ticks_older_than_width() {
-        // width=5, tick at 7 secs ago → off the left edge, ignored.
-        assert_eq!(build_tick_row(5, &[7]), "     ");
+    fn tick_row_drops_ticks_older_than_window() {
+        // window=4 (5 samples at 1 Hz), tick at 7s ago → outside window.
+        assert_eq!(build_tick_row(5, 4.0, &[7]), "     ");
     }
 
     #[test]
     fn tick_row_collapses_duplicate_columns() {
         // Two ticks at the same second yield one '◆' at the same column.
-        assert_eq!(build_tick_row(4, &[1, 1]), "  ◆ ");
+        assert_eq!(build_tick_row(4, 3.0, &[1, 1]), "  ◆ ");
     }
 
     #[test]
     fn tick_row_empty_ticks_is_blank() {
-        assert_eq!(build_tick_row(6, &[]), "      ");
+        assert_eq!(build_tick_row(6, 5.0, &[]), "      ");
+    }
+
+    #[test]
+    fn tick_row_aligns_with_chart_when_width_lt_samples() {
+        // Regression for the case the old `width - 1 - secs` formula got
+        // wrong: with 120 samples (window=119) and a chart body of 91
+        // cells, ratatui's Chart places sample index 59 at column ~45.
+        // The tick for "60s ago" must land on the same column.
+        let row = build_tick_row(91, 119.0, &[60]);
+        let cols: Vec<usize> = row
+            .chars()
+            .enumerate()
+            .filter(|(_, c)| *c == '◆')
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(cols, vec![45]);
+    }
+
+    #[test]
+    fn tick_row_aligns_with_chart_when_width_gt_samples() {
+        // Other direction: chart wider than the sample count. With 120
+        // samples (window=119) and a 200-cell body, sample index 59 sits
+        // at column round(59/119 * 199) = 99; the 60s-ago tick must too.
+        let row = build_tick_row(200, 119.0, &[60]);
+        let cols: Vec<usize> = row
+            .chars()
+            .enumerate()
+            .filter(|(_, c)| *c == '◆')
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(cols, vec![99]);
     }
 }
