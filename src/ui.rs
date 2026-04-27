@@ -610,10 +610,25 @@ fn render_panels(frame: &mut Frame, area: Rect, app: &mut App, logcat_lines: &[S
     if mid_visible { weights.push(15); }
     if bot_visible { weights.push(20); }
     let total: u32 = weights.iter().sum();
-    let constraints: Vec<Constraint> = weights
-        .iter()
-        .map(|&w| Constraint::Ratio(w, total))
-        .collect();
+
+    let constraints: Vec<Constraint> = if weights.len() == 1 {
+        vec![Constraint::Fill(1)]
+    } else if top_visible {
+        // Cap the top (logcat) row at 50% of the area; the remaining
+        // sections share the leftover space via Fill weights so freed
+        // space flows downward instead of inflating logcat.
+        let cap = area.height / 2;
+        let natural = (area.height as u32 * 45 / total) as u16;
+        let top_h = natural.min(cap);
+        let mut cs: Vec<Constraint> = Vec::with_capacity(weights.len());
+        cs.push(Constraint::Length(top_h));
+        for &w in &weights[1..] {
+            cs.push(Constraint::Fill(w as u16));
+        }
+        cs
+    } else {
+        weights.iter().map(|&w| Constraint::Ratio(w, total)).collect()
+    };
 
     let rows = Layout::default()
         .direction(Direction::Vertical)
