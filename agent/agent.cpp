@@ -6,9 +6,8 @@
 //
 // Event kinds:
 //   0x01 GC pause      payload: [i64 ts_ns][u32 duration_us]              (12 bytes)
-//   0x02 MemorySample  payload: [i64 ts_ns][u32 rss_kb]                   (12 bytes — RSS-only fallback)
-//                      or:      [i64 ts_ns][u32 rss_kb]
-//                               [u32 java_heap_kb][u32 native_heap_kb]    (20 bytes — JNI attached)
+//   0x02 MemorySample  payload: [i64 ts_ns][u32 rss_kb]
+//                               [u32 java_heap_kb][u32 native_heap_kb]    (20 bytes)
 //                      future fields append more u32s; readers use
 //                      payload_len to know what's present.
 //
@@ -46,10 +45,7 @@ constexpr uint8_t KIND_GC = 0x01;
 constexpr uint8_t KIND_MEMORY = 0x02;
 
 // `value` carries the kind-specific u32: GC duration_us, or RSS in KB.
-// `java_heap_kb` and `native_heap_kb` are populated for memory events only,
-// when JNI attach succeeded. The sentinel `UINT32_MAX` means "not collected"
-// — `send_event` falls back to the 12-byte payload in that case so older
-// hosts (and bring-up before JNI is wired) keep working.
+// `java_heap_kb` and `native_heap_kb` are unused for GC events.
 struct Event {
     uint8_t kind;
     int64_t ts_ns;
@@ -106,7 +102,7 @@ void JNICALL OnGCFinish(jvmtiEnv*) {
     int64_t start = g_gc_start_ns;
     if (start == 0) return;
     int64_t end = now_ns();
-    Event e{KIND_GC, end, (uint32_t)((end - start) / 1000), UINT32_MAX, UINT32_MAX};
+    Event e{KIND_GC, end, (uint32_t)((end - start) / 1000), 0, 0};
     enqueue(e);
 }
 
@@ -210,21 +206,16 @@ void read_jni_heap(JniHeap* h, uint32_t* java_kb, uint32_t* native_kb) {
 void* sampler_loop(void* arg) {
     JavaVM* vm = (JavaVM*)arg;
     JniHeap heap;
-    bool jni_ok = init_jni_heap(vm, &heap);
-    if (!jni_ok) {
-        LOGI("sampler running RSS-only (no JNI heap fields)");
+    if (!init_jni_heap(vm, &heap)) {
+        LOGE("sampler stopping: JNI heap setup failed");
+        return nullptr;
     }
     for (;;) {
         Event e;
         e.kind = KIND_MEMORY;
         e.ts_ns = now_ns();
         e.value = read_rss_kb();
-        if (jni_ok) {
-            read_jni_heap(&heap, &e.java_heap_kb, &e.native_heap_kb);
-        } else {
-            e.java_heap_kb = UINT32_MAX;
-            e.native_heap_kb = UINT32_MAX;
-        }
+        read_jni_heap(&heap, &e.java_heap_kb, &e.native_heap_kb);
         enqueue(e);
         ::usleep(1000 * 1000);
     }
@@ -253,12 +244,10 @@ bool send_all(int fd, const uint8_t* buf, size_t n) {
 }
 
 bool send_event(int fd, const Event& e) {
-    // GC: [u8 kind][u32 len=12][i64 ts_ns][u32 duration_us]
-    // Memory (RSS only): [u8 kind][u32 len=12][i64 ts_ns][u32 rss_kb]
-    // Memory + heap:     [u8 kind][u32 len=20][i64 ts_ns][u32 rss_kb]
-    //                    [u32 java_heap_kb][u32 native_heap_kb]
-    bool has_heap = (e.kind == KIND_MEMORY) && (e.java_heap_kb != UINT32_MAX);
-    if (has_heap) {
+    // GC:     [u8 kind][u32 len=12][i64 ts_ns][u32 duration_us]
+    // Memory: [u8 kind][u32 len=20][i64 ts_ns][u32 rss_kb]
+    //                  [u32 java_heap_kb][u32 native_heap_kb]
+    if (e.kind == KIND_MEMORY) {
         uint8_t buf[1 + 4 + 20];
         buf[0] = e.kind;
         put_be32(buf + 1, 20);

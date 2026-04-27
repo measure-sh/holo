@@ -45,16 +45,15 @@ pub struct GcEvent {
 }
 
 /// Memory snapshot emitted by the agent at ~1 Hz. `ts_ns` is the agent's
-/// `CLOCK_MONOTONIC` timestamp; `java_heap_kb` and `native_heap_kb` are
-/// reserved for forward-compatible agent extensions.
+/// `CLOCK_MONOTONIC` timestamp; `java_heap_kb` is `Runtime.totalMemory() -
+/// freeMemory()` and `native_heap_kb` is `Debug.getNativeHeapAllocatedSize()`,
+/// both read on the sampler's JNI-attached thread.
 #[derive(Debug, Clone, Copy)]
 pub struct MemorySample {
     pub ts_ns: i64,
     pub rss_kb: u64,
-    #[allow(dead_code)]
-    pub java_heap_kb: Option<u64>,
-    #[allow(dead_code)]
-    pub native_heap_kb: Option<u64>,
+    pub java_heap_kb: u64,
+    pub native_heap_kb: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,8 +151,8 @@ impl MonitorState {
         &mut self,
         ts_ns: i64,
         rss_kb: u64,
-        java_heap_kb: Option<u64>,
-        native_heap_kb: Option<u64>,
+        java_heap_kb: u64,
+        native_heap_kb: u64,
     ) {
         self.memory_history.push(MemorySample {
             ts_ns,
@@ -406,7 +405,7 @@ mod tests {
     fn push_memory_records_sample_and_caps() {
         let mut state = MonitorState::new();
         for i in 0..(MAX_SAMPLES as i64 + 5) {
-            state.push_memory(i * NS_PER_SEC, (1000 + i) as u64, None, None);
+            state.push_memory(i * NS_PER_SEC, (1000 + i) as u64, 0, 0);
         }
         assert_eq!(state.memory_history.len(), MAX_SAMPLES);
         assert_eq!(
@@ -420,7 +419,7 @@ mod tests {
         let mut state = MonitorState::new();
         // GC event from "the distant past" relative to a fresh memory sample.
         state.gc_events.push(GcEvent { ts_ns: 0, duration_us: 5 });
-        state.push_memory(RETENTION_NS + NS_PER_SEC, 100, None, None);
+        state.push_memory(RETENTION_NS + NS_PER_SEC, 100, 0, 0);
         assert!(state.gc_events.is_empty());
     }
 
@@ -429,7 +428,7 @@ mod tests {
         let mut state = MonitorState::new();
         let now = 500 * NS_PER_SEC;
         state.gc_events.push(GcEvent { ts_ns: now - NS_PER_SEC, duration_us: 5 });
-        state.push_memory(now, 100, None, None);
+        state.push_memory(now, 100, 0, 0);
         assert_eq!(state.gc_events.len(), 1);
     }
 
@@ -446,10 +445,10 @@ mod tests {
     fn latest_agent_ts_ns_picks_freshest_across_streams() {
         let mut state = MonitorState::new();
         assert_eq!(state.latest_agent_ts_ns(), None);
-        state.push_memory(100, 1, None, None);
+        state.push_memory(100, 1, 0, 0);
         state.push_gc(200, 1);
         assert_eq!(state.latest_agent_ts_ns(), Some(200));
-        state.push_memory(300, 2, None, None);
+        state.push_memory(300, 2, 0, 0);
         assert_eq!(state.latest_agent_ts_ns(), Some(300));
     }
 }

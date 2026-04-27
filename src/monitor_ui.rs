@@ -201,27 +201,9 @@ fn build_metrics(
         window_secs: cpu_window,
     });
 
-    // Prefer Java heap for the headline memory metric — it actually moves on
-    // GC, where RSS barely budges. Fall back to RSS when an older agent is
-    // attached (no java_heap_kb in its 0x02 payload).
-    let has_java = state.memory_history.iter().any(|s| s.java_heap_kb.is_some());
-    let (mem_name, mem_label_prefix, mem_samples): (&'static str, &'static str, Vec<u64>) = if has_java {
-        (
-            "Java",
-            "Java",
-            state
-                .memory_history
-                .iter()
-                .map(|s| s.java_heap_kb.unwrap_or(0))
-                .collect(),
-        )
-    } else {
-        (
-            "RSS",
-            "RSS",
-            state.memory_history.iter().map(|s| s.rss_kb).collect(),
-        )
-    };
+    // Java heap is the headline memory metric — it moves on GC, where RSS
+    // barely budges. Native + RSS overlay in the detail view.
+    let mem_samples: Vec<u64> = state.memory_history.iter().map(|s| s.java_heap_kb).collect();
     let mem_now = *mem_samples.last().unwrap_or(&0);
     let (mem_spark, mem_max) = range_shifted(&mem_samples);
     // Anchor "now" on the freshest agent timestamp across both streams. Both
@@ -235,8 +217,8 @@ fn build_metrics(
         .collect();
     let mem_window_secs = mem_secs_ago.first().copied().unwrap_or(0.0);
     metrics.push(Metric {
-        name: mem_name,
-        label: format!(" {} {}  ", mem_label_prefix, format_mb(mem_now)),
+        name: "Java",
+        label: format!(" Java {}  ", format_mb(mem_now)),
         sparkline_data: mem_spark,
         sparkline_max: mem_max,
         values: mem_samples.iter().map(|&v| v as f64).collect(),
@@ -392,12 +374,12 @@ fn collect_memory_series(state: &MonitorState) -> Vec<MemorySeries> {
     let java: Vec<f64> = state
         .memory_history
         .iter()
-        .map(|s| s.java_heap_kb.unwrap_or(0) as f64)
+        .map(|s| s.java_heap_kb as f64)
         .collect();
     let native: Vec<f64> = state
         .memory_history
         .iter()
-        .map(|s| s.native_heap_kb.unwrap_or(0) as f64)
+        .map(|s| s.native_heap_kb as f64)
         .collect();
     let rss: Vec<f64> = state.memory_history.iter().map(|s| s.rss_kb as f64).collect();
     let last = |v: &[f64]| v.last().copied().unwrap_or(0.0).round() as u64;
@@ -850,23 +832,15 @@ pub fn render_monitor_panel(
     if inner.width == 0 || inner.height == 0 {
         return;
     }
-    let metrics = build_metrics(state, traffic, traffic_baseline);
-    // Memory view gets a dedicated multi-series renderer when the agent has
-    // emitted Java heap data. Old agents (RSS only) fall through to the
-    // generic single-line detail below.
-    let java_path = matches!(state.view, MonitorView::Memory)
-        && state
-            .memory_history
-            .iter()
-            .any(|s| s.java_heap_kb.is_some());
-    if java_path {
+    if matches!(state.view, MonitorView::Memory) {
         render_memory_detail(frame, inner, state, focused);
         return;
     }
+    let metrics = build_metrics(state, traffic, traffic_baseline);
     let detail = match state.view {
         MonitorView::All => None,
         MonitorView::Cpu => Some(0),
-        MonitorView::Memory => Some(1),
+        MonitorView::Memory => unreachable!(),
         MonitorView::Disk => Some(2),
         MonitorView::Download => Some(3),
         MonitorView::Upload => Some(4),
@@ -979,13 +953,13 @@ mod tests {
         // shares the ts_ns of the middle memory sample. The GC tick column
         // must equal the column where that sample is plotted on the chart.
         let mut state = MonitorState::new();
-        state.push_memory(0, 100, None, None);
-        state.push_memory(1_500_000_000, 110, None, None); // 1.5 s in
-        state.push_memory(5_000_000_000, 120, None, None); // 5.0 s in
+        state.push_memory(0, 100, 50, 10);
+        state.push_memory(1_500_000_000, 110, 55, 11); // 1.5 s in
+        state.push_memory(5_000_000_000, 120, 60, 12); // 5.0 s in
         state.push_gc(1_500_000_000, 42);
 
         let metrics = build_metrics(&state, &[], None);
-        let mem = metrics.iter().find(|m| m.name == "RSS").unwrap();
+        let mem = metrics.iter().find(|m| m.name == "Java").unwrap();
 
         // window_secs is the spread of the memory samples (5 s).
         assert!((mem.window_secs - 5.0).abs() < 1e-9);
@@ -1006,30 +980,16 @@ mod tests {
     }
 
     #[test]
-    fn memory_metric_uses_java_heap_when_available() {
+    fn memory_metric_uses_java_heap() {
         use crate::monitor::MonitorState;
 
         let mut state = MonitorState::new();
-        state.push_memory(0, 300_000, Some(42_000), Some(8_000));
-        state.push_memory(1_000_000_000, 310_000, Some(50_000), Some(9_000));
+        state.push_memory(0, 300_000, 42_000, 8_000);
+        state.push_memory(1_000_000_000, 310_000, 50_000, 9_000);
 
         let metrics = build_metrics(&state, &[], None);
         let mem = metrics.iter().find(|m| m.name == "Java").unwrap();
         assert_eq!(mem.values, vec![42_000.0, 50_000.0]);
         assert!(mem.label.contains("Java"));
-    }
-
-    #[test]
-    fn memory_metric_falls_back_to_rss_when_no_java_heap() {
-        use crate::monitor::MonitorState;
-
-        let mut state = MonitorState::new();
-        state.push_memory(0, 300_000, None, None);
-        state.push_memory(1_000_000_000, 310_000, None, None);
-
-        let metrics = build_metrics(&state, &[], None);
-        let mem = metrics.iter().find(|m| m.name == "RSS").unwrap();
-        assert_eq!(mem.values, vec![300_000.0, 310_000.0]);
-        assert!(mem.label.contains("RSS"));
     }
 }
