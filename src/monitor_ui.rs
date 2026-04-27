@@ -411,40 +411,30 @@ fn render_memory_detail(frame: &mut Frame, area: Rect, state: &MonitorState, foc
     render_pane_chip(frame, chip_area, "Memory", focused, false);
 
     let series = collect_memory_series(state);
-    // Stats line is anchored on the Java series — that's the headline metric.
     let java = &series[0];
-    let java_filtered: Vec<f64> = java.values.iter().copied().filter(|v| *v > 0.0).collect();
-    let (current, j_min, j_max, j_avg) = if java_filtered.is_empty() {
-        (java.current as f64, 0.0, 0.0, 0.0)
-    } else {
-        let mn = java_filtered.iter().copied().fold(f64::INFINITY, f64::min);
-        let mx = java_filtered.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        let av = java_filtered.iter().sum::<f64>() / java_filtered.len() as f64;
-        (java.current as f64, mn, mx, av)
-    };
     let now_ns = state.latest_agent_ts_ns().unwrap_or(0);
     let gc_ticks = gc_secs_ago_from_ns(now_ns, &state.gc_events);
-    let mut spans = vec![
-        Span::styled(
-            format!("{} Java", format_mb(current.round() as u64)),
-            Style::new().fg(java.color).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!("  min {}", format_mb(j_min.round() as u64)),
-            Style::new().fg(t.muted),
-        ),
-        Span::styled(
-            format!("  max {}", format_mb(j_max.round() as u64)),
-            Style::new().fg(t.muted),
-        ),
-        Span::styled(
-            format!("  avg {}", format_mb(j_avg.round() as u64)),
-            Style::new().fg(t.muted),
-        ),
-    ];
-    if !gc_ticks.is_empty() {
+    // The chip-row's right side is the legend: one colored span per series
+    // (Java bold, Native + RSS regular) plus the GC count. No min/max/avg —
+    // it doesn't fit three series of different magnitudes.
+    let mut spans: Vec<Span<'_>> = Vec::with_capacity(series.len() * 2 + 2);
+    for (i, s) in series.iter().enumerate() {
+        if i > 0 {
+            spans.push(Span::styled("  ·  ", Style::new().fg(t.muted)));
+        }
+        let mut style = Style::new().fg(s.color);
+        if i == 0 {
+            style = style.add_modifier(Modifier::BOLD);
+        }
         spans.push(Span::styled(
-            format!("  ◆ {} GC", gc_ticks.len()),
+            format!("{} {}", s.name, format_mb(s.current)),
+            style,
+        ));
+    }
+    if !gc_ticks.is_empty() {
+        spans.push(Span::styled("  ·  ", Style::new().fg(t.muted)));
+        spans.push(Span::styled(
+            format!("◆ {} GC", gc_ticks.len()),
             Style::new().fg(java.color),
         ));
     }
@@ -480,18 +470,14 @@ fn render_memory_detail(frame: &mut Frame, area: Rect, state: &MonitorState, foc
     let y_lo = (y_min_value - span * 0.1).max(0.0);
     let y_hi = y_max_value + span * 0.1;
 
-    // Vertical layout: [tick row?][chart][legend?]. Tick row needs ≥1 line;
-    // legend needs ≥1; both are dropped when there isn't enough vertical room.
+    // Vertical layout: [tick row?][chart]. Tick row needs ≥1 line and is
+    // dropped when there isn't enough vertical room.
     let want_ticks = !gc_ticks.is_empty();
-    let want_legend = body.height >= 5;
     let mut constraints: Vec<Constraint> = Vec::new();
     if want_ticks && body.height >= 4 {
         constraints.push(Constraint::Length(1));
     }
     constraints.push(Constraint::Min(0));
-    if want_legend {
-        constraints.push(Constraint::Length(1));
-    }
     let chunks = Layout::vertical(constraints).split(body);
     let mut chunk_idx = 0;
 
@@ -520,7 +506,6 @@ fn render_memory_detail(frame: &mut Frame, area: Rect, state: &MonitorState, foc
     }
 
     let chart_area = chunks[chunk_idx];
-    chunk_idx += 1;
 
     let x_max = window_secs.max(1.0);
     let datasets_data: Vec<Vec<(f64, f64)>> = series
@@ -534,12 +519,13 @@ fn render_memory_detail(frame: &mut Frame, area: Rect, state: &MonitorState, foc
                 .collect()
         })
         .collect();
+    // No `.name()` on the datasets — that would make ratatui draw its own
+    // legend box. The chip-row spans above are the legend.
     let datasets: Vec<Dataset<'_>> = series
         .iter()
         .zip(datasets_data.iter())
         .map(|(s, data)| {
             Dataset::default()
-                .name(s.name)
                 .marker(symbols::Marker::Braille)
                 .graph_type(GraphType::Line)
                 .style(Style::new().fg(s.color))
@@ -574,21 +560,6 @@ fn render_memory_detail(frame: &mut Frame, area: Rect, state: &MonitorState, foc
                 .labels_alignment(Alignment::Right),
         );
     frame.render_widget(chart, chart_area);
-
-    if want_legend {
-        let legend_area = chunks[chunk_idx];
-        let mut legend_spans: Vec<Span<'_>> = Vec::with_capacity(series.len() * 2);
-        for (i, s) in series.iter().enumerate() {
-            if i > 0 {
-                legend_spans.push(Span::raw("  "));
-            }
-            legend_spans.push(Span::styled(
-                format!("{} {}", s.name, format_mb(s.current)),
-                Style::new().fg(s.color),
-            ));
-        }
-        frame.render_widget(Line::from(legend_spans), legend_area);
-    }
 }
 
 fn render_metric_detail(frame: &mut Frame, area: Rect, metric: &Metric, focused: bool) {
