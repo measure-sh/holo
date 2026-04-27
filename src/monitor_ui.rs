@@ -378,6 +378,237 @@ fn render_compact_list(frame: &mut Frame, area: Rect, metrics: &[Metric]) {
     }
 }
 
+/// Memory series rendered side-by-side in the detail view. All three share
+/// `secs_ago` (one entry per `MemorySample`) so points line up on the x-axis.
+struct MemorySeries {
+    name: &'static str,
+    color: Color,
+    values: Vec<f64>,
+    current: u64,
+}
+
+fn collect_memory_series(state: &MonitorState) -> Vec<MemorySeries> {
+    let t = theme::current();
+    let java: Vec<f64> = state
+        .memory_history
+        .iter()
+        .map(|s| s.java_heap_kb.unwrap_or(0) as f64)
+        .collect();
+    let native: Vec<f64> = state
+        .memory_history
+        .iter()
+        .map(|s| s.native_heap_kb.unwrap_or(0) as f64)
+        .collect();
+    let rss: Vec<f64> = state.memory_history.iter().map(|s| s.rss_kb as f64).collect();
+    let last = |v: &[f64]| v.last().copied().unwrap_or(0.0).round() as u64;
+    vec![
+        MemorySeries { name: "Java", color: t.spark_mem, current: last(&java), values: java },
+        MemorySeries { name: "Native", color: t.spark_disk, current: last(&native), values: native },
+        MemorySeries { name: "RSS", color: t.muted, current: last(&rss), values: rss },
+    ]
+}
+
+fn memory_secs_ago(state: &MonitorState) -> (Vec<f64>, f64) {
+    let now_ns = state.latest_agent_ts_ns().unwrap_or(0);
+    let secs: Vec<f64> = state
+        .memory_history
+        .iter()
+        .map(|s| (now_ns.saturating_sub(s.ts_ns).max(0) as f64) / NS_PER_SEC_F64)
+        .collect();
+    let window = secs.first().copied().unwrap_or(0.0);
+    (secs, window)
+}
+
+fn render_memory_detail(frame: &mut Frame, area: Rect, state: &MonitorState, focused: bool) {
+    let t = theme::current();
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let (chip_area, body) = split_chip(area);
+    render_pane_chip(frame, chip_area, "Memory", focused, false);
+
+    let series = collect_memory_series(state);
+    // Stats line is anchored on the Java series — that's the headline metric.
+    let java = &series[0];
+    let java_filtered: Vec<f64> = java.values.iter().copied().filter(|v| *v > 0.0).collect();
+    let (current, j_min, j_max, j_avg) = if java_filtered.is_empty() {
+        (java.current as f64, 0.0, 0.0, 0.0)
+    } else {
+        let mn = java_filtered.iter().copied().fold(f64::INFINITY, f64::min);
+        let mx = java_filtered.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let av = java_filtered.iter().sum::<f64>() / java_filtered.len() as f64;
+        (java.current as f64, mn, mx, av)
+    };
+    let now_ns = state.latest_agent_ts_ns().unwrap_or(0);
+    let gc_ticks = gc_secs_ago_from_ns(now_ns, &state.gc_events);
+    let mut spans = vec![
+        Span::styled(
+            format!("{} Java", format_mb(current.round() as u64)),
+            Style::new().fg(java.color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("  min {}", format_mb(j_min.round() as u64)),
+            Style::new().fg(t.muted),
+        ),
+        Span::styled(
+            format!("  max {}", format_mb(j_max.round() as u64)),
+            Style::new().fg(t.muted),
+        ),
+        Span::styled(
+            format!("  avg {}", format_mb(j_avg.round() as u64)),
+            Style::new().fg(t.muted),
+        ),
+    ];
+    if !gc_ticks.is_empty() {
+        spans.push(Span::styled(
+            format!("  ◆ {} GC", gc_ticks.len()),
+            Style::new().fg(java.color),
+        ));
+    }
+    frame.render_widget(Line::from(spans).alignment(Alignment::Right), chip_area);
+
+    if body.height < 3 || body.width < 8 {
+        return;
+    }
+
+    let (secs_ago, window_secs) = memory_secs_ago(state);
+    if secs_ago.len() < 2 {
+        let hint = Paragraph::new(Line::styled(
+            " gathering samples…",
+            Style::new().fg(t.muted),
+        ));
+        frame.render_widget(hint, body);
+        return;
+    }
+
+    // Y bounds across all three series so each line is fully visible. Pad 10%
+    // above max; floor at 0.
+    let y_max_value = series
+        .iter()
+        .flat_map(|s| s.values.iter().copied())
+        .fold(0.0_f64, f64::max);
+    let y_min_value = series
+        .iter()
+        .flat_map(|s| s.values.iter().copied())
+        .filter(|v| *v > 0.0)
+        .fold(f64::INFINITY, f64::min);
+    let y_min_value = if y_min_value.is_finite() { y_min_value } else { 0.0 };
+    let span = (y_max_value - y_min_value).max(1.0);
+    let y_lo = (y_min_value - span * 0.1).max(0.0);
+    let y_hi = y_max_value + span * 0.1;
+
+    // Vertical layout: [tick row?][chart][legend?]. Tick row needs ≥1 line;
+    // legend needs ≥1; both are dropped when there isn't enough vertical room.
+    let want_ticks = !gc_ticks.is_empty();
+    let want_legend = body.height >= 5;
+    let mut constraints: Vec<Constraint> = Vec::new();
+    if want_ticks && body.height >= 4 {
+        constraints.push(Constraint::Length(1));
+    }
+    constraints.push(Constraint::Min(0));
+    if want_legend {
+        constraints.push(Constraint::Length(1));
+    }
+    let chunks = Layout::vertical(constraints).split(body);
+    let mut chunk_idx = 0;
+
+    let y_labels = vec![
+        Line::from(format_mb(y_lo.round() as u64)),
+        Line::from(format_mb(((y_lo + y_hi) / 2.0).round() as u64)),
+        Line::from(format_mb(y_hi.round() as u64)),
+    ];
+    let y_label_pad = y_labels
+        .iter()
+        .map(|l| l.width() as u16)
+        .max()
+        .unwrap_or(0)
+        + 1;
+
+    if want_ticks && body.height >= 4 {
+        let row = chunks[chunk_idx];
+        let tick_area = Rect {
+            x: row.x + y_label_pad,
+            y: row.y,
+            width: row.width.saturating_sub(y_label_pad),
+            height: 1,
+        };
+        render_ticks(frame, tick_area, &gc_ticks, window_secs, java.color);
+        chunk_idx += 1;
+    }
+
+    let chart_area = chunks[chunk_idx];
+    chunk_idx += 1;
+
+    let x_max = window_secs.max(1.0);
+    let datasets_data: Vec<Vec<(f64, f64)>> = series
+        .iter()
+        .map(|s| {
+            s.values
+                .iter()
+                .zip(secs_ago.iter())
+                .filter(|&(&v, _)| v > 0.0)
+                .map(|(&v, &t)| ((x_max - t).max(0.0), v))
+                .collect()
+        })
+        .collect();
+    let datasets: Vec<Dataset<'_>> = series
+        .iter()
+        .zip(datasets_data.iter())
+        .map(|(s, data)| {
+            Dataset::default()
+                .name(s.name)
+                .marker(symbols::Marker::Braille)
+                .graph_type(GraphType::Line)
+                .style(Style::new().fg(s.color))
+                .data(data)
+        })
+        .collect();
+
+    let total_secs = window_secs.round() as u64;
+    let x_labels = if chart_area.width >= 36 && total_secs >= 2 {
+        vec![
+            Line::from(format_ago(total_secs)),
+            Line::from(format_ago(total_secs / 2)),
+            Line::from("now"),
+        ]
+    } else {
+        vec![Line::from(format_ago(total_secs)), Line::from("now")]
+    };
+
+    let chart = Chart::new(datasets)
+        .style(Style::new().bg(t.bg))
+        .x_axis(
+            Axis::default()
+                .style(Style::new().fg(t.muted))
+                .bounds([0.0, x_max])
+                .labels(x_labels),
+        )
+        .y_axis(
+            Axis::default()
+                .style(Style::new().fg(t.muted))
+                .bounds([y_lo, y_hi])
+                .labels(y_labels)
+                .labels_alignment(Alignment::Right),
+        );
+    frame.render_widget(chart, chart_area);
+
+    if want_legend {
+        let legend_area = chunks[chunk_idx];
+        let mut legend_spans: Vec<Span<'_>> = Vec::with_capacity(series.len() * 2);
+        for (i, s) in series.iter().enumerate() {
+            if i > 0 {
+                legend_spans.push(Span::raw("  "));
+            }
+            legend_spans.push(Span::styled(
+                format!("{} {}", s.name, format_mb(s.current)),
+                Style::new().fg(s.color),
+            ));
+        }
+        frame.render_widget(Line::from(legend_spans), legend_area);
+    }
+}
+
 fn render_metric_detail(frame: &mut Frame, area: Rect, metric: &Metric, focused: bool) {
     let t = theme::current();
     if area.width == 0 || area.height == 0 {
@@ -620,6 +851,18 @@ pub fn render_monitor_panel(
         return;
     }
     let metrics = build_metrics(state, traffic, traffic_baseline);
+    // Memory view gets a dedicated multi-series renderer when the agent has
+    // emitted Java heap data. Old agents (RSS only) fall through to the
+    // generic single-line detail below.
+    let java_path = matches!(state.view, MonitorView::Memory)
+        && state
+            .memory_history
+            .iter()
+            .any(|s| s.java_heap_kb.is_some());
+    if java_path {
+        render_memory_detail(frame, inner, state, focused);
+        return;
+    }
     let detail = match state.view {
         MonitorView::All => None,
         MonitorView::Cpu => Some(0),
