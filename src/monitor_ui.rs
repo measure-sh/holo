@@ -603,7 +603,7 @@ pub fn render_monitor_panel(
     let detail = match state.view {
         MonitorView::All => None,
         MonitorView::Cpu => Some(0),
-        MonitorView::Rss => Some(1),
+        MonitorView::Memory => Some(1),
         MonitorView::Disk => Some(2),
         MonitorView::Download => Some(3),
         MonitorView::Upload => Some(4),

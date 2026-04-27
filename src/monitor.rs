@@ -61,7 +61,9 @@ pub struct MemorySample {
 pub enum MonitorView {
     All,
     Cpu,
-    Rss,
+    /// Memory: Java heap (when the agent provides it), with Native + RSS
+    /// available as overlays in the detail view.
+    Memory,
     Disk,
     Download,
     Upload,
@@ -70,7 +72,7 @@ pub enum MonitorView {
 const VIEWS: [MonitorView; 6] = [
     MonitorView::All,
     MonitorView::Cpu,
-    MonitorView::Rss,
+    MonitorView::Memory,
     MonitorView::Disk,
     MonitorView::Download,
     MonitorView::Upload,
@@ -81,7 +83,7 @@ impl MonitorView {
         match self {
             MonitorView::All => "All",
             MonitorView::Cpu => "CPU",
-            MonitorView::Rss => "RSS",
+            MonitorView::Memory => "Memory",
             MonitorView::Disk => "Disk",
             MonitorView::Download => "Download",
             MonitorView::Upload => "Upload",
@@ -350,7 +352,7 @@ mod tests {
         let mut v = MonitorView::All;
         let order = [
             MonitorView::Cpu,
-            MonitorView::Rss,
+            MonitorView::Memory,
             MonitorView::Disk,
             MonitorView::Download,
             MonitorView::Upload,
@@ -377,7 +379,7 @@ mod tests {
     #[test]
     fn handle_key_left_steps_view_backwards() {
         let mut state = MonitorState::new();
-        state.view = MonitorView::Rss;
+        state.view = MonitorView::Memory;
         state.handle_key(key_event(KeyCode::Left));
         assert_eq!(state.view, MonitorView::Cpu);
     }
