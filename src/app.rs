@@ -687,7 +687,7 @@ impl App {
 
     pub fn status_flash_active(&self) -> Option<(&str, bool)> {
         let (msg, t, is_error) = self.status_flash.as_ref()?;
-        if t.elapsed() < std::time::Duration::from_secs(3) {
+        if t.elapsed() < std::time::Duration::from_secs(2) {
             Some((msg.as_str(), *is_error))
         } else {
             None
