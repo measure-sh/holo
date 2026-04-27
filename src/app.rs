@@ -121,111 +121,63 @@ impl App {
         }
     }
 
+    /// Open the settings popup, closing any other modal first. Going through
+    /// these setters (rather than poking the flags directly) is what keeps
+    /// the popups mutually exclusive — there's no longer a path where
+    /// `settings_open` and `toolbar.open` can both be true at once.
+    fn open_settings(&mut self) {
+        self.dialog = None;
+        self.toolbar.open = None;
+        self.settings_open = true;
+        self.settings_cursor = 0;
+    }
+
+    fn open_devices_popup(&mut self) {
+        self.dialog = None;
+        self.settings_open = false;
+        self.toolbar.open_devices();
+    }
+
+    fn open_apps_popup(&mut self) {
+        self.dialog = None;
+        self.settings_open = false;
+        self.toolbar.open_apps();
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
         let code = key.code;
-        if self.dialog.is_some() {
-            self.dialog = None;
-            return Action::Noop;
-        }
-        if self.settings_open {
-            // Let the global Ctrl shortcuts (Q/Space/D/A/Z) skip past the
-            // settings handler. Without this, pressing Ctrl+A or Ctrl+D while
-            // settings is open is swallowed by the catch-all below and just
-            // closes settings — the user has to press the shortcut a second
-            // time to actually open the dropdown.
-            let is_global_ctrl_shortcut = key.modifiers.contains(KeyModifiers::CONTROL)
-                && matches!(
-                    code,
-                    KeyCode::Char('q')
-                        | KeyCode::Char(' ')
-                        | KeyCode::Char('d')
-                        | KeyCode::Char('a')
-                        | KeyCode::Char('z')
-                );
-            if !is_global_ctrl_shortcut {
-                const SELECTABLE_COUNT: usize = 4;
-                match code {
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        self.settings_cursor = self.settings_cursor.saturating_sub(1);
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        self.settings_cursor = (self.settings_cursor + 1).min(SELECTABLE_COUNT - 1);
-                    }
-                    KeyCode::Right | KeyCode::Char('l') if self.settings_cursor == 0 => {
-                        let next = (theme::current_index() + 1) % theme::theme_count();
-                        theme::set_theme(next);
-                    }
-                    KeyCode::Left | KeyCode::Char('h') if self.settings_cursor == 0 => {
-                        let cur = theme::current_index();
-                        let prev = if cur == 0 { theme::theme_count() - 1 } else { cur - 1 };
-                        theme::set_theme(prev);
-                    }
-                    KeyCode::Char('c') if self.settings_cursor == 1 => {
-                        let dir = std::env::temp_dir().join("holo");
-                        let _ = std::fs::create_dir_all(&dir);
-                        crate::clipboard::copy_to_clipboard(&dir.to_string_lossy());
-                        self.settings_open = false;
-                        self.set_status_flash("Path copied!".into(), false);
-                    }
-                    KeyCode::Enter => {
-                        match self.settings_cursor {
-                            1 => {
-                                let dir = std::env::temp_dir().join("holo");
-                                let _ = std::fs::create_dir_all(&dir);
-                                let _ = open::that(&dir);
-                                self.settings_open = false;
-                            }
-                            2 => {
-                                let _ = open::that("https://github.com/Genymobile/scrcpy/tree/master?tab=readme-ov-file");
-                                self.settings_open = false;
-                            }
-                            3 => {
-                                let _ = open::that("https://github.com/measure-sh/holo");
-                                self.settings_open = false;
-                            }
-                            _ => {
-                                self.settings_open = false;
-                            }
-                        }
-                    }
-                    _ => {
-                        self.settings_open = false;
-                    }
-                }
-                return Action::Noop;
-            }
-            // Falling through to the Ctrl shortcut block; close settings so
-            // the new popup (or quit) takes over cleanly.
-            self.settings_open = false;
-        }
+
+        // Edit modes own *all* input, including Ctrl combos that text editors
+        // use for caret motion / select-all. They take precedence over the
+        // global shortcuts so typing into a textarea doesn't accidentally
+        // trigger Ctrl+A / Ctrl+D.
         if self.commands.editing {
             return self.commands.handle_key(key).unwrap_or(Action::Noop);
         }
         if self.logcat_state.editing.is_some() {
             return self.logcat_state.handle_key(key).unwrap_or(Action::Noop);
         }
-
         if self.database_state.editing_query || self.database_state.confirming_pull.is_some() {
             let result = self.database_state.handle_key(key);
             return self.dispatch_panel_key(result).unwrap_or(Action::Noop);
         }
 
+        // Global shortcuts. Hoisted above the modal handlers so a popup's
+        // catch-all branch can never swallow them — Ctrl+A while settings is
+        // open opens apps in one press, not two.
         if key.modifiers.contains(KeyModifiers::CONTROL) {
             match code {
                 KeyCode::Char('q') => return Action::Quit,
                 KeyCode::Char(' ') => {
-                    self.toolbar.open = None;
-                    self.settings_open = true;
+                    self.open_settings();
                     return Action::Noop;
                 }
                 KeyCode::Char('d') => {
-                    self.settings_open = false;
-                    self.toolbar.open_devices();
+                    self.open_devices_popup();
                     return Action::FetchDevices;
                 }
                 KeyCode::Char('a') => {
-                    self.settings_open = false;
-                    self.toolbar.open_apps();
+                    self.open_apps_popup();
                     return Action::FetchApps;
                 }
                 KeyCode::Char('z') => {
@@ -236,6 +188,63 @@ impl App {
                 }
                 _ => {}
             }
+        }
+
+        // Modal handlers. Mutual exclusion is enforced by the setters above,
+        // so at most one of these branches is active per keypress.
+        if self.dialog.is_some() {
+            self.dialog = None;
+            return Action::Noop;
+        }
+        if self.settings_open {
+            const SELECTABLE_COUNT: usize = 4;
+            match code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.settings_cursor = self.settings_cursor.saturating_sub(1);
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.settings_cursor = (self.settings_cursor + 1).min(SELECTABLE_COUNT - 1);
+                }
+                KeyCode::Right | KeyCode::Char('l') if self.settings_cursor == 0 => {
+                    let next = (theme::current_index() + 1) % theme::theme_count();
+                    theme::set_theme(next);
+                }
+                KeyCode::Left | KeyCode::Char('h') if self.settings_cursor == 0 => {
+                    let cur = theme::current_index();
+                    let prev = if cur == 0 { theme::theme_count() - 1 } else { cur - 1 };
+                    theme::set_theme(prev);
+                }
+                KeyCode::Char('c') if self.settings_cursor == 1 => {
+                    let dir = std::env::temp_dir().join("holo");
+                    let _ = std::fs::create_dir_all(&dir);
+                    crate::clipboard::copy_to_clipboard(&dir.to_string_lossy());
+                    self.settings_open = false;
+                    self.set_status_flash("Path copied!".into(), false);
+                }
+                KeyCode::Enter => match self.settings_cursor {
+                    1 => {
+                        let dir = std::env::temp_dir().join("holo");
+                        let _ = std::fs::create_dir_all(&dir);
+                        let _ = open::that(&dir);
+                        self.settings_open = false;
+                    }
+                    2 => {
+                        let _ = open::that("https://github.com/Genymobile/scrcpy/tree/master?tab=readme-ov-file");
+                        self.settings_open = false;
+                    }
+                    3 => {
+                        let _ = open::that("https://github.com/measure-sh/holo");
+                        self.settings_open = false;
+                    }
+                    _ => {
+                        self.settings_open = false;
+                    }
+                },
+                _ => {
+                    self.settings_open = false;
+                }
+            }
+            return Action::Noop;
         }
 
         if self.toolbar.open.is_some() {
