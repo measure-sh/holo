@@ -16,8 +16,6 @@ const BASELINE_BARS: symbols::bar::Set = symbols::bar::Set {
     ..symbols::bar::NINE_LEVELS
 };
 
-use std::time::Instant;
-
 use crate::monitor::{GcEvent, MonitorState, MonitorView};
 use crate::network::TrafficSample;
 use crate::panel;
@@ -104,21 +102,27 @@ struct Metric {
     /// "absent" for MemKb/DiskKb (app wasn't running); genuine for RateBps
     /// and Percent.
     values: Vec<f64>,
+    /// Per-sample seconds-ago, when the source carries real timestamps
+    /// (currently RSS via the agent). Same length as `values`. Empty for
+    /// ADB-sourced metrics, which fall back to uniform index spacing.
+    secs_ago: Vec<f64>,
     color: Color,
     scale: MetricScale,
     /// Seconds-ago for each event to overlay on the sparkline (rightmost = now).
     /// Empty for metrics without overlays.
     tick_secs_ago: Vec<u32>,
+    /// Visible time span in seconds. For agent-sourced metrics this comes from
+    /// the spread of `ts_ns` values; for ADB-sourced metrics it falls back to
+    /// `values.len() - 1` under the assumption of 1 Hz cadence.
+    window_secs: f64,
 }
 
-fn gc_secs_ago(events: &[GcEvent]) -> Vec<u32> {
-    gc_secs_ago_at(Instant::now(), events)
-}
+const NS_PER_SEC_F64: f64 = 1_000_000_000.0;
 
-fn gc_secs_ago_at(now: Instant, events: &[GcEvent]) -> Vec<u32> {
+fn gc_secs_ago_from_ns(now_ns: i64, events: &[GcEvent]) -> Vec<u32> {
     events
         .iter()
-        .map(|e| now.saturating_duration_since(e.received_at).as_secs() as u32)
+        .map(|e| ((now_ns.saturating_sub(e.ts_ns)).max(0) / 1_000_000_000) as u32)
         .collect()
 }
 
@@ -183,6 +187,7 @@ fn build_metrics(
         .iter()
         .map(|m| SparklineBar::from(Some(m.cpu_percent.max(0.0).round() as u64)))
         .collect();
+    let cpu_window = sample_index_window(cpu_values.len());
     metrics.push(Metric {
         name: "CPU",
         label: format!(" CPU {:.1}%  ", cpu_now),
@@ -191,26 +196,41 @@ fn build_metrics(
         values: cpu_values,
         color: t.spark_cpu,
         scale: MetricScale::Percent,
+        secs_ago: Vec::new(),
         tick_secs_ago: Vec::new(),
+        window_secs: cpu_window,
     });
 
-    let mem_samples: Vec<u64> = state.history.iter().map(|m| m.rss_kb).collect();
+    let mem_samples: Vec<u64> = state.memory_history.iter().map(|m| m.rss_kb).collect();
     let mem_now = *mem_samples.last().unwrap_or(&0);
     let (mem_spark, mem_max) = range_shifted(&mem_samples);
+    // Anchor "now" on the freshest agent timestamp across both streams. Both
+    // GC events and memory samples come from the agent's CLOCK_MONOTONIC, so
+    // tick positions and chart x-values use the same time origin.
+    let now_ns = state.latest_agent_ts_ns().unwrap_or(0);
+    let mem_secs_ago: Vec<f64> = state
+        .memory_history
+        .iter()
+        .map(|s| (now_ns.saturating_sub(s.ts_ns).max(0) as f64) / NS_PER_SEC_F64)
+        .collect();
+    let mem_window_secs = mem_secs_ago.first().copied().unwrap_or(0.0);
     metrics.push(Metric {
         name: "RSS",
         label: format!(" RSS {}  ", format_mb(mem_now)),
         sparkline_data: mem_spark,
         sparkline_max: mem_max,
         values: mem_samples.iter().map(|&v| v as f64).collect(),
+        secs_ago: mem_secs_ago,
         color: t.spark_mem,
         scale: MetricScale::MemKb,
-        tick_secs_ago: gc_secs_ago(&state.gc_events),
+        tick_secs_ago: gc_secs_ago_from_ns(now_ns, &state.gc_events),
+        window_secs: mem_window_secs,
     });
 
     let disk_samples: Vec<u64> = state.history.iter().map(|m| m.data_kb).collect();
     let disk_now = *disk_samples.last().unwrap_or(&0);
     let (disk_spark, disk_max) = range_shifted(&disk_samples);
+    let disk_window = sample_index_window(disk_samples.len());
     metrics.push(Metric {
         name: "Disk",
         label: format!(" Disk {}  ", format_mb_precise(disk_now)),
@@ -219,7 +239,9 @@ fn build_metrics(
         values: disk_samples.iter().map(|&v| v as f64).collect(),
         color: t.spark_disk,
         scale: MetricScale::DiskKb,
+        secs_ago: Vec::new(),
         tick_secs_ago: Vec::new(),
+        window_secs: disk_window,
     });
 
     let last = traffic.last().copied().unwrap_or_default();
@@ -233,6 +255,7 @@ fn build_metrics(
     let tx_spark: Vec<SparklineBar> = traffic.iter().map(|s| SparklineBar::from(Some(s.tx_bps))).collect();
     let rx_max = traffic.iter().map(|s| s.rx_bps).max().unwrap_or(0);
     let tx_max = traffic.iter().map(|s| s.tx_bps).max().unwrap_or(0);
+    let rate_window = sample_index_window(traffic.len());
     metrics.push(Metric {
         name: "↓",
         label: format!(" ↓ {} ({})  ", format_rate(last.rx_bps), format_bytes(rx_total)),
@@ -241,7 +264,9 @@ fn build_metrics(
         values: traffic.iter().map(|s| s.rx_bps as f64).collect(),
         color: t.spark_rx,
         scale: MetricScale::RateBps,
+        secs_ago: Vec::new(),
         tick_secs_ago: Vec::new(),
+        window_secs: rate_window,
     });
     metrics.push(Metric {
         name: "↑",
@@ -251,10 +276,21 @@ fn build_metrics(
         values: traffic.iter().map(|s| s.tx_bps as f64).collect(),
         color: t.spark_tx,
         scale: MetricScale::RateBps,
+        secs_ago: Vec::new(),
         tick_secs_ago: Vec::new(),
+        window_secs: rate_window,
     });
 
     metrics
+}
+
+/// Fallback window for metrics that don't carry per-sample timestamps. The
+/// poller runs at ~1 Hz, so `len - 1` is a passable approximation when no
+/// better source is available; the visible drift only matters for streams
+/// that overlay other timestamped data, which is the GC-on-RSS chart and
+/// that one uses real timestamps.
+fn sample_index_window(len: usize) -> f64 {
+    len.saturating_sub(1) as f64
 }
 
 fn sparkline_row(frame: &mut Frame, area: Rect, metric: &Metric, label_width: u16) {
@@ -372,8 +408,7 @@ fn render_metric_detail(frame: &mut Frame, area: Rect, metric: &Metric, focused:
             width: split[0].width.saturating_sub(y_label_pad),
             height: 1,
         };
-        let window = metric.values.len().saturating_sub(1) as f64;
-        render_ticks(frame, tick_area, &metric.tick_secs_ago, window, metric.color);
+        render_ticks(frame, tick_area, &metric.tick_secs_ago, metric.window_secs, metric.color);
         split[1]
     };
     render_chart(frame, chart_area, metric, min, max);
@@ -424,13 +459,32 @@ fn stats(metric: &Metric) -> (f64, f64, f64, f64) {
 fn render_chart(frame: &mut Frame, area: Rect, metric: &Metric, min: f64, max: f64) {
     let t = theme::current();
     let skip_zero = matches!(metric.scale, MetricScale::MemKb | MetricScale::DiskKb);
-    let points: Vec<(f64, f64)> = metric
-        .values
-        .iter()
-        .enumerate()
-        .filter(|&(_, &v)| !skip_zero || v > 0.0)
-        .map(|(i, &v)| (i as f64, v))
-        .collect();
+    // Distribute samples evenly across [0, window_secs]. For agent-sourced
+    // metrics window_secs comes from the actual time spread; for ADB-sourced
+    // ones it's a sample-index proxy. Either way the rightmost sample lands
+    // at x = window_secs ("now") and matches build_tick_row's anchoring.
+    let last = metric.values.len().saturating_sub(1).max(1) as f64;
+    let x_max = metric.window_secs.max(1.0);
+    let points: Vec<(f64, f64)> = if metric.secs_ago.is_empty() {
+        metric
+            .values
+            .iter()
+            .enumerate()
+            .filter(|&(_, &v)| !skip_zero || v > 0.0)
+            .map(|(i, &v)| (i as f64 / last * x_max, v))
+            .collect()
+    } else {
+        // Plot each sample at its real ts_ns position. The rightmost sample
+        // sits at x = x_max (= "now"); GC ticks placed by the same `secs_ago
+        // → x_max - secs_ago` mapping land in the same column.
+        metric
+            .values
+            .iter()
+            .zip(metric.secs_ago.iter())
+            .filter(|&(&v, _)| !skip_zero || v > 0.0)
+            .map(|(&v, &s)| ((x_max - s).max(0.0), v))
+            .collect()
+    };
 
     if points.len() < 2 {
         // Not enough data to plot a line.
@@ -452,7 +506,6 @@ fn render_chart(frame: &mut Frame, area: Rect, metric: &Metric, min: f64, max: f
         }
     };
 
-    let x_max = (metric.values.len().saturating_sub(1)) as f64;
     let y_mid = (y_lo + y_hi) / 2.0;
     let y_labels = vec![
         Line::from(format_scale(y_lo, metric.scale)),
@@ -462,7 +515,7 @@ fn render_chart(frame: &mut Frame, area: Rect, metric: &Metric, min: f64, max: f
 
     // X labels: total duration ago → half ago → now. Width check avoids
     // cramped middle labels when the detail pane is narrow.
-    let total_secs = metric.values.len().saturating_sub(1) as u64;
+    let total_secs = metric.window_secs.round() as u64;
     let x_labels = if area.width >= 36 && total_secs >= 2 {
         vec![
             Line::from(format_ago(total_secs)),
@@ -484,7 +537,7 @@ fn render_chart(frame: &mut Frame, area: Rect, metric: &Metric, min: f64, max: f
         .x_axis(
             Axis::default()
                 .style(Style::new().fg(t.muted))
-                .bounds([0.0, x_max.max(1.0)])
+                .bounds([0.0, x_max])
                 .labels(x_labels),
         )
         .y_axis(
@@ -575,30 +628,30 @@ mod tests {
         assert_eq!(format_mb(128000), "125 MB");
     }
 
-    use std::time::{Duration, Instant};
-
-    fn ev(received_at: Instant) -> GcEvent {
-        GcEvent { received_at, duration_us: 0 }
+    fn ev(ts_ns: i64) -> GcEvent {
+        GcEvent { ts_ns, duration_us: 0 }
     }
+
+    const NS: i64 = 1_000_000_000;
 
     #[test]
     fn gc_secs_ago_buckets_by_seconds() {
-        let now = Instant::now();
+        let now = 100 * NS;
         let events = [
             ev(now),
-            ev(now - Duration::from_millis(1500)),
-            ev(now - Duration::from_secs(30)),
+            ev(now - 1_500_000_000), // 1.5 s ago → 1
+            ev(now - 30 * NS),
         ];
-        assert_eq!(gc_secs_ago_at(now, &events), vec![0, 1, 30]);
+        assert_eq!(gc_secs_ago_from_ns(now, &events), vec![0, 1, 30]);
     }
 
     #[test]
     fn gc_secs_ago_handles_future_event_without_panic() {
         // Event timestamp in the "future" relative to `now` should saturate
         // to 0, not underflow.
-        let now = Instant::now();
-        let events = [ev(now + Duration::from_secs(5))];
-        assert_eq!(gc_secs_ago_at(now, &events), vec![0]);
+        let now = 100 * NS;
+        let events = [ev(now + 5 * NS)];
+        assert_eq!(gc_secs_ago_from_ns(now, &events), vec![0]);
     }
 
     #[test]
@@ -653,5 +706,39 @@ mod tests {
             .map(|(i, _)| i)
             .collect();
         assert_eq!(cols, vec![99]);
+    }
+
+    #[test]
+    fn rss_metric_aligns_gc_tick_with_matching_memory_sample() {
+        use crate::monitor::MonitorState;
+
+        // Memory samples spaced unevenly on the agent clock. A GC event
+        // shares the ts_ns of the middle memory sample. The GC tick column
+        // must equal the column where that sample is plotted on the chart.
+        let mut state = MonitorState::new();
+        state.push_memory(0, 100, None, None);
+        state.push_memory(1_500_000_000, 110, None, None); // 1.5 s in
+        state.push_memory(5_000_000_000, 120, None, None); // 5.0 s in
+        state.push_gc(1_500_000_000, 42);
+
+        let metrics = build_metrics(&state, &[], None);
+        let rss = metrics.iter().find(|m| m.name == "RSS").unwrap();
+
+        // window_secs is the spread of the memory samples (5 s).
+        assert!((rss.window_secs - 5.0).abs() < 1e-9);
+
+        // Per-sample secs_ago: 5, 3.5, 0 (oldest → newest).
+        assert_eq!(rss.secs_ago.len(), 3);
+        assert!((rss.secs_ago[0] - 5.0).abs() < 1e-9);
+        assert!((rss.secs_ago[1] - 3.5).abs() < 1e-9);
+        assert!((rss.secs_ago[2] - 0.0).abs() < 1e-9);
+
+        // GC tick rounds 3.5 s to 3 (u32 floor at second granularity). The
+        // tick row column for "3 s ago" with window=5 in a 21-cell strip:
+        let width = 21;
+        let row = build_tick_row(width, rss.window_secs, &rss.tick_secs_ago);
+        let tick_col = row.chars().position(|c| c == '◆').unwrap();
+        // (1 - 3/5) * 20 = 8.
+        assert_eq!(tick_col, 8);
     }
 }

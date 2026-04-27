@@ -5,7 +5,10 @@
 //   [u8 kind][u32 payload_len][payload]
 //
 // Event kinds:
-//   0x01 GC pause  payload: [i64 ts_ns][u32 duration_us]   (12 bytes)
+//   0x01 GC pause      payload: [i64 ts_ns][u32 duration_us]   (12 bytes)
+//   0x02 MemorySample  payload: [i64 ts_ns][u32 rss_kb]        (12 bytes)
+//                      future fields appended as u32s; readers
+//                      use payload_len to know what's present.
 //
 // We avoid the C++ standard library entirely (no <mutex>, <thread>, <vector>,
 // <chrono>, <atomic>): linking libc++ statically into a JVMTI agent leaks
@@ -18,10 +21,12 @@
 
 #include <android/log.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -36,11 +41,15 @@ namespace {
 
 constexpr size_t QUEUE_CAP = 4096;
 constexpr uint8_t KIND_GC = 0x01;
+constexpr uint8_t KIND_MEMORY = 0x02;
 
+// `value` carries the kind-specific u32: GC duration_us, or RSS in KB. Future
+// memory fields (java/native heap) will be appended as additional u32 slots
+// here and as trailing u32s on the wire — readers gate on payload_len.
 struct Event {
     uint8_t kind;
     int64_t ts_ns;
-    uint32_t duration_us;
+    uint32_t value;
 };
 
 // Fixed-size ring buffer guarded by a pthread mutex. drop-oldest on overflow.
@@ -95,6 +104,38 @@ void JNICALL OnGCFinish(jvmtiEnv*) {
     enqueue(e);
 }
 
+// Read /proc/self/statm to get the resident set size in KB. statm format is:
+//   "size resident shared text lib data dt" (pages, space-separated). We only
+//   need the second field. Returns 0 on any read/parse failure — the host
+//   sees the missing sample and the chart simply skips a tick.
+uint32_t read_rss_kb() {
+    int fd = ::open("/proc/self/statm", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    char buf[128];
+    ssize_t n = ::read(fd, buf, sizeof(buf) - 1);
+    ::close(fd);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+    // Skip the first field, then read the second.
+    char* p = buf;
+    while (*p && *p != ' ') ++p;
+    if (*p != ' ') return 0;
+    ++p;
+    long pages = strtol(p, nullptr, 10);
+    if (pages <= 0) return 0;
+    long page_kb = sysconf(_SC_PAGESIZE) / 1024;
+    if (page_kb <= 0) return 0;
+    return (uint32_t)(pages * page_kb);
+}
+
+void* sampler_loop(void*) {
+    for (;;) {
+        Event e{KIND_MEMORY, now_ns(), read_rss_kb()};
+        enqueue(e);
+        ::usleep(1000 * 1000);
+    }
+}
+
 void put_be32(uint8_t* p, uint32_t v) {
     p[0] = (v >> 24) & 0xff;
     p[1] = (v >> 16) & 0xff;
@@ -118,12 +159,14 @@ bool send_all(int fd, const uint8_t* buf, size_t n) {
 }
 
 bool send_event(int fd, const Event& e) {
-    // [u8 kind][u32 len][i64 ts_ns][u32 duration_us]
+    // GC: [u8 kind][u32 len=12][i64 ts_ns][u32 duration_us]
+    // Memory v1: [u8 kind][u32 len=12][i64 ts_ns][u32 rss_kb]
+    // Future memory fields append u32s after value; bump the len accordingly.
     uint8_t buf[1 + 4 + 12];
     buf[0] = e.kind;
     put_be32(buf + 1, 12);
     put_be64(buf + 5, e.ts_ns);
-    put_be32(buf + 13, e.duration_us);
+    put_be32(buf + 13, e.value);
     return send_all(fd, buf, sizeof(buf));
 }
 
@@ -229,11 +272,17 @@ jint attach(JavaVM* vm) {
     g_started = 1;
     pthread_mutex_unlock(&g_queue_mu);
     if (!already) {
-        pthread_t tid;
-        if (pthread_create(&tid, nullptr, writer_loop, nullptr) == 0) {
-            pthread_detach(tid);
+        pthread_t writer_tid;
+        if (pthread_create(&writer_tid, nullptr, writer_loop, nullptr) == 0) {
+            pthread_detach(writer_tid);
         } else {
-            LOGE("pthread_create failed: %d", errno);
+            LOGE("pthread_create(writer) failed: %d", errno);
+        }
+        pthread_t sampler_tid;
+        if (pthread_create(&sampler_tid, nullptr, sampler_loop, nullptr) == 0) {
+            pthread_detach(sampler_tid);
+        } else {
+            LOGE("pthread_create(sampler) failed: %d", errno);
         }
     }
     return JNI_OK;

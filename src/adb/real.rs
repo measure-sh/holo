@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
-use super::{Adb, Device, FileMeta, MemInfo, NetworkBytes};
+use super::{Adb, Device, FileMeta, NetworkBytes};
 
 /// Host-only adb commands that don't traverse the device transport. Fast even
 /// when the device adbd is wedged.
@@ -447,19 +447,6 @@ impl Adb for RealAdb {
         let stdout = String::from_utf8_lossy(&output.stdout);
         parse_num_cores(&stdout)
             .ok_or_else(|| color_eyre::eyre::eyre!("could not parse core count"))
-    }
-
-    fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo> {
-        let cmd = format!(
-            "PID=$(pidof -s {0}); [ -n \"$PID\" ] && cat /proc/$PID/status 2>/dev/null; true",
-            package
-        );
-        let output = Command::new("adb")
-            .args(["-s", serial, "shell", &cmd])
-            .output_timed(ADB_SHELL_TIMEOUT)?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_proc_mem(&stdout))
     }
 
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()> {
@@ -1308,26 +1295,6 @@ fn parse_top_cpu(output: &str, package: &str) -> f32 {
     0.0
 }
 
-fn parse_kb_value(line: &str, prefix: &str) -> Option<u64> {
-    line.strip_prefix(prefix)?
-        .trim()
-        .strip_suffix("kB")?
-        .trim()
-        .parse::<u64>()
-        .ok()
-}
-
-fn parse_proc_mem(output: &str) -> MemInfo {
-    let mut info = MemInfo::default();
-    for line in output.lines() {
-        if let Some(val) = parse_kb_value(line, "VmRSS:") {
-            info.rss_kb = val;
-            break;
-        }
-    }
-    info
-}
-
 pub fn parse_database_list(output: &str) -> Vec<String> {
     output
         .lines()
@@ -1637,23 +1604,6 @@ mod tests {
         assert_eq!(meta.size_bytes, 2048);
         assert_eq!(meta.mode, "-rw-------");
         assert_eq!(meta.modified.as_deref(), Some("2026-04-19 12:34"));
-    }
-
-    #[test]
-    fn parses_proc_mem() {
-        let output = "\
-Name:\tcom.example.app
-VmRSS:\t  128000 kB
-VmSwap:\t       0 kB
-";
-        let info = parse_proc_mem(output);
-        assert_eq!(info.rss_kb, 128000);
-    }
-
-    #[test]
-    fn proc_mem_empty_output() {
-        let info = parse_proc_mem("");
-        assert_eq!(info.rss_kb, 0);
     }
 
     #[test]

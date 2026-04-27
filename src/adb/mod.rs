@@ -6,11 +6,6 @@ pub use status::{report_timeout, set_status_sender, AdbStatus};
 
 use color_eyre::Result;
 
-#[derive(Debug, Clone, Default)]
-pub struct MemInfo {
-    pub rss_kb: u64,
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NetworkBytes {
     pub rx: u64,
@@ -58,7 +53,6 @@ pub trait Adb: Send + Sync {
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()>;
     fn stat_file(&self, serial: &str, package: &str, remote_path: &str) -> Result<FileMeta>;
     fn cat_file(&self, serial: &str, package: &str, remote_path: &str, max_bytes: u64) -> Result<Vec<u8>>;
-    fn get_meminfo(&self, serial: &str, package: &str) -> Result<MemInfo>;
     fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32>;
     fn get_num_cores(&self, serial: &str) -> Result<u8>;
     fn start_trace(&self, serial: &str, config: &str) -> Result<()>;

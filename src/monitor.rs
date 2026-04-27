@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -12,10 +12,13 @@ pub const POLL_SYSTEM: u8 = 1;
 pub const POLL_DISK: u8 = 2;
 
 const MAX_SAMPLES: usize = 120;
+const NS_PER_SEC: i64 = 1_000_000_000;
+/// Drop GC events and memory samples older than this many seconds relative to
+/// the freshest agent timestamp we've seen. Matches the chart's visible span.
+const RETENTION_NS: i64 = MAX_SAMPLES as i64 * NS_PER_SEC;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MonitorSample {
-    pub rss_kb: u64,
     pub cpu_percent: f32,
     pub data_kb: u64,
     pub cache_kb: u64,
@@ -31,11 +34,27 @@ pub enum Trend {
     Stable,
 }
 
+/// GC pause as reported by the JVMTI agent. `ts_ns` is the agent's
+/// `CLOCK_MONOTONIC` timestamp at GC end, the same clock that stamps
+/// `MemorySample.ts_ns` — the two streams are aligned by construction.
 #[derive(Debug, Clone, Copy)]
 pub struct GcEvent {
-    pub received_at: Instant,
+    pub ts_ns: i64,
     #[allow(dead_code)]
     pub duration_us: u32,
+}
+
+/// Memory snapshot emitted by the agent at ~1 Hz. `ts_ns` is the agent's
+/// `CLOCK_MONOTONIC` timestamp; `java_heap_kb` and `native_heap_kb` are
+/// reserved for forward-compatible agent extensions.
+#[derive(Debug, Clone, Copy)]
+pub struct MemorySample {
+    pub ts_ns: i64,
+    pub rss_kb: u64,
+    #[allow(dead_code)]
+    pub java_heap_kb: Option<u64>,
+    #[allow(dead_code)]
+    pub native_heap_kb: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +102,7 @@ impl MonitorView {
 pub struct MonitorState {
     pub history: Vec<MonitorSample>,
     pub gc_events: Vec<GcEvent>,
+    pub memory_history: Vec<MemorySample>,
     pub debuggable: bool,
     pub view: MonitorView,
 }
@@ -107,6 +127,7 @@ impl MonitorState {
         Self {
             history: Vec::new(),
             gc_events: Vec::new(),
+            memory_history: Vec::new(),
             debuggable: true,
             view: MonitorView::All,
         }
@@ -118,22 +139,51 @@ impl MonitorState {
         if self.history.len() > MAX_SAMPLES {
             self.history.remove(0);
         }
-        self.evict_old_gc_events_at(Instant::now());
     }
 
-    pub fn push_gc(&mut self, duration_us: u32) {
-        self.gc_events.push(GcEvent {
-            received_at: Instant::now(),
-            duration_us,
+    pub fn push_gc(&mut self, ts_ns: i64, duration_us: u32) {
+        self.gc_events.push(GcEvent { ts_ns, duration_us });
+        self.evict_at_ns(ts_ns);
+    }
+
+    pub fn push_memory(
+        &mut self,
+        ts_ns: i64,
+        rss_kb: u64,
+        java_heap_kb: Option<u64>,
+        native_heap_kb: Option<u64>,
+    ) {
+        self.memory_history.push(MemorySample {
+            ts_ns,
+            rss_kb,
+            java_heap_kb,
+            native_heap_kb,
         });
-        self.evict_old_gc_events_at(Instant::now());
+        if self.memory_history.len() > MAX_SAMPLES {
+            self.memory_history.remove(0);
+        }
+        self.evict_at_ns(ts_ns);
     }
 
-    fn evict_old_gc_events_at(&mut self, now: Instant) {
-        let cutoff = now
-            .checked_sub(Duration::from_secs(MAX_SAMPLES as u64))
-            .unwrap_or(now);
-        self.gc_events.retain(|e| e.received_at >= cutoff);
+    /// Drop GC events and memory samples older than `RETENTION_NS` relative to
+    /// the just-pushed `now_ns`. Both streams share the agent's
+    /// `CLOCK_MONOTONIC`, so a single cutoff applies cleanly to both.
+    fn evict_at_ns(&mut self, now_ns: i64) {
+        let cutoff = now_ns.saturating_sub(RETENTION_NS);
+        self.gc_events.retain(|e| e.ts_ns >= cutoff);
+        self.memory_history.retain(|s| s.ts_ns >= cutoff);
+    }
+
+    /// Latest known agent timestamp across either stream — used as the chart's
+    /// "now" anchor when rendering. Returns `None` until the agent has emitted
+    /// at least one event.
+    pub fn latest_agent_ts_ns(&self) -> Option<i64> {
+        let mem = self.memory_history.last().map(|s| s.ts_ns);
+        let gc = self.gc_events.last().map(|e| e.ts_ns);
+        match (mem, gc) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     #[allow(dead_code)]
@@ -194,16 +244,11 @@ pub fn spawn_poller(
             let poll_disk = mask & POLL_DISK != 0 && tick.is_multiple_of(5);
 
             std::thread::scope(|s| {
-                let mem = poll_system
-                    .then(|| s.spawn(|| adb.get_meminfo(&serial, &package)));
                 let cpu = poll_system
                     .then(|| s.spawn(|| adb.get_cpu_usage(&serial, &package)));
                 let disk = poll_disk
                     .then(|| s.spawn(|| adb.get_disk_usage(&serial, &package)));
 
-                if let Some(Ok(Ok(mem))) = mem.map(|h| h.join()) {
-                    sample.rss_kb = mem.rss_kb;
-                }
                 if let Some(Ok(Ok(cpu))) = cpu.map(|h| h.join()) {
                     sample.cpu_percent = (cpu / num_cores as f32).clamp(0.0, 100.0);
                     sample.num_cores = num_cores;
@@ -232,9 +277,9 @@ pub fn spawn_poller(
 mod tests {
     use super::*;
 
-    fn sample(rss: u64) -> MonitorSample {
+    fn sample(data: u64) -> MonitorSample {
         MonitorSample {
-            rss_kb: rss,
+            data_kb: data,
             debuggable: true,
             ..Default::default()
         }
@@ -247,7 +292,7 @@ mod tests {
             state.push(sample(i));
         }
         assert_eq!(state.history.len(), MAX_SAMPLES);
-        assert_eq!(state.history.last().unwrap().rss_kb, 129);
+        assert_eq!(state.history.last().unwrap().data_kb, 129);
     }
 
     #[test]
@@ -255,7 +300,7 @@ mod tests {
         let mut state = MonitorState::new();
         state.push(sample(100));
         state.push(sample(200));
-        assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Stable);
+        assert_eq!(state.trend_u64(|m| m.data_kb), Trend::Stable);
     }
 
     #[test]
@@ -264,7 +309,7 @@ mod tests {
         for i in 0..5 {
             state.push(sample(100 + i * 20));
         }
-        assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Rising);
+        assert_eq!(state.trend_u64(|m| m.data_kb), Trend::Rising);
     }
 
     #[test]
@@ -273,7 +318,7 @@ mod tests {
         for i in 0..5 {
             state.push(sample(200 - i * 20));
         }
-        assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Falling);
+        assert_eq!(state.trend_u64(|m| m.data_kb), Trend::Falling);
     }
 
     #[test]
@@ -282,7 +327,7 @@ mod tests {
         for i in 0..5 {
             state.push(sample(1000 + i));
         }
-        assert_eq!(state.trend_u64(|m| m.rss_kb), Trend::Stable);
+        assert_eq!(state.trend_u64(|m| m.data_kb), Trend::Stable);
     }
 
     #[test]
@@ -349,54 +394,60 @@ mod tests {
     #[test]
     fn push_gc_records_event() {
         let mut state = MonitorState::new();
-        state.push_gc(1234);
+        state.push_gc(42, 1234);
         assert_eq!(state.gc_events.len(), 1);
+        assert_eq!(state.gc_events[0].ts_ns, 42);
         assert_eq!(state.gc_events[0].duration_us, 1234);
     }
 
     #[test]
-    fn evict_drops_events_older_than_window() {
+    fn push_memory_records_sample_and_caps() {
         let mut state = MonitorState::new();
-        let now = Instant::now();
-        state.gc_events = vec![
-            GcEvent {
-                received_at: now - Duration::from_secs(MAX_SAMPLES as u64 + 5),
-                duration_us: 1,
-            },
-            GcEvent {
-                received_at: now - Duration::from_secs(MAX_SAMPLES as u64 - 5),
-                duration_us: 2,
-            },
-            GcEvent { received_at: now, duration_us: 3 },
-        ];
+        for i in 0..(MAX_SAMPLES as i64 + 5) {
+            state.push_memory(i * NS_PER_SEC, (1000 + i) as u64, None, None);
+        }
+        assert_eq!(state.memory_history.len(), MAX_SAMPLES);
+        assert_eq!(
+            state.memory_history.last().unwrap().rss_kb,
+            (1000 + MAX_SAMPLES as i64 + 4) as u64,
+        );
+    }
 
-        state.evict_old_gc_events_at(now);
+    #[test]
+    fn push_memory_evicts_stale_gc_events() {
+        let mut state = MonitorState::new();
+        // GC event from "the distant past" relative to a fresh memory sample.
+        state.gc_events.push(GcEvent { ts_ns: 0, duration_us: 5 });
+        state.push_memory(RETENTION_NS + NS_PER_SEC, 100, None, None);
+        assert!(state.gc_events.is_empty());
+    }
 
-        let durations: Vec<u32> = state.gc_events.iter().map(|e| e.duration_us).collect();
-        assert_eq!(durations, vec![2, 3]);
+    #[test]
+    fn push_memory_keeps_recent_gc_events() {
+        let mut state = MonitorState::new();
+        let now = 500 * NS_PER_SEC;
+        state.gc_events.push(GcEvent { ts_ns: now - NS_PER_SEC, duration_us: 5 });
+        state.push_memory(now, 100, None, None);
+        assert_eq!(state.gc_events.len(), 1);
     }
 
     #[test]
     fn evict_keeps_events_at_exact_cutoff() {
         let mut state = MonitorState::new();
-        let now = Instant::now();
-        state.gc_events = vec![GcEvent {
-            received_at: now - Duration::from_secs(MAX_SAMPLES as u64),
-            duration_us: 99,
-        }];
-
-        state.evict_old_gc_events_at(now);
+        let now = 500 * NS_PER_SEC;
+        state.gc_events = vec![GcEvent { ts_ns: now - RETENTION_NS, duration_us: 99 }];
+        state.evict_at_ns(now);
         assert_eq!(state.gc_events.len(), 1);
     }
 
     #[test]
-    fn push_sample_evicts_stale_gc_events() {
+    fn latest_agent_ts_ns_picks_freshest_across_streams() {
         let mut state = MonitorState::new();
-        state.gc_events.push(GcEvent {
-            received_at: Instant::now() - Duration::from_secs(MAX_SAMPLES as u64 + 10),
-            duration_us: 5,
-        });
-        state.push(MonitorSample::default());
-        assert!(state.gc_events.is_empty());
+        assert_eq!(state.latest_agent_ts_ns(), None);
+        state.push_memory(100, 1, None, None);
+        state.push_gc(200, 1);
+        assert_eq!(state.latest_agent_ts_ns(), Some(200));
+        state.push_memory(300, 2, None, None);
+        assert_eq!(state.latest_agent_ts_ns(), Some(300));
     }
 }

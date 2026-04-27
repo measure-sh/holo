@@ -235,8 +235,12 @@ impl DataSources {
         if let Some(handle) = &self.vitals_handle {
             while let Ok(event) = handle.rx.try_recv() {
                 match event {
-                    VitalsEvent::Gc { duration_us, .. } => {
-                        app.monitor_state_mut().push_gc(duration_us);
+                    VitalsEvent::Gc { ts_ns, duration_us } => {
+                        app.monitor_state_mut().push_gc(ts_ns, duration_us);
+                    }
+                    VitalsEvent::Memory { ts_ns, rss_kb, java_heap_kb, native_heap_kb } => {
+                        app.monitor_state_mut()
+                            .push_memory(ts_ns, rss_kb, java_heap_kb, native_heap_kb);
                     }
                 }
             }
