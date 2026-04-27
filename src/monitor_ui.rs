@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
     text::{Line, Span},
@@ -546,35 +546,12 @@ fn render_charts(
     }
 
     let selected = state.selected_metric.min(metrics.len() - 1);
-    let list_active = focused && !state.detail_focused;
 
-    if !state.detail_open {
-        render_compact_list(frame, inner, &metrics, selected, list_active);
-        return;
+    if state.detail_open {
+        render_metric_detail(frame, inner, &metrics[selected], focused);
+    } else {
+        render_compact_list(frame, inner, &metrics, selected, focused);
     }
-
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-        .split(inner);
-    render_compact_list(frame, chunks[0], &metrics, selected, list_active);
-    render_metric_detail_pane(
-        frame,
-        chunks[1],
-        &metrics[selected],
-        focused && state.detail_focused,
-    );
-}
-
-/// Detail pane for the selected metric: chart on top, area below reserved
-/// for future development.
-fn render_metric_detail_pane(frame: &mut Frame, area: Rect, metric: &Metric, focused: bool) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    let split = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(area);
-    render_metric_detail(frame, split[0], metric, focused);
 }
 
 pub fn render_monitor_panel(

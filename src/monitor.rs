@@ -44,30 +44,11 @@ pub struct MonitorState {
     pub debuggable: bool,
     pub selected_metric: usize,
     pub detail_open: bool,
-    pub detail_focused: bool,
 }
 
 impl MonitorState {
     pub fn handle_key(&mut self, key: KeyEvent, metric_count: usize) -> Option<Action> {
         let max_index = metric_count.saturating_sub(1);
-
-        if self.detail_open && self.detail_focused {
-            return match key.code {
-                KeyCode::Tab => {
-                    self.detail_focused = false;
-                    Some(Action::Noop)
-                }
-                KeyCode::Enter => {
-                    self.close_detail();
-                    Some(Action::Noop)
-                }
-                KeyCode::Esc => {
-                    self.detail_focused = false;
-                    Some(Action::Noop)
-                }
-                _ => Some(Action::Noop),
-            };
-        }
 
         if self.detail_open {
             return match key.code {
@@ -79,16 +60,12 @@ impl MonitorState {
                     self.selected_metric = (self.selected_metric + 1).min(max_index);
                     Some(Action::Noop)
                 }
-                KeyCode::Tab => {
-                    self.detail_focused = true;
-                    Some(Action::Noop)
-                }
                 KeyCode::Enter => {
-                    self.close_detail();
+                    self.detail_open = false;
                     Some(Action::Noop)
                 }
                 KeyCode::Esc => {
-                    self.close_detail();
+                    self.detail_open = false;
                     Some(Action::Unfocus)
                 }
                 _ => Some(Action::Noop),
@@ -115,11 +92,6 @@ impl MonitorState {
         }
     }
 
-    fn close_detail(&mut self) {
-        self.detail_open = false;
-        self.detail_focused = false;
-    }
-
     pub fn new() -> Self {
         Self {
             history: Vec::new(),
@@ -127,7 +99,6 @@ impl MonitorState {
             debuggable: true,
             selected_metric: 0,
             detail_open: false,
-            detail_focused: false,
         }
     }
 
@@ -325,7 +296,6 @@ mod tests {
         let action = state.handle_key(key_event(KeyCode::Enter), 5);
         assert!(matches!(action, Some(Action::Noop)));
         assert!(state.detail_open);
-        assert!(!state.detail_focused);
     }
 
     #[test]
@@ -361,13 +331,12 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_tab_toggles_detail_focus() {
+    fn handle_key_down_in_detail_switches_metric() {
         let mut state = MonitorState::new();
         state.detail_open = true;
-        state.handle_key(key_event(KeyCode::Tab), 5);
-        assert!(state.detail_focused);
-        state.handle_key(key_event(KeyCode::Tab), 5);
-        assert!(!state.detail_focused);
+        state.handle_key(key_event(KeyCode::Down), 5);
+        assert!(state.detail_open);
+        assert_eq!(state.selected_metric, 1);
     }
 
     #[test]
