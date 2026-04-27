@@ -1,22 +1,35 @@
-# JVMTI Agent (GC marks)
+# JVMTI Agent
 
-Holo shows GC pauses as diamond marks on the Monitor panel. The data comes
-from a tiny C++ agent (`libholoagent.so`) that Holo loads into the target app
-on the device. This doc explains, in plain terms, how that works end to end.
+Holo's Monitor panel shows live CPU%, thread count, Java / native / RSS
+memory, and GC pause marks. All of it comes from a tiny C++ agent
+(`libholoagent.so`) that Holo loads into the target app on the device. This
+doc explains, in plain terms, how that works end to end.
 
 ## Supported configurations
 
 - **ABIs:** `arm64-v8a` and `x86_64` only. On any other ABI (e.g.
-  `armeabi-v7a`, `x86`) Holo quietly skips vitals — no GC marks will appear.
+  `armeabi-v7a`, `x86`) Holo quietly skips vitals — the Monitor panel
+  shows nothing for CPU, memory, threads, or GC.
 - **Debuggable apps only:** the target must ship with
   `android:debuggable="true"`. Release builds are skipped by design.
 
 ## What you see in the UI
 
-When you focus an app, Holo checks if it's debuggable. If it is, every time
-ART runs a garbage collection inside the app, a `◆` mark shows up on the
-Monitor chart at the moment the GC finished. The footer line under the chart
-says something like `◆ 7 GC` — the number of GCs in the visible window.
+When you focus an app, Holo checks if it's debuggable. If it is, the Monitor
+panel starts streaming once the agent is attached:
+
+- **CPU view** — process CPU% averaged across cores (utime+stime delta from
+  `/proc/self/stat`), with the live thread count from the same file shown on
+  the chip row (`23 threads`).
+- **Memory view** — three lines on the same chart: Java heap
+  (`Runtime.totalMemory() - freeMemory()`), native heap
+  (`Debug.getNativeHeapAllocatedSize()`), and RSS (from `/proc/self/statm`).
+- **GC marks** — every time ART runs a garbage collection, a `◆` mark shows
+  up at the moment the GC finished. The chip row shows the count in the
+  visible window (`◆ 7 GC`).
+
+All four signals share the agent's `CLOCK_MONOTONIC` clock, so GC marks line
+up with the CPU and memory curves they correspond to.
 
 Nothing shows up for non-debuggable (release) builds. That is by design —
 the OS only lets us inject code into apps that opted in via
@@ -42,8 +55,9 @@ the OS only lets us inject code into apps that opted in via
    │              │   tcp:0 localabstract   │                      │
    │              │ ──────────────────────▶ │                      │
    │              │                         │                      │
-   │  TCP read    │ ◀───── binary frames ── │  GC start/finish     │
-   │  loop        │                         │  enqueued + sent     │
+   │  TCP read    │ ◀───── binary frames ── │  sampler thread      │
+   │  loop        │                         │  + GC callbacks      │
+   │              │                         │  enqueue + serve     │
    └──────────────┘                         └──────────────────────┘
 ```
 
@@ -51,9 +65,14 @@ There are three things at play:
 
 1. **The agent** — a ~50 KB native library (`agent/agent.cpp`, cross-compiled
    into the holo binary at build time — see below) that runs _inside_ the
-   app process. It registers JVMTI callbacks for GC start and finish,
-   timestamps each pair, and puts a frame in a small ring buffer. A
-   background pthread serves frames over an abstract Unix socket.
+   app process. Two producers feed a small ring buffer:
+   - **JVMTI GC callbacks** — `GarbageCollectionStart` /
+     `GarbageCollectionFinish` time each pause and enqueue a GC frame.
+   - **A 1 Hz sampler thread** — reads `/proc/self/stat` for CPU jiffies
+     and thread count, `/proc/self/statm` for RSS, and JNI-attaches to
+     call `Runtime.totalMemory()` / `freeMemory()` /
+     `Debug.getNativeHeapAllocatedSize()` for Java and native heap.
+   A background pthread serves the ring over an abstract Unix socket.
 
 2. **The transport** — an abstract Unix socket named `@holoagent-<pid>`
    bound by the agent. Holo bridges it to a host loopback port using
@@ -61,8 +80,24 @@ There are three things at play:
    regular TCP connection to that port.
 
 3. **The host reader** — `src/vitals/reader.rs` reads length-prefixed
-   binary frames off the TCP socket and turns them into `VitalsEvent::Gc`
-   values, which `data.rs` forwards into the Monitor state for rendering.
+   binary frames off the TCP socket, decodes them into `VitalsEvent::{Gc,
+   Cpu, Memory}` values, which `data.rs` forwards into the Monitor state
+   for rendering.
+
+## Wire format
+
+Frames are big-endian: `[u8 kind][u32 payload_len][payload]`.
+
+| Kind   | Name        | Payload                                                                     |
+| ------ | ----------- | --------------------------------------------------------------------------- |
+| `0x01` | GC pause    | `[i64 ts_ns][u32 duration_us]` (12 bytes)                                   |
+| `0x02` | MemorySample| `[i64 ts_ns][u32 rss_kb][u32 java_heap_kb][u32 native_heap_kb]` (20 bytes)  |
+| `0x03` | CpuSample   | `[i64 ts_ns][u32 cpu_centi_percent][u32 num_threads]` (16 bytes)            |
+
+`ts_ns` is the agent's `CLOCK_MONOTONIC` reading at the moment the event was
+produced. `cpu_centi_percent` is the divided-by-cores percentage × 100
+(range `0..=10000`). The host enforces strict payload-length checks; agent
+and host ship together via `build.rs`, so there is no version negotiation.
 
 ## How it's built and bundled
 
@@ -77,9 +112,9 @@ The build is gated on finding an NDK. `build.rs` probes
 falls back to `~/Library/Android/sdk/ndk/*` and `~/Android/Sdk/ndk/*`,
 picking the newest installed version. If no NDK is found, it writes
 zero-byte stubs and prints a `cargo:warning` — holo still builds, but
-`blobs::for_abi` returns `None` for every ABI, so GC marks won't appear at
-runtime. This keeps casual contributors who only touch the TUI from needing
-an NDK install.
+`blobs::for_abi` returns `None` for every ABI, so the Monitor panel won't
+show CPU, memory, or GC marks at runtime. This keeps casual contributors
+who only touch the TUI from needing an NDK install.
 
 On CI, both `ci.yml` and `release.yml` install NDK r28 via
 `nttld/setup-ndk@v1` before `cargo build`, so PR checks and release
