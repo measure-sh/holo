@@ -53,11 +53,11 @@ impl MonitorState {
         if self.detail_open {
             return match key.code {
                 KeyCode::Up | KeyCode::Char('k') | KeyCode::Left | KeyCode::Char('h') => {
-                    self.selected_metric = self.selected_metric.saturating_sub(1);
+                    self.move_selection(-1, max_index);
                     Some(Action::Noop)
                 }
                 KeyCode::Down | KeyCode::Char('j') | KeyCode::Right | KeyCode::Char('l') => {
-                    self.selected_metric = (self.selected_metric + 1).min(max_index);
+                    self.move_selection(1, max_index);
                     Some(Action::Noop)
                 }
                 KeyCode::Enter | KeyCode::Esc => {
@@ -70,11 +70,11 @@ impl MonitorState {
 
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
-                self.selected_metric = self.selected_metric.saturating_sub(1);
+                self.move_selection(-1, max_index);
                 Some(Action::Noop)
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.selected_metric = (self.selected_metric + 1).min(max_index);
+                self.move_selection(1, max_index);
                 Some(Action::Noop)
             }
             KeyCode::Enter => {
@@ -86,6 +86,18 @@ impl MonitorState {
             KeyCode::Esc => Some(Action::Unfocus),
             _ => None,
         }
+    }
+
+    /// Clamp the current selection into range first, then nudge by `delta`,
+    /// then re-clamp. The pre-clamp keeps Down/Right from moving *backwards*
+    /// when `selected_metric` was left over from a state with more metrics.
+    fn move_selection(&mut self, delta: i32, max_index: usize) {
+        let current = self.selected_metric.min(max_index);
+        self.selected_metric = if delta < 0 {
+            current.saturating_sub(delta.unsigned_abs() as usize)
+        } else {
+            current.saturating_add(delta as usize).min(max_index)
+        };
     }
 
     pub fn new() -> Self {
@@ -368,6 +380,16 @@ mod tests {
         state.selected_metric = 2;
         state.handle_key(key_event(KeyCode::Left), 4);
         assert_eq!(state.selected_metric, 1);
+    }
+
+    #[test]
+    fn handle_key_down_clamps_stale_selection_before_nudging() {
+        // selected_metric outlives a count shrink (e.g., traffic disappeared).
+        // Down must land on the new last index, not jump backwards.
+        let mut state = MonitorState::new();
+        state.selected_metric = 4;
+        state.handle_key(key_event(KeyCode::Down), 3);
+        assert_eq!(state.selected_metric, 2);
     }
 
     #[test]

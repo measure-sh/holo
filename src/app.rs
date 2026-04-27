@@ -8,6 +8,7 @@ use crate::database::DatabaseState;
 use crate::files::FilesState;
 use crate::logcat::LogcatState;
 use crate::monitor::MonitorState;
+use crate::monitor_ui;
 use crate::panel;
 use crate::theme;
 use crate::permissions::PermissionsState;
@@ -383,8 +384,8 @@ impl App {
             panel::ISSUES => self.issues_state.handle_key(key),
             panel::NETWORK => self.network_state.handle_key(key),
             panel::MONITOR => {
-                let metric_count = if self.network_state.traffic.is_empty() { 3 } else { 4 };
-                self.monitor_state.handle_key(key, metric_count)
+                let count = monitor_ui::metric_count(&self.network_state.traffic);
+                self.monitor_state.handle_key(key, count)
             }
             panel::DATABASE => self.database_state.handle_key(key),
             _ => None,

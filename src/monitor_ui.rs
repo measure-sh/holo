@@ -569,33 +569,11 @@ fn render_chart(frame: &mut Frame, area: Rect, metric: &Metric, min: f64, max: f
     frame.render_widget(chart, area);
 }
 
-fn render_charts(
-    frame: &mut Frame,
-    inner: Rect,
-    state: &MonitorState,
-    traffic: &[TrafficSample],
-    traffic_baseline: Option<(u64, u64)>,
-    focused: bool,
-) {
-    if inner.width == 0 || inner.height == 0 {
-        return;
-    }
-
-    let views = build_metrics(state, traffic, traffic_baseline);
-    if views.is_empty() {
-        return;
-    }
-
-    let selected = state.selected_metric.min(views.len() - 1);
-
-    if state.detail_open {
-        match &views[selected] {
-            MetricView::Single(m) => render_metric_detail(frame, inner, m, focused),
-            MetricView::Pair { rx, tx } => render_pair_detail(frame, inner, rx, tx, focused),
-        }
-    } else {
-        render_compact_list(frame, inner, &views, selected, focused);
-    }
+/// Number of navigable monitor entries given the current traffic. Mirrors
+/// what `build_metrics` produces: the 3 always-present rows (CPU/RSS/Disk)
+/// plus the combined Network row when any traffic has been recorded.
+pub fn metric_count(traffic: &[TrafficSample]) -> usize {
+    if traffic.is_empty() { 3 } else { 4 }
 }
 
 fn render_pair_detail(frame: &mut Frame, area: Rect, rx: &Metric, tx: &Metric, focused: bool) {
@@ -747,7 +725,22 @@ pub fn render_monitor_panel(
         return;
     }
 
-    render_charts(frame, inner, state, traffic, traffic_baseline, focused);
+    if inner.width == 0 || inner.height == 0 {
+        return;
+    }
+    let views = build_metrics(state, traffic, traffic_baseline);
+    if views.is_empty() {
+        return;
+    }
+    let selected = state.selected_metric.min(views.len() - 1);
+    if state.detail_open {
+        match &views[selected] {
+            MetricView::Single(m) => render_metric_detail(frame, inner, m, focused),
+            MetricView::Pair { rx, tx } => render_pair_detail(frame, inner, rx, tx, focused),
+        }
+    } else {
+        render_compact_list(frame, inner, &views, selected, focused);
+    }
 }
 
 #[cfg(test)]
