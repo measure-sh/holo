@@ -344,7 +344,8 @@ bool send_all(int fd, const uint8_t* buf, size_t n) {
 
 bool send_event(int fd, const Event& e) {
     // GC:     [u8 kind][u32 len=12][i64 ts_ns][u32 duration_us]
-    // CPU:    [u8 kind][u32 len=12][i64 ts_ns][u32 cpu_centi_percent]
+    // CPU:    [u8 kind][u32 len=16][i64 ts_ns][u32 cpu_centi_percent]
+    //                  [u32 num_threads]
     // Memory: [u8 kind][u32 len=20][i64 ts_ns][u32 rss_kb]
     //                  [u32 java_heap_kb][u32 native_heap_kb]
     if (e.kind == KIND_MEMORY) {
@@ -355,6 +356,15 @@ bool send_event(int fd, const Event& e) {
         put_be32(buf + 13, e.value);
         put_be32(buf + 17, e.java_heap_kb);
         put_be32(buf + 21, e.native_heap_kb);
+        return send_all(fd, buf, sizeof(buf));
+    }
+    if (e.kind == KIND_CPU) {
+        uint8_t buf[1 + 4 + 16];
+        buf[0] = e.kind;
+        put_be32(buf + 1, 16);
+        put_be64(buf + 5, e.ts_ns);
+        put_be32(buf + 13, e.value);
+        put_be32(buf + 17, e.num_threads);
         return send_all(fd, buf, sizeof(buf));
     }
     uint8_t buf[1 + 4 + 12];

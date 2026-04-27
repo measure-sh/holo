@@ -15,7 +15,7 @@ pub enum VitalsEvent {
         java_heap_kb: u64,
         native_heap_kb: u64,
     },
-    Cpu { ts_ns: i64, cpu_centi_percent: u32 },
+    Cpu { ts_ns: i64, cpu_centi_percent: u32, num_threads: u32 },
 }
 
 pub(crate) const KIND_GC: u8 = 0x01;
@@ -43,12 +43,13 @@ pub(crate) fn decode_payload(kind: u8, payload: &[u8]) -> Option<VitalsEvent> {
             Some(VitalsEvent::Memory { ts_ns, rss_kb, java_heap_kb, native_heap_kb })
         }
         KIND_CPU => {
-            if payload.len() != 12 {
+            if payload.len() != 16 {
                 return None;
             }
             let ts_ns = i64::from_be_bytes(payload[0..8].try_into().ok()?);
             let cpu_centi_percent = u32::from_be_bytes(payload[8..12].try_into().ok()?);
-            Some(VitalsEvent::Cpu { ts_ns, cpu_centi_percent })
+            let num_threads = u32::from_be_bytes(payload[12..16].try_into().ok()?);
+            Some(VitalsEvent::Cpu { ts_ns, cpu_centi_percent, num_threads })
         }
         _ => None,
     }
@@ -110,15 +111,16 @@ mod tests {
         let mut payload = Vec::new();
         payload.extend_from_slice(&7_777_777i64.to_be_bytes());
         payload.extend_from_slice(&4321u32.to_be_bytes());
+        payload.extend_from_slice(&42u32.to_be_bytes());
         assert_eq!(
             decode_payload(KIND_CPU, &payload).unwrap(),
-            VitalsEvent::Cpu { ts_ns: 7_777_777, cpu_centi_percent: 4321 },
+            VitalsEvent::Cpu { ts_ns: 7_777_777, cpu_centi_percent: 4321, num_threads: 42 },
         );
     }
 
     #[test]
     fn ignores_wrong_cpu_payload_length() {
-        assert!(decode_payload(KIND_CPU, &[0u8; 8]).is_none());
-        assert!(decode_payload(KIND_CPU, &[0u8; 16]).is_none());
+        assert!(decode_payload(KIND_CPU, &[0u8; 12]).is_none());
+        assert!(decode_payload(KIND_CPU, &[0u8; 20]).is_none());
     }
 }
