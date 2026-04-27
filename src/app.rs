@@ -383,7 +383,7 @@ impl App {
             panel::ISSUES => self.issues_state.handle_key(key),
             panel::NETWORK => self.network_state.handle_key(key),
             panel::MONITOR => {
-                let metric_count = if self.network_state.traffic.is_empty() { 3 } else { 5 };
+                let metric_count = if self.network_state.traffic.is_empty() { 3 } else { 4 };
                 self.monitor_state.handle_key(key, metric_count)
             }
             panel::DATABASE => self.database_state.handle_key(key),

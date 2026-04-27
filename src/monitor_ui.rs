@@ -106,9 +106,36 @@ struct Metric {
     values: Vec<f64>,
     color: Color,
     scale: MetricScale,
+    /// Cumulative bytes transferred since holo started watching. Only set
+    /// for network rx/tx; None for CPU/mem/disk.
+    total_bytes: Option<u64>,
     /// Seconds-ago for each event to overlay on the sparkline (rightmost = now).
     /// Empty for metrics without overlays.
     tick_secs_ago: Vec<u32>,
+}
+
+/// One navigable monitor view. CPU/RSS/Disk are `Single`s; the network row
+/// is a `Pair` rendered as one combined entry in the compact list and one
+/// dual-line chart in the detail view.
+enum MetricView {
+    Single(Metric),
+    Pair { rx: Metric, tx: Metric },
+}
+
+impl MetricView {
+    fn pair_label(rx: &Metric, tx: &Metric) -> String {
+        let rx_total = rx.total_bytes.unwrap_or(0);
+        let tx_total = tx.total_bytes.unwrap_or(0);
+        let rx_now = *rx.values.last().unwrap_or(&0.0);
+        let tx_now = *tx.values.last().unwrap_or(&0.0);
+        format!(
+            " Network ↓ {} ({})  ↑ {} ({})  ",
+            format_rate(rx_now.max(0.0).round() as u64),
+            format_bytes(rx_total),
+            format_rate(tx_now.max(0.0).round() as u64),
+            format_bytes(tx_total),
+        )
+    }
 }
 
 fn gc_secs_ago(events: &[GcEvent]) -> Vec<u32> {
@@ -172,9 +199,9 @@ fn build_metrics(
     state: &MonitorState,
     traffic: &[TrafficSample],
     traffic_baseline: Option<(u64, u64)>,
-) -> Vec<Metric> {
+) -> Vec<MetricView> {
     let t = theme::current();
-    let mut metrics = Vec::new();
+    let mut views = Vec::new();
 
     let cpu_now = state.history.last().map(|m| m.cpu_percent).unwrap_or(0.0);
     let cpu_values: Vec<f64> = state.history.iter().map(|m| m.cpu_percent.max(0.0) as f64).collect();
@@ -183,7 +210,7 @@ fn build_metrics(
         .iter()
         .map(|m| SparklineBar::from(Some(m.cpu_percent.max(0.0).round() as u64)))
         .collect();
-    metrics.push(Metric {
+    views.push(MetricView::Single(Metric {
         name: "CPU",
         label: format!(" CPU {:.1}%  ", cpu_now),
         sparkline_data: cpu_spark,
@@ -191,13 +218,14 @@ fn build_metrics(
         values: cpu_values,
         color: t.spark_cpu,
         scale: MetricScale::Percent,
+        total_bytes: None,
         tick_secs_ago: Vec::new(),
-    });
+    }));
 
     let mem_samples: Vec<u64> = state.history.iter().map(|m| m.rss_kb).collect();
     let mem_now = *mem_samples.last().unwrap_or(&0);
     let (mem_spark, mem_max) = range_shifted(&mem_samples);
-    metrics.push(Metric {
+    views.push(MetricView::Single(Metric {
         name: "RSS",
         label: format!(" RSS {}  ", format_mb(mem_now)),
         sparkline_data: mem_spark,
@@ -205,13 +233,14 @@ fn build_metrics(
         values: mem_samples.iter().map(|&v| v as f64).collect(),
         color: t.spark_mem,
         scale: MetricScale::MemKb,
+        total_bytes: None,
         tick_secs_ago: gc_secs_ago(&state.gc_events),
-    });
+    }));
 
     let disk_samples: Vec<u64> = state.history.iter().map(|m| m.data_kb).collect();
     let disk_now = *disk_samples.last().unwrap_or(&0);
     let (disk_spark, disk_max) = range_shifted(&disk_samples);
-    metrics.push(Metric {
+    views.push(MetricView::Single(Metric {
         name: "Disk",
         label: format!(" Disk {}  ", format_mb_precise(disk_now)),
         sparkline_data: disk_spark,
@@ -219,8 +248,9 @@ fn build_metrics(
         values: disk_samples.iter().map(|&v| v as f64).collect(),
         color: t.spark_disk,
         scale: MetricScale::DiskKb,
+        total_bytes: None,
         tick_secs_ago: Vec::new(),
-    });
+    }));
 
     if !traffic.is_empty() {
         let last = *traffic.last().unwrap();
@@ -240,7 +270,7 @@ fn build_metrics(
             .collect();
         let rx_max = traffic.iter().map(|s| s.rx_bps).max().unwrap_or(0);
         let tx_max = traffic.iter().map(|s| s.tx_bps).max().unwrap_or(0);
-        metrics.push(Metric {
+        let rx = Metric {
             name: "↓",
             label: format!(" ↓ {} ({})  ", format_rate(last.rx_bps), format_bytes(rx_total)),
             sparkline_data: rx_samples,
@@ -248,9 +278,10 @@ fn build_metrics(
             values: traffic.iter().map(|s| s.rx_bps as f64).collect(),
             color: t.spark_rx,
             scale: MetricScale::RateBps,
+            total_bytes: Some(rx_total),
             tick_secs_ago: Vec::new(),
-        });
-        metrics.push(Metric {
+        };
+        let tx = Metric {
             name: "↑",
             label: format!(" ↑ {} ({})  ", format_rate(last.tx_bps), format_bytes(tx_total)),
             sparkline_data: tx_samples,
@@ -258,17 +289,20 @@ fn build_metrics(
             values: traffic.iter().map(|s| s.tx_bps as f64).collect(),
             color: t.spark_tx,
             scale: MetricScale::RateBps,
+            total_bytes: Some(tx_total),
             tick_secs_ago: Vec::new(),
-        });
+        };
+        views.push(MetricView::Pair { rx, tx });
     }
 
-    metrics
+    views
 }
 
 fn sparkline_row(
     frame: &mut Frame,
     area: Rect,
-    metric: &Metric,
+    label: &str,
+    spark: &Metric,
     label_width: u16,
     selected: bool,
     list_active: bool,
@@ -286,23 +320,23 @@ fn sparkline_row(
     } else {
         (Style::new().fg(t.fg), "  ")
     };
-    let display = format!("{}{}", prefix, metric.label.trim_start());
+    let display = format!("{}{}", prefix, label.trim_start());
     frame.render_widget(
         Paragraph::new(Line::styled(display, label_style)),
         chunks[0],
     );
-    let reversed: Vec<SparklineBar> = metric.sparkline_data.iter().rev().cloned().collect();
-    let mut spark = Sparkline::default()
+    let reversed: Vec<SparklineBar> = spark.sparkline_data.iter().rev().cloned().collect();
+    let mut sparkline = Sparkline::default()
         .data(reversed)
         .direction(RenderDirection::RightToLeft)
-        .style(Style::new().fg(metric.color))
+        .style(Style::new().fg(spark.color))
         .bar_set(BASELINE_BARS)
         .absent_value_symbol(symbols::bar::ONE_EIGHTH)
-        .absent_value_style(Style::new().fg(metric.color));
-    if metric.sparkline_max > 0 {
-        spark = spark.max(metric.sparkline_max);
+        .absent_value_style(Style::new().fg(spark.color));
+    if spark.sparkline_max > 0 {
+        sparkline = sparkline.max(spark.sparkline_max);
     }
-    frame.render_widget(spark, chunks[1]);
+    frame.render_widget(sparkline, chunks[1]);
 }
 
 /// Render '◆' marks above a chart body at columns matching each tick's
@@ -323,32 +357,39 @@ fn render_ticks(frame: &mut Frame, area: Rect, ticks: &[u32], window: f64, color
 fn render_compact_list(
     frame: &mut Frame,
     area: Rect,
-    metrics: &[Metric],
+    views: &[MetricView],
     selected: usize,
     list_active: bool,
 ) {
-    if metrics.is_empty() || area.height == 0 {
+    if views.is_empty() || area.height == 0 {
         return;
     }
-    // Prefer a 1-line gap between rows; if height is too tight, drop the gap
-    // so more metrics still fit.
-    let spaced_rows = (area.height as usize).div_ceil(2).min(metrics.len());
-    let (visible_rows, spacing) = if spaced_rows == metrics.len() {
-        (metrics.len(), 1)
-    } else {
-        (metrics.len().min(area.height as usize), 0)
-    };
-    let label_width = metrics
+    let row_data: Vec<(String, &Metric)> = views
         .iter()
-        .map(|m| m.label.trim_start().chars().count())
+        .map(|v| match v {
+            MetricView::Single(m) => (m.label.clone(), m),
+            MetricView::Pair { rx, tx } => (MetricView::pair_label(rx, tx), rx),
+        })
+        .collect();
+    // Prefer a 1-line gap between rows; if height is too tight, drop the gap
+    // so more rows still fit.
+    let spaced_rows = (area.height as usize).div_ceil(2).min(row_data.len());
+    let (visible_rows, spacing) = if spaced_rows == row_data.len() {
+        (row_data.len(), 1)
+    } else {
+        (row_data.len().min(area.height as usize), 0)
+    };
+    let label_width = row_data
+        .iter()
+        .map(|(label, _)| label.trim_start().chars().count())
         .max()
         .unwrap_or(0) as u16
         + 2;
     let constraints: Vec<Constraint> = (0..visible_rows).map(|_| Constraint::Length(1)).collect();
     let chunks = Layout::vertical(constraints).spacing(spacing).split(area);
 
-    for (i, metric) in metrics.iter().take(visible_rows).enumerate() {
-        sparkline_row(frame, chunks[i], metric, label_width, i == selected, list_active);
+    for (i, (label, spark)) in row_data.iter().take(visible_rows).enumerate() {
+        sparkline_row(frame, chunks[i], label, spark, label_width, i == selected, list_active);
     }
 }
 
@@ -540,18 +581,141 @@ fn render_charts(
         return;
     }
 
-    let metrics = build_metrics(state, traffic, traffic_baseline);
-    if metrics.is_empty() {
+    let views = build_metrics(state, traffic, traffic_baseline);
+    if views.is_empty() {
         return;
     }
 
-    let selected = state.selected_metric.min(metrics.len() - 1);
+    let selected = state.selected_metric.min(views.len() - 1);
 
     if state.detail_open {
-        render_metric_detail(frame, inner, &metrics[selected], focused);
+        match &views[selected] {
+            MetricView::Single(m) => render_metric_detail(frame, inner, m, focused),
+            MetricView::Pair { rx, tx } => render_pair_detail(frame, inner, rx, tx, focused),
+        }
     } else {
-        render_compact_list(frame, inner, &metrics, selected, focused);
+        render_compact_list(frame, inner, &views, selected, focused);
     }
+}
+
+fn render_pair_detail(frame: &mut Frame, area: Rect, rx: &Metric, tx: &Metric, focused: bool) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let t = theme::current();
+    let (chip_area, body) = split_chip(area);
+    render_pane_chip(frame, chip_area, "Network", focused, false);
+
+    let rx_now = *rx.values.last().unwrap_or(&0.0);
+    let tx_now = *tx.values.last().unwrap_or(&0.0);
+    let rx_total = rx.total_bytes.unwrap_or(0);
+    let tx_total = tx.total_bytes.unwrap_or(0);
+    let stats_line = Line::from(vec![
+        Span::styled(
+            format!("{} {}", rx.name, format_scale(rx_now, rx.scale)),
+            Style::new().fg(rx.color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" ({})", format_bytes(rx_total)),
+            Style::new().fg(t.muted),
+        ),
+        Span::raw("   "),
+        Span::styled(
+            format!("{} {}", tx.name, format_scale(tx_now, tx.scale)),
+            Style::new().fg(tx.color).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" ({})", format_bytes(tx_total)),
+            Style::new().fg(t.muted),
+        ),
+    ])
+    .alignment(Alignment::Right);
+    frame.render_widget(stats_line, chip_area);
+
+    if body.height < 3 || body.width < 8 {
+        return;
+    }
+    render_combined_chart(frame, body, rx, tx);
+}
+
+fn render_combined_chart(frame: &mut Frame, area: Rect, rx: &Metric, tx: &Metric) {
+    let t = theme::current();
+    let rx_points: Vec<(f64, f64)> = rx
+        .values
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (i as f64, v))
+        .collect();
+    let tx_points: Vec<(f64, f64)> = tx
+        .values
+        .iter()
+        .enumerate()
+        .map(|(i, &v)| (i as f64, v))
+        .collect();
+
+    if rx_points.len() < 2 && tx_points.len() < 2 {
+        let hint = Paragraph::new(Line::styled(
+            " gathering samples…",
+            Style::new().fg(t.muted),
+        ));
+        frame.render_widget(hint, area);
+        return;
+    }
+
+    let rx_max = rx.values.iter().copied().fold(0.0_f64, f64::max);
+    let tx_max = tx.values.iter().copied().fold(0.0_f64, f64::max);
+    let max = rx_max.max(tx_max);
+    let pad = max.max(1.0) * 0.1;
+    let y_lo = 0.0;
+    let y_hi = max + pad;
+    let y_mid = y_hi / 2.0;
+    let y_labels = vec![
+        Line::from(format_scale(y_lo, rx.scale)),
+        Line::from(format_scale(y_mid, rx.scale)),
+        Line::from(format_scale(y_hi, rx.scale)),
+    ];
+
+    let sample_count = rx.values.len().max(tx.values.len());
+    let x_max = sample_count.saturating_sub(1) as f64;
+    let total_secs = sample_count.saturating_sub(1) as u64;
+    let x_labels = if area.width >= 36 && total_secs >= 2 {
+        vec![
+            Line::from(format_ago(total_secs)),
+            Line::from(format_ago(total_secs / 2)),
+            Line::from("now"),
+        ]
+    } else {
+        vec![Line::from(format_ago(total_secs)), Line::from("now")]
+    };
+
+    let rx_dataset = Dataset::default()
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::new().fg(rx.color))
+        .data(&rx_points);
+    let tx_dataset = Dataset::default()
+        .marker(symbols::Marker::Braille)
+        .graph_type(GraphType::Line)
+        .style(Style::new().fg(tx.color))
+        .data(&tx_points);
+
+    let chart = Chart::new(vec![rx_dataset, tx_dataset])
+        .style(Style::new().bg(t.bg))
+        .x_axis(
+            Axis::default()
+                .style(Style::new().fg(t.muted))
+                .bounds([0.0, x_max.max(1.0)])
+                .labels(x_labels),
+        )
+        .y_axis(
+            Axis::default()
+                .style(Style::new().fg(t.muted))
+                .bounds([y_lo, y_hi])
+                .labels(y_labels)
+                .labels_alignment(Alignment::Right),
+        );
+
+    frame.render_widget(chart, area);
 }
 
 pub fn render_monitor_panel(

@@ -52,21 +52,17 @@ impl MonitorState {
 
         if self.detail_open {
             return match key.code {
-                KeyCode::Up | KeyCode::Char('k') => {
+                KeyCode::Up | KeyCode::Char('k') | KeyCode::Left | KeyCode::Char('h') => {
                     self.selected_metric = self.selected_metric.saturating_sub(1);
                     Some(Action::Noop)
                 }
-                KeyCode::Down | KeyCode::Char('j') => {
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Right | KeyCode::Char('l') => {
                     self.selected_metric = (self.selected_metric + 1).min(max_index);
                     Some(Action::Noop)
                 }
-                KeyCode::Enter => {
+                KeyCode::Enter | KeyCode::Esc => {
                     self.detail_open = false;
                     Some(Action::Noop)
-                }
-                KeyCode::Esc => {
-                    self.detail_open = false;
-                    Some(Action::Unfocus)
                 }
                 _ => Some(Action::Noop),
             };
@@ -349,12 +345,29 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_esc_in_detail_closes_and_unfocuses() {
+    fn handle_key_esc_in_detail_closes_without_unfocus() {
         let mut state = MonitorState::new();
         state.detail_open = true;
-        let action = state.handle_key(key_event(KeyCode::Esc), 5);
-        assert!(matches!(action, Some(Action::Unfocus)));
+        let action = state.handle_key(key_event(KeyCode::Esc), 4);
+        assert!(matches!(action, Some(Action::Noop)));
         assert!(!state.detail_open);
+    }
+
+    #[test]
+    fn handle_key_right_in_detail_advances_metric() {
+        let mut state = MonitorState::new();
+        state.detail_open = true;
+        state.handle_key(key_event(KeyCode::Right), 4);
+        assert_eq!(state.selected_metric, 1);
+    }
+
+    #[test]
+    fn handle_key_left_in_detail_decreases_metric() {
+        let mut state = MonitorState::new();
+        state.detail_open = true;
+        state.selected_metric = 2;
+        state.handle_key(key_event(KeyCode::Left), 4);
+        assert_eq!(state.selected_metric, 1);
     }
 
     #[test]
