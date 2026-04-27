@@ -693,8 +693,13 @@ fn apply_pending_build(ctx: &mut DispatchContext, app: &mut App, pb: PendingBuil
             ctx.data = Some(auto.data);
         }
         None => {
-            // No auto-selected package — let the user pick from the dropdown.
-            app.toolbar_mut().open = Some(toolbar::DropdownKind::App);
+            // No auto-selected package — auto-open the App picker, but only
+            // if the user hasn't already navigated somewhere. Otherwise this
+            // late-arriving worker yanks their Ctrl+D / Ctrl+Space popup out
+            // from under them.
+            if app.toolbar().open.is_none() && app.toolbar().package.is_none() {
+                app.toolbar_mut().open = Some(toolbar::DropdownKind::App);
+            }
         }
     }
 }
