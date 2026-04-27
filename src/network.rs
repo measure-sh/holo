@@ -436,12 +436,17 @@ pub fn spawn_traffic_poller(
     adb: Arc<dyn Adb>,
     serial: String,
     package: String,
+    connectivity: Arc<std::sync::atomic::AtomicBool>,
 ) -> mpsc::Receiver<TrafficSample> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let interval = Duration::from_secs(1);
         let mut prev: Option<(u64, u64, Instant)> = None;
         loop {
+            if !connectivity.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(interval);
+                continue;
+            }
             let now = Instant::now();
             if let Ok(bytes) = adb.get_network_bytes(&serial, &package) {
                 if let Some((p_rx, p_tx, p_at)) = prev {

@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
@@ -37,12 +38,17 @@ pub fn battery_bar(level: u8) -> Line<'static> {
     .alignment(Alignment::Right)
 }
 
-pub fn spawn_poller(adb: Arc<dyn Adb>, serial: String) -> mpsc::Receiver<u8> {
+pub fn spawn_poller(
+    adb: Arc<dyn Adb>,
+    serial: String,
+    connectivity: Arc<AtomicBool>,
+) -> mpsc::Receiver<u8> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let interval = Duration::from_secs(30);
         loop {
-            if let Ok(level) = adb.get_battery_level(&serial)
+            if connectivity.load(Ordering::Relaxed)
+                && let Ok(level) = adb.get_battery_level(&serial)
                 && tx.send(level).is_err()
             {
                 return;

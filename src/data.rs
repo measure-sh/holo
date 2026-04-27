@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
 
 use crate::adb::Adb;
@@ -76,7 +76,10 @@ pub struct DataSources {
     pub app_version: Option<(String, String)>,
     pub has_measure_sdk: bool,
 
-    connectivity_rx: mpsc::Receiver<bool>,
+    /// Updated by `spawn_connectivity_poller` and read by every per-feature
+    /// poller before issuing an adb call. Off-device when `false` keeps wedged
+    /// transport calls from accumulating.
+    connectivity: Arc<AtomicBool>,
     pub device_connected: bool,
 
     traffic_rx: Option<mpsc::Receiver<network::TrafficSample>>,
@@ -96,16 +99,28 @@ impl DataSources {
         let has_measure_sdk = adb.has_measure_sdk(serial, package);
         let monitor_visibility = Arc::new(AtomicU8::new(monitor::visibility_mask(panel_vis)));
         let vitals_debuggable = adb.is_debuggable(serial, package);
+        let connectivity = Arc::new(AtomicBool::new(true));
+        spawn_connectivity_poller(adb.clone(), serial.to_string(), connectivity.clone());
         let traffic_rx = Some(network::spawn_traffic_poller(
             adb.clone(),
             serial.to_string(),
             package.to_string(),
+            connectivity.clone(),
         ));
         Self {
             adb: adb.clone(),
-            battery_rx: battery::spawn_poller(adb.clone(), serial.to_string()),
+            battery_rx: battery::spawn_poller(
+                adb.clone(),
+                serial.to_string(),
+                connectivity.clone(),
+            ),
             battery_level: None,
-            procs_rx: processes::spawn_poller(adb.clone(), serial.to_string(), package.to_string()),
+            procs_rx: processes::spawn_poller(
+                adb.clone(),
+                serial.to_string(),
+                package.to_string(),
+                connectivity.clone(),
+            ),
             last_polled_pid: None,
             logcat_handle: None,
             logcat_lines: Vec::new(),
@@ -126,6 +141,7 @@ impl DataSources {
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
+                connectivity.clone(),
             ),
             files_list_rx: Some(files::spawn_list_dir(
                 adb.clone(),
@@ -142,6 +158,7 @@ impl DataSources {
                 serial.to_string(),
                 package.to_string(),
                 monitor_visibility.clone(),
+                connectivity.clone(),
             ),
             trace_start_rx: None,
             trace_pull_rx: None,
@@ -149,11 +166,13 @@ impl DataSources {
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
+                connectivity.clone(),
             ),
             anrs_rx: anrs::spawn_poller(
                 adb.clone(),
                 serial.to_string(),
                 package.to_string(),
+                connectivity.clone(),
             ),
             initial_layout_bounds,
             initial_airplane_mode,
@@ -166,7 +185,7 @@ impl DataSources {
             app_version,
             has_measure_sdk,
             monitor_visibility,
-            connectivity_rx: spawn_connectivity_poller(adb.clone(), serial.to_string()),
+            connectivity,
             device_connected: true,
             traffic_rx,
         }
@@ -177,9 +196,7 @@ impl DataSources {
     }
 
     pub fn poll(&mut self, app: &mut App, serial: &str) {
-        while let Ok(connected) = self.connectivity_rx.try_recv() {
-            self.device_connected = connected;
-        }
+        self.device_connected = self.connectivity.load(Ordering::Relaxed);
         if let Some(rx) = &self.traffic_rx {
             while let Ok(sample) = rx.try_recv() {
                 app.network_state_mut().push_traffic(sample);
@@ -411,20 +428,21 @@ impl DataSources {
     }
 }
 
-fn spawn_connectivity_poller(adb: Arc<dyn Adb>, serial: String) -> mpsc::Receiver<bool> {
-    let (tx, rx) = mpsc::channel();
+fn spawn_connectivity_poller(adb: Arc<dyn Adb>, serial: String, flag: Arc<AtomicBool>) {
     std::thread::spawn(move || {
         let interval = std::time::Duration::from_secs(5);
+        // Drop the worker once nothing else is reading the flag — otherwise we
+        // keep probing a stale device after the owning DataSources is gone.
         loop {
+            if Arc::strong_count(&flag) == 1 {
+                return;
+            }
             let connected = adb
                 .get_state(&serial)
                 .map(|s| s == "device")
                 .unwrap_or(false);
-            if tx.send(connected).is_err() {
-                return;
-            }
+            flag.store(connected, Ordering::Relaxed);
             std::thread::sleep(interval);
         }
     });
-    rx
 }

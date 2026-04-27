@@ -76,16 +76,19 @@ pub fn spawn_poller(
     adb: Arc<dyn Adb>,
     serial: String,
     package: String,
+    connectivity: Arc<std::sync::atomic::AtomicBool>,
 ) -> mpsc::Receiver<Result<Vec<(String, bool)>, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let interval = std::time::Duration::from_secs(5);
         loop {
-            let result = adb
-                .list_permissions(&serial, &package)
-                .map_err(|e| e.to_string());
-            if tx.send(result).is_err() {
-                return;
+            if connectivity.load(std::sync::atomic::Ordering::Relaxed) {
+                let result = adb
+                    .list_permissions(&serial, &package)
+                    .map_err(|e| e.to_string());
+                if tx.send(result).is_err() {
+                    return;
+                }
             }
             std::thread::sleep(interval);
         }

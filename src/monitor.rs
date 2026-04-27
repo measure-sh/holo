@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
@@ -121,6 +121,7 @@ pub fn spawn_poller(
     serial: String,
     package: String,
     visibility: Arc<AtomicU8>,
+    connectivity: Arc<AtomicBool>,
 ) -> mpsc::Receiver<MonitorSample> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -132,7 +133,7 @@ pub fn spawn_poller(
         let num_cores = adb.get_num_cores(&serial).unwrap_or(1).max(1);
         loop {
             let mask = visibility.load(Ordering::Relaxed);
-            if mask == 0 {
+            if mask == 0 || !connectivity.load(Ordering::Relaxed) {
                 std::thread::sleep(interval);
                 tick += 1;
                 continue;
