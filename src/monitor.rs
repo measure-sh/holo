@@ -38,49 +38,64 @@ pub struct GcEvent {
     pub duration_us: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MonitorView {
+    All,
+    Cpu,
+    Rss,
+    Disk,
+    Download,
+    Upload,
+}
+
+const VIEWS: [MonitorView; 6] = [
+    MonitorView::All,
+    MonitorView::Cpu,
+    MonitorView::Rss,
+    MonitorView::Disk,
+    MonitorView::Download,
+    MonitorView::Upload,
+];
+
+impl MonitorView {
+    pub fn label(self) -> &'static str {
+        match self {
+            MonitorView::All => "All",
+            MonitorView::Cpu => "CPU",
+            MonitorView::Rss => "RSS",
+            MonitorView::Disk => "Disk",
+            MonitorView::Download => "Download",
+            MonitorView::Upload => "Upload",
+        }
+    }
+
+    fn cycle(self, forward: bool) -> Self {
+        let i = VIEWS.iter().position(|v| *v == self).unwrap_or(0);
+        let next = if forward {
+            (i + 1) % VIEWS.len()
+        } else {
+            (i + VIEWS.len() - 1) % VIEWS.len()
+        };
+        VIEWS[next]
+    }
+}
+
 pub struct MonitorState {
     pub history: Vec<MonitorSample>,
     pub gc_events: Vec<GcEvent>,
     pub debuggable: bool,
-    pub selected_metric: usize,
-    pub detail_open: bool,
+    pub view: MonitorView,
 }
 
 impl MonitorState {
-    pub fn handle_key(&mut self, key: KeyEvent, metric_count: usize) -> Option<Action> {
-        let max_index = metric_count.saturating_sub(1);
-
-        if self.detail_open {
-            return match key.code {
-                KeyCode::Up | KeyCode::Char('k') | KeyCode::Left | KeyCode::Char('h') => {
-                    self.move_selection(-1, max_index);
-                    Some(Action::Noop)
-                }
-                KeyCode::Down | KeyCode::Char('j') | KeyCode::Right | KeyCode::Char('l') => {
-                    self.move_selection(1, max_index);
-                    Some(Action::Noop)
-                }
-                KeyCode::Enter | KeyCode::Esc => {
-                    self.detail_open = false;
-                    Some(Action::Noop)
-                }
-                _ => Some(Action::Noop),
-            };
-        }
-
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
         match key.code {
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.move_selection(-1, max_index);
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Up | KeyCode::Char('k') => {
+                self.view = self.view.cycle(false);
                 Some(Action::Noop)
             }
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.move_selection(1, max_index);
-                Some(Action::Noop)
-            }
-            KeyCode::Enter => {
-                if metric_count > 0 {
-                    self.detail_open = true;
-                }
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Down | KeyCode::Char('j') => {
+                self.view = self.view.cycle(true);
                 Some(Action::Noop)
             }
             KeyCode::Esc => Some(Action::Unfocus),
@@ -88,25 +103,12 @@ impl MonitorState {
         }
     }
 
-    /// Clamp the current selection into range first, then nudge by `delta`,
-    /// then re-clamp. The pre-clamp keeps Down/Right from moving *backwards*
-    /// when `selected_metric` was left over from a state with more metrics.
-    fn move_selection(&mut self, delta: i32, max_index: usize) {
-        let current = self.selected_metric.min(max_index);
-        self.selected_metric = if delta < 0 {
-            current.saturating_sub(delta.unsigned_abs() as usize)
-        } else {
-            current.saturating_add(delta as usize).min(max_index)
-        };
-    }
-
     pub fn new() -> Self {
         Self {
             history: Vec::new(),
             gc_events: Vec::new(),
             debuggable: true,
-            selected_metric: 0,
-            detail_open: false,
+            view: MonitorView::All,
         }
     }
 
@@ -299,97 +301,49 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_enter_opens_detail() {
-        let mut state = MonitorState::new();
-        let action = state.handle_key(key_event(KeyCode::Enter), 5);
-        assert!(matches!(action, Some(Action::Noop)));
-        assert!(state.detail_open);
-    }
-
-    #[test]
-    fn handle_key_enter_noop_when_no_metrics() {
-        let mut state = MonitorState::new();
-        state.handle_key(key_event(KeyCode::Enter), 0);
-        assert!(!state.detail_open);
-    }
-
-    #[test]
-    fn handle_key_esc_unfocuses() {
-        let mut state = MonitorState::new();
-        let action = state.handle_key(key_event(KeyCode::Esc), 5);
-        assert!(matches!(action, Some(Action::Unfocus)));
-    }
-
-    #[test]
-    fn handle_key_down_advances_selection_clamped() {
-        let mut state = MonitorState::new();
-        for _ in 0..10 {
-            state.handle_key(key_event(KeyCode::Down), 3);
+    fn cycle_view_forward_wraps_through_all_positions() {
+        let mut v = MonitorView::All;
+        let order = [
+            MonitorView::Cpu,
+            MonitorView::Rss,
+            MonitorView::Disk,
+            MonitorView::Download,
+            MonitorView::Upload,
+            MonitorView::All,
+        ];
+        for expected in order {
+            v = v.cycle(true);
+            assert_eq!(v, expected);
         }
-        assert_eq!(state.selected_metric, 2);
     }
 
     #[test]
-    fn handle_key_up_decreases_selection_saturating() {
-        let mut state = MonitorState::new();
-        state.selected_metric = 1;
-        state.handle_key(key_event(KeyCode::Up), 5);
-        state.handle_key(key_event(KeyCode::Up), 5);
-        assert_eq!(state.selected_metric, 0);
+    fn cycle_view_backward_wraps_to_last() {
+        assert_eq!(MonitorView::All.cycle(false), MonitorView::Upload);
     }
 
     #[test]
-    fn handle_key_down_in_detail_switches_metric() {
+    fn handle_key_right_advances_view() {
         let mut state = MonitorState::new();
-        state.detail_open = true;
-        state.handle_key(key_event(KeyCode::Down), 5);
-        assert!(state.detail_open);
-        assert_eq!(state.selected_metric, 1);
+        state.handle_key(key_event(KeyCode::Right));
+        assert_eq!(state.view, MonitorView::Cpu);
     }
 
     #[test]
-    fn handle_key_enter_closes_detail() {
+    fn handle_key_left_steps_view_backwards() {
         let mut state = MonitorState::new();
-        state.detail_open = true;
-        let action = state.handle_key(key_event(KeyCode::Enter), 5);
-        assert!(matches!(action, Some(Action::Noop)));
-        assert!(!state.detail_open);
+        state.view = MonitorView::Rss;
+        state.handle_key(key_event(KeyCode::Left));
+        assert_eq!(state.view, MonitorView::Cpu);
     }
 
     #[test]
-    fn handle_key_esc_in_detail_closes_without_unfocus() {
+    fn handle_key_esc_unfocuses_without_resetting_view() {
         let mut state = MonitorState::new();
-        state.detail_open = true;
-        let action = state.handle_key(key_event(KeyCode::Esc), 4);
-        assert!(matches!(action, Some(Action::Noop)));
-        assert!(!state.detail_open);
-    }
-
-    #[test]
-    fn handle_key_right_in_detail_advances_metric() {
-        let mut state = MonitorState::new();
-        state.detail_open = true;
-        state.handle_key(key_event(KeyCode::Right), 4);
-        assert_eq!(state.selected_metric, 1);
-    }
-
-    #[test]
-    fn handle_key_left_in_detail_decreases_metric() {
-        let mut state = MonitorState::new();
-        state.detail_open = true;
-        state.selected_metric = 2;
-        state.handle_key(key_event(KeyCode::Left), 4);
-        assert_eq!(state.selected_metric, 1);
-    }
-
-    #[test]
-    fn handle_key_down_clamps_stale_selection_before_nudging() {
-        // selected_metric outlives a count shrink (e.g., traffic disappeared).
-        // Down must land on the new last index, not jump backwards.
-        let mut state = MonitorState::new();
-        state.selected_metric = 4;
-        state.handle_key(key_event(KeyCode::Down), 3);
-        assert_eq!(state.selected_metric, 2);
+        state.view = MonitorView::Disk;
+        let action = state.handle_key(key_event(KeyCode::Esc));
+        assert!(matches!(action, Some(Action::Unfocus)));
+        assert_eq!(state.view, MonitorView::Disk);
     }
 
     #[test]
