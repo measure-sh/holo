@@ -189,6 +189,7 @@ fn run_app(
         }
         let mut input_dispatched = false;
         loop {
+            let mut break_after_key = false;
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
                     let action = app.handle_key(key);
@@ -199,6 +200,12 @@ fn run_app(
                         d.update_monitor_visibility(app.panel_visibility());
                     }
                     input_dispatched = true;
+                    // Force a redraw between rapid keypresses. Without this,
+                    // bursts like Ctrl+D → Ctrl+A → Ctrl+D drain in one inner
+                    // iteration and only the final state is ever painted, so
+                    // most presses look swallowed. Mouse-scroll events still
+                    // coalesce through the drain check below.
+                    break_after_key = true;
                 }
                 Event::Key(_) => {
                     // Ignore Repeat/Release. Falling through (instead of
@@ -229,7 +236,7 @@ fn run_app(
                 }
                 _ => {}
             }
-            if !event::poll(Duration::ZERO)? {
+            if break_after_key || !event::poll(Duration::ZERO)? {
                 break;
             }
         }
