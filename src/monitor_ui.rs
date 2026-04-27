@@ -115,6 +115,10 @@ struct Metric {
     /// the spread of `ts_ns` values; for ADB-sourced metrics it falls back to
     /// `values.len() - 1` under the assumption of 1 Hz cadence.
     window_secs: f64,
+    /// Extra span appended to the right-aligned chip-row stats line in the
+    /// detail view. Used for live counters that aren't part of the charted
+    /// time series (e.g. CPU thread count).
+    chip_extra: Option<Span<'static>>,
 }
 
 const NS_PER_SEC_F64: f64 = 1_000_000_000.0;
@@ -201,6 +205,7 @@ fn build_metrics(
         .first()
         .copied()
         .unwrap_or_else(|| sample_index_window(cpu_values.len()));
+    let cpu_threads = state.cpu_history.last().map(|s| s.num_threads);
     metrics.push(Metric {
         name: "CPU",
         label: format!(" CPU {:.1}%  ", cpu_now),
@@ -212,6 +217,9 @@ fn build_metrics(
         secs_ago: cpu_secs_ago,
         tick_secs_ago: Vec::new(),
         window_secs: cpu_window,
+        chip_extra: cpu_threads.map(|n| {
+            Span::styled(format!("  {} threads", n), Style::new().fg(t.spark_cpu))
+        }),
     });
 
     // Java heap is the headline memory metric — it moves on GC, where RSS
@@ -236,6 +244,7 @@ fn build_metrics(
         scale: MetricScale::MemKb,
         tick_secs_ago: gc_secs_ago_from_ns(now_ns, &state.gc_events),
         window_secs: mem_window_secs,
+        chip_extra: None,
     });
 
     let disk_samples: Vec<u64> = state.history.iter().map(|m| m.data_kb).collect();
@@ -253,6 +262,7 @@ fn build_metrics(
         secs_ago: Vec::new(),
         tick_secs_ago: Vec::new(),
         window_secs: disk_window,
+        chip_extra: None,
     });
 
     let last = traffic.last().copied().unwrap_or_default();
@@ -278,6 +288,7 @@ fn build_metrics(
         secs_ago: Vec::new(),
         tick_secs_ago: Vec::new(),
         window_secs: rate_window,
+        chip_extra: None,
     });
     metrics.push(Metric {
         name: "↑",
@@ -290,6 +301,7 @@ fn build_metrics(
         secs_ago: Vec::new(),
         tick_secs_ago: Vec::new(),
         window_secs: rate_window,
+        chip_extra: None,
     });
 
     metrics
@@ -714,6 +726,9 @@ fn render_metric_detail(frame: &mut Frame, area: Rect, metric: &Metric, focused:
             format!("  ◆ {} GC", metric.tick_secs_ago.len()),
             Style::new().fg(metric.color),
         ));
+    }
+    if let Some(extra) = &metric.chip_extra {
+        spans.push(extra.clone());
     }
     let stats_line = Line::from(spans).alignment(Alignment::Right);
     frame.render_widget(stats_line, chip_area);

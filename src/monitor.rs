@@ -55,11 +55,13 @@ pub struct MemorySample {
 /// CPU usage snapshot emitted by the agent at ~1 Hz on the same
 /// `CLOCK_MONOTONIC` clock as `MemorySample` and `GcEvent`. `cpu_percent` is
 /// process-wide (utime+stime delta) averaged across cores, so 100% means
-/// "all cores fully busy".
+/// "all cores fully busy". `num_threads` is the live thread count from
+/// `/proc/self/stat` field 20 at the same instant.
 #[derive(Debug, Clone, Copy)]
 pub struct CpuSample {
     pub ts_ns: i64,
     pub cpu_percent: f32,
+    pub num_threads: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,8 +173,8 @@ impl MonitorState {
         self.evict_at_ns(ts_ns);
     }
 
-    pub fn push_cpu(&mut self, ts_ns: i64, cpu_percent: f32) {
-        self.cpu_history.push(CpuSample { ts_ns, cpu_percent });
+    pub fn push_cpu(&mut self, ts_ns: i64, cpu_percent: f32, num_threads: u32) {
+        self.cpu_history.push(CpuSample { ts_ns, cpu_percent, num_threads });
         if self.cpu_history.len() > MAX_SAMPLES {
             self.cpu_history.remove(0);
         }
@@ -447,7 +449,7 @@ mod tests {
         assert_eq!(state.latest_agent_ts_ns(), Some(200));
         state.push_memory(300, 2, 0, 0);
         assert_eq!(state.latest_agent_ts_ns(), Some(300));
-        state.push_cpu(400, 12.5);
+        state.push_cpu(400, 12.5, 17);
         assert_eq!(state.latest_agent_ts_ns(), Some(400));
     }
 
@@ -455,20 +457,19 @@ mod tests {
     fn push_cpu_records_sample_and_caps() {
         let mut state = MonitorState::new();
         for i in 0..(MAX_SAMPLES as i64 + 5) {
-            state.push_cpu(i * NS_PER_SEC, i as f32);
+            state.push_cpu(i * NS_PER_SEC, i as f32, i as u32);
         }
         assert_eq!(state.cpu_history.len(), MAX_SAMPLES);
-        assert_eq!(
-            state.cpu_history.last().unwrap().cpu_percent,
-            (MAX_SAMPLES as i64 + 4) as f32,
-        );
+        let last = state.cpu_history.last().unwrap();
+        assert_eq!(last.cpu_percent, (MAX_SAMPLES as i64 + 4) as f32);
+        assert_eq!(last.num_threads, (MAX_SAMPLES as i64 + 4) as u32);
     }
 
     #[test]
     fn push_cpu_evicts_stale_gc_events() {
         let mut state = MonitorState::new();
         state.gc_events.push(GcEvent { ts_ns: 0, duration_us: 5 });
-        state.push_cpu(RETENTION_NS + NS_PER_SEC, 25.0);
+        state.push_cpu(RETENTION_NS + NS_PER_SEC, 25.0, 17);
         assert!(state.gc_events.is_empty());
     }
 }
