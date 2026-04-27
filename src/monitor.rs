@@ -60,21 +60,19 @@ pub struct MemorySample {
 pub enum MonitorView {
     All,
     Cpu,
-    /// Memory: Java heap (when the agent provides it), with Native + RSS
-    /// available as overlays in the detail view.
+    /// Memory: Java heap, with Native + RSS overlaid in the detail view.
     Memory,
     Disk,
-    Download,
-    Upload,
+    /// Network: download + upload rates overlaid on the same chart.
+    Network,
 }
 
-const VIEWS: [MonitorView; 6] = [
+const VIEWS: [MonitorView; 5] = [
     MonitorView::All,
     MonitorView::Cpu,
     MonitorView::Memory,
     MonitorView::Disk,
-    MonitorView::Download,
-    MonitorView::Upload,
+    MonitorView::Network,
 ];
 
 impl MonitorView {
@@ -84,8 +82,7 @@ impl MonitorView {
             MonitorView::Cpu => "CPU",
             MonitorView::Memory => "Memory",
             MonitorView::Disk => "Disk",
-            MonitorView::Download => "Download",
-            MonitorView::Upload => "Upload",
+            MonitorView::Network => "Network",
         }
     }
 
@@ -353,8 +350,7 @@ mod tests {
             MonitorView::Cpu,
             MonitorView::Memory,
             MonitorView::Disk,
-            MonitorView::Download,
-            MonitorView::Upload,
+            MonitorView::Network,
             MonitorView::All,
         ];
         for expected in order {
@@ -365,7 +361,7 @@ mod tests {
 
     #[test]
     fn cycle_view_backward_wraps_to_last() {
-        assert_eq!(MonitorView::All.cycle(false), MonitorView::Upload);
+        assert_eq!(MonitorView::All.cycle(false), MonitorView::Network);
     }
 
     #[test]

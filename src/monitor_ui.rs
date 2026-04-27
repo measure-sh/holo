@@ -562,6 +562,119 @@ fn render_memory_detail(frame: &mut Frame, area: Rect, state: &MonitorState, foc
     frame.render_widget(chart, chart_area);
 }
 
+fn render_network_detail(
+    frame: &mut Frame,
+    area: Rect,
+    traffic: &[TrafficSample],
+    traffic_baseline: Option<(u64, u64)>,
+    focused: bool,
+) {
+    let t = theme::current();
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+
+    let (chip_area, body) = split_chip(area);
+    render_pane_chip(frame, chip_area, "Network", focused, false);
+
+    let last = traffic.last().copied().unwrap_or_default();
+    let rx_total = traffic_baseline
+        .map(|(b, _)| last.rx_total.saturating_sub(b))
+        .unwrap_or(0);
+    let tx_total = traffic_baseline
+        .map(|(_, b)| last.tx_total.saturating_sub(b))
+        .unwrap_or(0);
+    let header = Line::from(vec![
+        Span::styled(
+            format!("↓ {} ({})", format_rate(last.rx_bps), format_bytes(rx_total)),
+            Style::new().fg(t.spark_rx).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("  ·  ", Style::new().fg(t.muted)),
+        Span::styled(
+            format!("↑ {} ({})", format_rate(last.tx_bps), format_bytes(tx_total)),
+            Style::new().fg(t.spark_tx).add_modifier(Modifier::BOLD),
+        ),
+    ])
+    .alignment(Alignment::Right);
+    frame.render_widget(header, chip_area);
+
+    if body.height < 3 || body.width < 8 || traffic.len() < 2 {
+        if traffic.len() < 2 {
+            frame.render_widget(
+                Paragraph::new(Line::styled(" gathering samples…", Style::new().fg(t.muted))),
+                body,
+            );
+        }
+        return;
+    }
+
+    let rx_max = traffic.iter().map(|s| s.rx_bps).max().unwrap_or(0);
+    let tx_max = traffic.iter().map(|s| s.tx_bps).max().unwrap_or(0);
+    let combined_max = rx_max.max(tx_max).max(1);
+    let pad = (combined_max as f64 * 0.1).max(1.0);
+    let y_lo = 0.0;
+    let y_hi = combined_max as f64 + pad;
+
+    let last_idx = traffic.len().saturating_sub(1).max(1) as f64;
+    let rx_points: Vec<(f64, f64)> = traffic
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (i as f64 / last_idx * last_idx, s.rx_bps as f64))
+        .collect();
+    let tx_points: Vec<(f64, f64)> = traffic
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (i as f64 / last_idx * last_idx, s.tx_bps as f64))
+        .collect();
+
+    let datasets = vec![
+        Dataset::default()
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::new().fg(t.spark_rx))
+            .data(&rx_points),
+        Dataset::default()
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::new().fg(t.spark_tx))
+            .data(&tx_points),
+    ];
+
+    let total_secs = last_idx as u64;
+    let x_labels = if body.width >= 36 && total_secs >= 2 {
+        vec![
+            Line::from(format_ago(total_secs)),
+            Line::from(format_ago(total_secs / 2)),
+            Line::from("now"),
+        ]
+    } else {
+        vec![Line::from(format_ago(total_secs)), Line::from("now")]
+    };
+
+    let y_labels = vec![
+        Line::from(format_rate(y_lo as u64)),
+        Line::from(format_rate(((y_lo + y_hi) / 2.0) as u64)),
+        Line::from(format_rate(y_hi as u64)),
+    ];
+
+    let chart = Chart::new(datasets)
+        .style(Style::new().bg(t.bg))
+        .x_axis(
+            Axis::default()
+                .style(Style::new().fg(t.muted))
+                .bounds([0.0, last_idx])
+                .labels(x_labels),
+        )
+        .y_axis(
+            Axis::default()
+                .style(Style::new().fg(t.muted))
+                .bounds([y_lo, y_hi])
+                .labels(y_labels)
+                .labels_alignment(Alignment::Right),
+        );
+    frame.render_widget(chart, body);
+}
+
 fn render_metric_detail(frame: &mut Frame, area: Rect, metric: &Metric, focused: bool) {
     let t = theme::current();
     if area.width == 0 || area.height == 0 {
@@ -803,18 +916,23 @@ pub fn render_monitor_panel(
     if inner.width == 0 || inner.height == 0 {
         return;
     }
-    if matches!(state.view, MonitorView::Memory) {
-        render_memory_detail(frame, inner, state, focused);
-        return;
+    match state.view {
+        MonitorView::Memory => {
+            render_memory_detail(frame, inner, state, focused);
+            return;
+        }
+        MonitorView::Network => {
+            render_network_detail(frame, inner, traffic, traffic_baseline, focused);
+            return;
+        }
+        _ => {}
     }
     let metrics = build_metrics(state, traffic, traffic_baseline);
     let detail = match state.view {
         MonitorView::All => None,
         MonitorView::Cpu => Some(0),
-        MonitorView::Memory => unreachable!(),
+        MonitorView::Memory | MonitorView::Network => unreachable!(),
         MonitorView::Disk => Some(2),
-        MonitorView::Download => Some(3),
-        MonitorView::Upload => Some(4),
     };
     match detail {
         Some(i) if i < metrics.len() => render_metric_detail(frame, inner, &metrics[i], focused),
