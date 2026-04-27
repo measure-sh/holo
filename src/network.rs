@@ -572,12 +572,12 @@ mod tests {
     }
 
     #[test]
-    fn enter_opens_detail_and_zooms() {
+    fn enter_opens_detail_without_zooming() {
         let mut state = NetworkState::new();
         state.push(make_entry(200, 100));
         let action = state.handle_key(key(KeyCode::Enter));
         assert!(state.detail_open);
-        assert!(matches!(action, Some(Action::ZoomIn)));
+        assert!(matches!(action, Some(Action::Noop)));
     }
 
     #[test]

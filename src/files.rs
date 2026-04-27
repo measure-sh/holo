@@ -795,11 +795,11 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_file_opens_detail_and_zooms_first_time() {
+    fn enter_on_file_opens_detail_without_zooming() {
         let mut state = make_state_with_children();
         state.selected_index = 2;
         let action = state.handle_key(key(KeyCode::Enter));
-        assert!(matches!(action, Some(Action::ZoomIn)));
+        assert!(matches!(action, Some(Action::Noop)));
         assert!(state.detail_open);
         assert_eq!(state.selected_file.as_deref(), Some("config.xml"));
         assert!(state.loading_meta);

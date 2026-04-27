@@ -988,13 +988,13 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_table_opens_detail_and_zooms() {
+    fn enter_on_table_opens_detail_without_zooming() {
         let mut s = state_with_dbs(&["a.db"]);
         s.expanded.insert("a.db".into());
         s.tables.insert("a.db".into(), vec!["users".into()]);
         s.tree_cursor = 1;
         let action = s.handle_key(key(KeyCode::Enter)).unwrap();
-        assert!(matches!(action, Action::ZoomIn));
+        assert!(matches!(action, Action::Noop));
         assert!(s.detail_open);
         assert_eq!(s.selected_table.as_ref().map(|(_, t)| t.as_str()), Some("users"));
         assert!(s.last_refresh.is_none());
