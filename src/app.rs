@@ -11,8 +11,28 @@ use crate::monitor::MonitorState;
 use crate::panel;
 use crate::theme;
 use crate::permissions::PermissionsState;
-use crate::toolbar::{ToolbarAction, ToolbarState};
+use crate::toolbar::{DropdownKind, ToolbarAction, ToolbarState};
 use crate::trace::TraceState;
+
+/// Single source of truth for which popup the user is currently looking at.
+/// Exactly one variant is active at any time, so popup state can never be in
+/// the inconsistent "two are open" or "the worker just closed mine" shapes
+/// that the previous flag-soup allowed.
+///
+/// Mutated only through `App::open_*` / `close_popup`. Worker callbacks have
+/// no path to this field — the type system makes the worker-clobber bug we
+/// hit before uncompilable.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Navigation {
+    /// Normal panel-driven UI. No popup overlay.
+    Panels,
+    /// Toolbar dropdown active; the toolbar struct holds its data state.
+    Dropdown(DropdownKind),
+    /// Settings popup active; cursor lives on Navigation, not on App.
+    Settings { cursor: usize },
+    /// Modal alert with a body string.
+    Dialog(String),
+}
 
 pub enum Action {
     Quit,
@@ -75,13 +95,11 @@ pub struct App {
     pointer_location: bool,
     gpu_rendering: bool,
     talkback: bool,
-    pub settings_open: bool,
-    pub settings_cursor: usize,
+    nav: Navigation,
     trace_state: TraceState,
     issues_state: IssuesState,
     network_state: NetworkState,
     measure_sdk_detected: bool,
-    pub dialog: Option<String>,
     saved_visibility: Option<([bool; 8], bool)>,
     status_flash: Option<(String, std::time::Instant, bool)>,
 }
@@ -109,39 +127,42 @@ impl App {
             pointer_location: false,
             gpu_rendering: false,
             talkback: false,
-            settings_open: false,
-            settings_cursor: 0,
+            nav: Navigation::Panels,
             trace_state: TraceState::new(pkg),
             issues_state: IssuesState::new(),
             network_state: NetworkState::new(),
             measure_sdk_detected: false,
-            dialog: None,
             saved_visibility: None,
             status_flash: None,
         }
     }
 
-    /// Open the settings popup, closing any other modal first. Going through
-    /// these setters (rather than poking the flags directly) is what keeps
-    /// the popups mutually exclusive — there's no longer a path where
-    /// `settings_open` and `toolbar.open` can both be true at once.
-    fn open_settings(&mut self) {
-        self.dialog = None;
-        self.toolbar.open = None;
-        self.settings_open = true;
-        self.settings_cursor = 0;
+    pub fn nav(&self) -> &Navigation {
+        &self.nav
     }
 
-    fn open_devices_popup(&mut self) {
-        self.dialog = None;
-        self.settings_open = false;
-        self.toolbar.open_devices();
+    pub fn open_settings(&mut self) {
+        self.nav = Navigation::Settings { cursor: 0 };
     }
 
-    fn open_apps_popup(&mut self) {
-        self.dialog = None;
-        self.settings_open = false;
-        self.toolbar.open_apps();
+    pub fn open_devices_popup(&mut self) {
+        self.nav = Navigation::Dropdown(DropdownKind::Device);
+        let loading = self.toolbar.devices.is_empty();
+        self.toolbar.prepare_for_dropdown(loading);
+    }
+
+    pub fn open_apps_popup(&mut self) {
+        self.nav = Navigation::Dropdown(DropdownKind::App);
+        let loading = self.toolbar.packages.is_empty();
+        self.toolbar.prepare_for_dropdown(loading);
+    }
+
+    pub fn open_dialog(&mut self, body: String) {
+        self.nav = Navigation::Dialog(body);
+    }
+
+    pub fn close_popup(&mut self) {
+        self.nav = Navigation::Panels;
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Action {
@@ -190,70 +211,39 @@ impl App {
             }
         }
 
-        // Modal handlers. Mutual exclusion is enforced by the setters above,
-        // so at most one of these branches is active per keypress.
-        if self.dialog.is_some() {
-            self.dialog = None;
-            return Action::Noop;
-        }
-        if self.settings_open {
-            const SELECTABLE_COUNT: usize = 4;
-            match code {
-                KeyCode::Up | KeyCode::Char('k') => {
-                    self.settings_cursor = self.settings_cursor.saturating_sub(1);
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    self.settings_cursor = (self.settings_cursor + 1).min(SELECTABLE_COUNT - 1);
-                }
-                KeyCode::Right | KeyCode::Char('l') if self.settings_cursor == 0 => {
-                    let next = (theme::current_index() + 1) % theme::theme_count();
-                    theme::set_theme(next);
-                }
-                KeyCode::Left | KeyCode::Char('h') if self.settings_cursor == 0 => {
-                    let cur = theme::current_index();
-                    let prev = if cur == 0 { theme::theme_count() - 1 } else { cur - 1 };
-                    theme::set_theme(prev);
-                }
-                KeyCode::Char('c') if self.settings_cursor == 1 => {
-                    let dir = std::env::temp_dir().join("holo");
-                    let _ = std::fs::create_dir_all(&dir);
-                    crate::clipboard::copy_to_clipboard(&dir.to_string_lossy());
-                    self.settings_open = false;
-                    self.set_status_flash("Path copied!".into(), false);
-                }
-                KeyCode::Enter => match self.settings_cursor {
-                    1 => {
-                        let dir = std::env::temp_dir().join("holo");
-                        let _ = std::fs::create_dir_all(&dir);
-                        let _ = open::that(&dir);
-                        self.settings_open = false;
-                    }
-                    2 => {
-                        let _ = open::that("https://github.com/Genymobile/scrcpy/tree/master?tab=readme-ov-file");
-                        self.settings_open = false;
-                    }
-                    3 => {
-                        let _ = open::that("https://github.com/measure-sh/holo");
-                        self.settings_open = false;
-                    }
-                    _ => {
-                        self.settings_open = false;
-                    }
-                },
-                _ => {
-                    self.settings_open = false;
-                }
+        // Modal handlers. The Navigation enum guarantees exactly one branch
+        // is active per keypress.
+        match self.nav.clone() {
+            Navigation::Dialog(_) => {
+                self.close_popup();
+                return Action::Noop;
             }
-            return Action::Noop;
-        }
-
-        if self.toolbar.open.is_some() {
-            return match self.toolbar.handle_key(code) {
-                ToolbarAction::SelectDevice(d) => Action::ChangeDevice(d),
-                ToolbarAction::SelectApp(p) => Action::ChangeApp(p),
-                ToolbarAction::LaunchEmulator(name) => Action::LaunchEmulator(name),
-                ToolbarAction::Close | ToolbarAction::None => Action::Noop,
-            };
+            Navigation::Settings { cursor } => {
+                return self.handle_settings_key(code, cursor);
+            }
+            Navigation::Dropdown(kind) => {
+                let result = self.toolbar.handle_key(code, kind);
+                return match result {
+                    ToolbarAction::SelectDevice(d) => {
+                        self.close_popup();
+                        Action::ChangeDevice(d)
+                    }
+                    ToolbarAction::SelectApp(p) => {
+                        self.close_popup();
+                        Action::ChangeApp(p)
+                    }
+                    ToolbarAction::LaunchEmulator(name) => {
+                        self.close_popup();
+                        Action::LaunchEmulator(name)
+                    }
+                    ToolbarAction::Close => {
+                        self.close_popup();
+                        Action::Noop
+                    }
+                    ToolbarAction::None => Action::Noop,
+                };
+            }
+            Navigation::Panels => {}
         }
 
         if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -312,6 +302,72 @@ impl App {
                 Action::Noop
             }
             _ => Action::Noop,
+        }
+    }
+
+    fn handle_settings_key(&mut self, code: KeyCode, cursor: usize) -> Action {
+        const SELECTABLE_COUNT: usize = 4;
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.nav = Navigation::Settings {
+                    cursor: cursor.saturating_sub(1),
+                };
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.nav = Navigation::Settings {
+                    cursor: (cursor + 1).min(SELECTABLE_COUNT - 1),
+                };
+            }
+            KeyCode::Right | KeyCode::Char('l') if cursor == 0 => {
+                let next = (theme::current_index() + 1) % theme::theme_count();
+                theme::set_theme(next);
+            }
+            KeyCode::Left | KeyCode::Char('h') if cursor == 0 => {
+                let cur = theme::current_index();
+                let prev = if cur == 0 {
+                    theme::theme_count() - 1
+                } else {
+                    cur - 1
+                };
+                theme::set_theme(prev);
+            }
+            KeyCode::Char('c') if cursor == 1 => {
+                let dir = std::env::temp_dir().join("holo");
+                let _ = std::fs::create_dir_all(&dir);
+                crate::clipboard::copy_to_clipboard(&dir.to_string_lossy());
+                self.close_popup();
+                self.set_status_flash("Path copied!".into(), false);
+            }
+            KeyCode::Enter => {
+                match cursor {
+                    1 => {
+                        let dir = std::env::temp_dir().join("holo");
+                        let _ = std::fs::create_dir_all(&dir);
+                        let _ = open::that(&dir);
+                    }
+                    2 => {
+                        let _ = open::that(
+                            "https://github.com/Genymobile/scrcpy/tree/master?tab=readme-ov-file",
+                        );
+                    }
+                    3 => {
+                        let _ = open::that("https://github.com/measure-sh/holo");
+                    }
+                    _ => {}
+                }
+                self.close_popup();
+            }
+            _ => {
+                self.close_popup();
+            }
+        }
+        Action::Noop
+    }
+
+    pub fn settings_cursor(&self) -> usize {
+        match &self.nav {
+            Navigation::Settings { cursor } => *cursor,
+            _ => 0,
         }
     }
 
@@ -583,11 +639,11 @@ impl App {
         &mut self.commands
     }
 
-    pub fn reset_for_new_app(&mut self, package: &str) {
-        if self.saved_visibility.is_some() {
-            self.restore_zoom();
-        }
-
+    /// Reset the panel content + transient command state for a freshly
+    /// selected package. Worker callbacks are allowed to call this — it
+    /// touches *data* state only, never the popup state. The user-driven
+    /// counterpart [`reset_for_new_app`] additionally clears UI state.
+    pub fn reset_panel_data_for_app(&mut self, package: &str) {
         self.logcat_state = LogcatState::new();
         self.database_state = DatabaseState::new();
         self.files_state = FilesState::new(package);
@@ -602,10 +658,19 @@ impl App {
         self.commands.cursor = 0;
         self.commands.editing = false;
         self.commands.triggered = None;
+    }
 
+    /// Full app-change reset, including UI state (zoom, focused panel,
+    /// popups). Only call from user-initiated paths (`Action::ChangeApp` /
+    /// `Action::ChangeDevice`); worker callbacks must use
+    /// [`reset_panel_data_for_app`] instead.
+    pub fn reset_for_new_app(&mut self, package: &str) {
+        if self.saved_visibility.is_some() {
+            self.restore_zoom();
+        }
+        self.reset_panel_data_for_app(package);
         self.focused = None;
-        self.dialog = None;
-        self.settings_open = false;
+        self.nav = Navigation::Panels;
     }
 
     pub fn toolbar(&self) -> &ToolbarState {
@@ -644,6 +709,75 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn new_app_starts_on_panels() {
+        let app = App::new(None, Some("com.test"));
+        assert_eq!(app.nav(), &Navigation::Panels);
+    }
+
+    #[test]
+    fn ctrl_space_opens_settings() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL));
+        assert!(matches!(app.nav(), Navigation::Settings { .. }));
+    }
+
+    #[test]
+    fn ctrl_d_from_settings_jumps_to_devices_in_one_press() {
+        let mut app = App::new(None, Some("com.test"));
+        app.open_settings();
+        let action = app.handle_key(KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL));
+        assert!(matches!(action, Action::FetchDevices));
+        assert!(matches!(app.nav(), Navigation::Dropdown(DropdownKind::Device)));
+    }
+
+    #[test]
+    fn ctrl_a_from_dropdown_switches_to_apps_in_one_press() {
+        let mut app = App::new(None, Some("com.test"));
+        app.open_devices_popup();
+        let action = app.handle_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
+        assert!(matches!(action, Action::FetchApps));
+        assert!(matches!(app.nav(), Navigation::Dropdown(DropdownKind::App)));
+    }
+
+    #[test]
+    fn worker_data_reset_preserves_open_settings() {
+        // The architectural invariant: a worker callback updating panel
+        // state for a freshly auto-selected package must NOT close a popup
+        // the user has open. Pre-refactor this tore settings down because
+        // `reset_for_new_app` cleared `settings_open` directly.
+        let mut app = App::new(None, Some("com.test"));
+        app.open_settings();
+        app.reset_panel_data_for_app("com.test");
+        assert!(matches!(app.nav(), Navigation::Settings { .. }));
+    }
+
+    #[test]
+    fn worker_data_reset_preserves_open_dropdown() {
+        let mut app = App::new(None, Some("com.test"));
+        app.open_apps_popup();
+        app.reset_panel_data_for_app("com.test");
+        assert!(matches!(app.nav(), Navigation::Dropdown(DropdownKind::App)));
+    }
+
+    #[test]
+    fn worker_data_reset_preserves_open_dialog() {
+        let mut app = App::new(None, Some("com.test"));
+        app.open_dialog("hi".into());
+        app.reset_panel_data_for_app("com.test");
+        assert!(matches!(app.nav(), Navigation::Dialog(_)));
+    }
+
+    #[test]
+    fn user_app_change_resets_navigation() {
+        let mut app = App::new(None, Some("com.test"));
+        app.open_settings();
+        // The user-driven path explicitly closes any popup as part of the
+        // app-change cleanup.
+        app.reset_for_new_app("com.test");
+        assert_eq!(app.nav(), &Navigation::Panels);
     }
 
     #[test]

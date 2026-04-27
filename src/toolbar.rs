@@ -46,7 +46,6 @@ pub struct ToolbarState {
     pub last_package: Option<String>,
     pub devices: Vec<Device>,
     pub packages: Vec<String>,
-    pub open: Option<DropdownKind>,
     pub cursor: usize,
     pub filter: String,
     pub loading: bool,
@@ -61,7 +60,6 @@ impl ToolbarState {
             last_package: load_last_package(),
             devices: Vec::new(),
             packages: Vec::new(),
-            open: None,
             cursor: 0,
             filter: String::new(),
             loading: false,
@@ -83,32 +81,25 @@ impl ToolbarState {
         }
     }
 
-    pub fn open_devices(&mut self) {
-        self.open = Some(DropdownKind::Device);
+    /// Reset the dropdown's transient UI state. Called by `App::open_*`
+    /// setters when the user opens a dropdown — the kind itself lives on
+    /// `App::Navigation`, so this struct doesn't need to track it. The
+    /// `loading` flag is supplied by the caller because only the App
+    /// knows whether fresh data is already cached.
+    pub fn prepare_for_dropdown(&mut self, loading: bool) {
         self.cursor = 0;
         self.filter.clear();
-        self.loading = true;
-    }
-
-    pub fn open_apps(&mut self) {
-        self.open = Some(DropdownKind::App);
-        self.cursor = 0;
-        self.filter.clear();
-        self.loading = true;
+        self.loading = loading;
     }
 
     pub fn receive_devices(&mut self, devices: Vec<Device>) {
         self.devices = devices;
-        if matches!(self.open, Some(DropdownKind::Device)) {
-            self.loading = false;
-        }
+        self.loading = false;
     }
 
     pub fn receive_packages(&mut self, packages: Vec<String>) -> Option<String> {
         self.packages = packages;
-        if matches!(self.open, Some(DropdownKind::App)) {
-            self.loading = false;
-        }
+        self.loading = false;
         if self.package.is_none()
             && let Some(last) = &self.last_package
             && self.packages.iter().any(|p| p == last)
@@ -132,22 +123,18 @@ impl ToolbarState {
         apps::filtered_packages(&self.packages, &self.filter)
     }
 
-    pub fn handle_key(&mut self, code: KeyCode) -> ToolbarAction {
-        let Some(kind) = self.open else {
-            return ToolbarAction::None;
-        };
-
+    /// Process a key while the dropdown of the given kind is open. The kind
+    /// is passed in (rather than stored on the struct) because `App` owns
+    /// the navigation enum that says which dropdown is open.
+    pub fn handle_key(&mut self, code: KeyCode, kind: DropdownKind) -> ToolbarAction {
         match code {
-            KeyCode::Esc => {
-                self.open = None;
-                ToolbarAction::Close
-            }
+            KeyCode::Esc => ToolbarAction::Close,
             KeyCode::Up => {
                 self.cursor = self.cursor.saturating_sub(1);
                 ToolbarAction::None
             }
             KeyCode::Down => {
-                let count = self.filtered_count();
+                let count = self.filtered_count(kind);
                 self.cursor = (self.cursor + 1).min(count.saturating_sub(1));
                 ToolbarAction::None
             }
@@ -168,12 +155,7 @@ impl ToolbarState {
                         filtered.get(self.cursor).map(|p| ToolbarAction::SelectApp(p.to_string()))
                     }
                 };
-                if let Some(action) = result {
-                    self.open = None;
-                    action
-                } else {
-                    ToolbarAction::None
-                }
+                result.unwrap_or(ToolbarAction::None)
             }
             KeyCode::Backspace => {
                 self.filter.pop();
@@ -189,11 +171,10 @@ impl ToolbarState {
         }
     }
 
-    fn filtered_count(&self) -> usize {
-        match self.open {
-            Some(DropdownKind::Device) => self.filtered_devices().len(),
-            Some(DropdownKind::App) => self.filtered_packages().len(),
-            None => 0,
+    fn filtered_count(&self, kind: DropdownKind) -> usize {
+        match kind {
+            DropdownKind::Device => self.filtered_devices().len(),
+            DropdownKind::App => self.filtered_packages().len(),
         }
     }
 }
@@ -216,7 +197,6 @@ mod tests {
         let state = ToolbarState::new(None);
         assert!(state.device.is_none());
         assert!(state.package.is_none());
-        assert!(state.open.is_none());
     }
 
     #[test]
@@ -245,27 +225,28 @@ mod tests {
     }
 
     #[test]
-    fn open_devices_sets_state() {
+    fn prepare_resets_cursor_and_loading() {
         let mut state = ToolbarState::new(None);
-        state.open_devices();
-        assert_eq!(state.open, Some(DropdownKind::Device));
-        assert!(state.loading);
+        state.cursor = 5;
+        state.filter = "stale".into();
+        state.loading = false;
+        state.prepare_for_dropdown(true);
         assert_eq!(state.cursor, 0);
         assert!(state.filter.is_empty());
+        assert!(state.loading);
     }
 
     #[test]
-    fn open_apps_sets_state() {
+    fn prepare_can_keep_loading_off_when_data_is_cached() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
-        assert_eq!(state.open, Some(DropdownKind::App));
-        assert!(state.loading);
+        state.prepare_for_dropdown(false);
+        assert!(!state.loading);
     }
 
     #[test]
     fn receive_devices_populates_and_clears_loading() {
         let mut state = ToolbarState::new(None);
-        state.open_devices();
+        state.prepare_for_dropdown(true);
         state.receive_devices(vec![make_device("A", None), make_device("B", None)]);
         assert!(!state.loading);
         assert_eq!(state.devices.len(), 2);
@@ -274,7 +255,7 @@ mod tests {
     #[test]
     fn receive_packages_populates_and_clears_loading() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
+        state.prepare_for_dropdown(true);
         state.receive_packages(vec!["com.a".to_string(), "com.b".to_string()]);
         assert!(!state.loading);
         assert_eq!(state.packages.len(), 2);
@@ -283,10 +264,10 @@ mod tests {
     #[test]
     fn typing_builds_filter() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
+        state.prepare_for_dropdown(true);
         state.receive_packages(vec!["com.example".to_string()]);
-        state.handle_key(KeyCode::Char('c'));
-        state.handle_key(KeyCode::Char('o'));
+        state.handle_key(KeyCode::Char('c'), DropdownKind::App);
+        state.handle_key(KeyCode::Char('o'), DropdownKind::App);
         assert_eq!(state.filter, "co");
         assert_eq!(state.cursor, 0);
     }
@@ -294,71 +275,68 @@ mod tests {
     #[test]
     fn backspace_removes_char() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
+        state.prepare_for_dropdown(true);
         state.filter = "abc".to_string();
-        state.handle_key(KeyCode::Backspace);
+        state.handle_key(KeyCode::Backspace, DropdownKind::App);
         assert_eq!(state.filter, "ab");
     }
 
     #[test]
-    fn esc_closes_dropdown() {
+    fn esc_returns_close_action() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
-        let action = state.handle_key(KeyCode::Esc);
-        assert!(state.open.is_none());
+        state.prepare_for_dropdown(true);
+        let action = state.handle_key(KeyCode::Esc, DropdownKind::App);
         assert!(matches!(action, ToolbarAction::Close));
     }
 
     #[test]
     fn cursor_moves_within_bounds() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
+        state.prepare_for_dropdown(true);
         state.receive_packages(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
-        state.handle_key(KeyCode::Down);
+        state.handle_key(KeyCode::Down, DropdownKind::App);
         assert_eq!(state.cursor, 1);
-        state.handle_key(KeyCode::Down);
+        state.handle_key(KeyCode::Down, DropdownKind::App);
         assert_eq!(state.cursor, 2);
-        state.handle_key(KeyCode::Down);
+        state.handle_key(KeyCode::Down, DropdownKind::App);
         assert_eq!(state.cursor, 2);
-        state.handle_key(KeyCode::Up);
+        state.handle_key(KeyCode::Up, DropdownKind::App);
         assert_eq!(state.cursor, 1);
     }
 
     #[test]
     fn enter_selects_app() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
+        state.prepare_for_dropdown(true);
         state.receive_packages(vec!["com.alpha".to_string(), "com.beta".to_string()]);
-        state.handle_key(KeyCode::Down);
-        let action = state.handle_key(KeyCode::Enter);
+        state.handle_key(KeyCode::Down, DropdownKind::App);
+        let action = state.handle_key(KeyCode::Enter, DropdownKind::App);
         assert!(matches!(action, ToolbarAction::SelectApp(ref p) if p == "com.beta"));
-        assert!(state.open.is_none());
     }
 
     #[test]
     fn enter_selects_device() {
         let mut state = ToolbarState::new(None);
-        state.open_devices();
+        state.prepare_for_dropdown(true);
         state.receive_devices(vec![make_device("DEV1", None), make_device("DEV2", None)]);
-        state.handle_key(KeyCode::Down);
-        let action = state.handle_key(KeyCode::Enter);
+        state.handle_key(KeyCode::Down, DropdownKind::Device);
+        let action = state.handle_key(KeyCode::Enter, DropdownKind::Device);
         assert!(matches!(action, ToolbarAction::SelectDevice(ref d) if d.serial == "DEV2"));
     }
 
     #[test]
     fn enter_does_nothing_when_empty() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
+        state.prepare_for_dropdown(true);
         state.receive_packages(vec![]);
-        let action = state.handle_key(KeyCode::Enter);
+        let action = state.handle_key(KeyCode::Enter, DropdownKind::App);
         assert!(matches!(action, ToolbarAction::None));
-        assert!(state.open.is_some());
     }
 
     #[test]
     fn filter_narrows_packages() {
         let mut state = ToolbarState::new(None);
-        state.open_apps();
+        state.prepare_for_dropdown(true);
         state.receive_packages(vec![
             "com.spotify.music".to_string(),
             "com.whatsapp".to_string(),
@@ -371,7 +349,7 @@ mod tests {
     #[test]
     fn filter_narrows_devices() {
         let mut state = ToolbarState::new(None);
-        state.open_devices();
+        state.prepare_for_dropdown(true);
         state.receive_devices(vec![
             make_device("A", Some("Pixel 7")),
             make_device("B", Some("Samsung")),
@@ -420,14 +398,14 @@ mod tests {
     #[test]
     fn enter_launches_offline_emulator() {
         let mut state = ToolbarState::new(None);
-        state.open_devices();
+        state.prepare_for_dropdown(true);
         state.receive_devices(vec![Device {
             serial: "Pixel_7_API_34".to_string(),
             model: Some("Pixel_7_API_34".to_string()),
             device: None,
             connected: false,
         }]);
-        let action = state.handle_key(KeyCode::Enter);
+        let action = state.handle_key(KeyCode::Enter, DropdownKind::Device);
         assert!(matches!(action, ToolbarAction::LaunchEmulator(ref name) if name == "Pixel_7_API_34"));
     }
 }

@@ -185,7 +185,9 @@ fn run_housekeeping(ctx: &mut DispatchContext, app: &mut App) {
             && let Some(device) = app.toolbar().device.clone()
             && let Some(pkg) = package.clone()
         {
-            app.reset_for_new_app(&pkg);
+            // Worker-driven path: don't clobber popup state, just reset
+            // panel data so the new build's results don't bleed through.
+            app.reset_panel_data_for_app(&pkg);
             ctx.data = None;
             ctx.title = String::new();
             ctx.pending_build_rx = Some(dispatch::spawn_build(

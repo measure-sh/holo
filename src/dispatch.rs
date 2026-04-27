@@ -3,7 +3,7 @@ use std::sync::{mpsc, Arc};
 use color_eyre::Result;
 
 use crate::adb::{Adb, AdbStatus, Device};
-use crate::app::{Action, App};
+use crate::app::{Action, App, Navigation};
 use crate::data::DataSources;
 use crate::toolbar;
 
@@ -55,8 +55,11 @@ impl DispatchContext {
             && let Ok(packages) = rx.try_recv()
         {
             if let Some(auto_pkg) = app.toolbar_mut().receive_packages(packages) {
+                // Worker callback: only touch *data* state. The user's
+                // popup (Settings / Dialog / Dropdown) must survive an
+                // auto-package match completing in the background.
                 app.toolbar_mut().package = Some(auto_pkg.clone());
-                app.reset_for_new_app(&auto_pkg);
+                app.reset_panel_data_for_app(&auto_pkg);
                 if let Some(device) = app.toolbar().device.clone() {
                     self.pending_build_rx = Some(spawn_build(
                         self.adb.clone(),
@@ -78,7 +81,22 @@ impl DispatchContext {
             && let Ok(pb) = rx.try_recv()
         {
             self.pending_build_rx = None;
+            let no_auto_package = pb.built.is_none();
             apply_pending_build(self, app, pb);
+            // After a build that found no last-package match, prompt the user
+            // to pick one — but only if they haven't already navigated
+            // elsewhere. This is the *only* place a worker callback can
+            // influence navigation, and the `Panels` guard makes the
+            // influence well-defined: the popup never lands on top of an
+            // existing one. The packages list was already cached by
+            // `apply_pending_build`, so the dropdown opens with data, no
+            // refetch needed.
+            if no_auto_package
+                && matches!(app.nav(), Navigation::Panels)
+                && app.toolbar().package.is_none()
+            {
+                app.open_apps_popup();
+            }
         }
         while let Ok(cr) = self.command_rx.try_recv() {
             if cr.result.is_err() {
@@ -388,14 +406,15 @@ impl DispatchContext {
                                 .spawn();
                         });
                     } else {
-                        app.dialog = Some(
+                        app.open_dialog(
                             "scrcpy is not installed.\n\
                              \n\
                              Install with:\n\
                              \n\
                              macOS:   brew install scrcpy\n\
                              Linux:   sudo apt install scrcpy\n\
-                             Windows: scoop install scrcpy".to_string()
+                             Windows: scoop install scrcpy"
+                                .to_string(),
                         );
                     }
                 }
@@ -686,20 +705,19 @@ fn apply_pending_build(ctx: &mut DispatchContext, app: &mut App, pb: PendingBuil
     }
     match pb.built {
         Some(auto) => {
+            // Worker callback: data only. `reset_panel_data_for_app` keeps
+            // the user's current popup intact.
             app.toolbar_mut().package = Some(auto.package.clone());
-            app.reset_for_new_app(&auto.package);
+            app.reset_panel_data_for_app(&auto.package);
             apply_initial_state(app, &auto.data);
             ctx.title = auto.title;
             ctx.data = Some(auto.data);
         }
         None => {
-            // No auto-selected package — auto-open the App picker, but only
-            // if the user hasn't already navigated somewhere. Otherwise this
-            // late-arriving worker yanks their Ctrl+D / Ctrl+Space popup out
-            // from under them.
-            if app.toolbar().open.is_none() && app.toolbar().package.is_none() {
-                app.toolbar_mut().open = Some(toolbar::DropdownKind::App);
-            }
+            // No auto-selected package. The decision to auto-open the App
+            // picker is made by `poll_receivers` (after the user-driven
+            // navigation state has been observed), not here — this function
+            // is a pure data update.
         }
     }
 }

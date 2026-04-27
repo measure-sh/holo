@@ -243,19 +243,20 @@ pub fn render_app(
     render_toolbar(frame, chunks[0], app);
     render_panels(frame, chunks[1], app, logcat_lines);
 
-    if app.toolbar().open.is_some() {
-        render_dim_overlay(frame, area);
-        render_dropdown_overlay(frame, chunks[0], app);
-    }
-
-    if app.settings_open {
-        render_dim_overlay(frame, area);
-        render_settings(frame, area, app);
-    }
-
-    if let Some(msg) = &app.dialog {
-        render_dim_overlay(frame, area);
-        render_dialog(frame, area, msg);
+    match app.nav() {
+        crate::app::Navigation::Dropdown(_) => {
+            render_dim_overlay(frame, area);
+            render_dropdown_overlay(frame, chunks[0], app);
+        }
+        crate::app::Navigation::Settings { .. } => {
+            render_dim_overlay(frame, area);
+            render_settings(frame, area, app);
+        }
+        crate::app::Navigation::Dialog(msg) => {
+            render_dim_overlay(frame, area);
+            render_dialog(frame, area, msg);
+        }
+        crate::app::Navigation::Panels => {}
     }
 }
 
@@ -353,7 +354,10 @@ fn render_dim_overlay(frame: &mut Frame, area: Rect) {
 fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
     let t = theme::current();
     let tb = app.toolbar();
-    let Some(kind) = tb.open else { return };
+    let kind = match app.nav() {
+        crate::app::Navigation::Dropdown(k) => *k,
+        _ => return,
+    };
 
     let anchor_y = toolbar_area.y + toolbar_area.height;
 
@@ -449,7 +453,7 @@ fn render_dropdown_overlay(frame: &mut Frame, toolbar_area: Rect, app: &App) {
 
 fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
     let t = theme::current();
-    let cursor = app.settings_cursor;
+    let cursor = app.settings_cursor();
 
     let width = 56u16.min(area.width.saturating_sub(4));
     let height = 16u16.min(area.height.saturating_sub(2));
