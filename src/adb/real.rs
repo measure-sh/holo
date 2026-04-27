@@ -35,10 +35,35 @@ impl OutputTimed for Command {
     }
 }
 
+/// `std::process::Child::drop` only reaps zombies — it doesn't kill. Wrap any
+/// in-flight child in this guard so a panic, an early `?` return, or any other
+/// drop along the wait path actually terminates the adb subprocess instead of
+/// orphaning it onto the device transport.
+struct ChildGuard(Option<std::process::Child>);
+
+impl ChildGuard {
+    fn as_mut(&mut self) -> &mut std::process::Child {
+        self.0.as_mut().expect("child already taken")
+    }
+
+    fn into_inner(mut self) -> std::process::Child {
+        self.0.take().expect("child already taken")
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.0.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 /// Drain stdout/stderr in helper threads (so a child writing to a full kernel
 /// buffer can't deadlock our wait loop), then poll `try_wait` until the child
-/// exits or the deadline passes. On timeout, kill and reap the child so it
-/// doesn't outlive the call.
+/// exits or the deadline passes. The `ChildGuard` makes sure the subprocess is
+/// killed and reaped even if this function unwinds early.
 fn wait_with_output_timed(mut child: std::process::Child, timeout: Duration) -> Result<Output> {
     let mut stdout = child.stdout.take().expect("piped");
     let mut stderr = child.stderr.take().expect("piped");
@@ -53,14 +78,18 @@ fn wait_with_output_timed(mut child: std::process::Child, timeout: Duration) -> 
         buf
     });
 
+    let mut guard = ChildGuard(Some(child));
     let deadline = Instant::now() + timeout;
     let status = loop {
-        if let Some(s) = child.try_wait()? {
+        if let Some(s) = guard.as_mut().try_wait()? {
+            // Child exited on its own; `try_wait` already reaped, but call
+            // `wait` to satisfy clippy::zombie_processes and release the guard
+            // without firing the kill path.
+            let _ = guard.into_inner().wait();
             break s;
         }
         if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
+            // ChildGuard's Drop will kill + reap on bail.
             bail!("adb timed out after {:?}", timeout);
         }
         std::thread::sleep(Duration::from_millis(25));
