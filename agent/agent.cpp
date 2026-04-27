@@ -5,10 +5,12 @@
 //   [u8 kind][u32 payload_len][payload]
 //
 // Event kinds:
-//   0x01 GC pause      payload: [i64 ts_ns][u32 duration_us]   (12 bytes)
-//   0x02 MemorySample  payload: [i64 ts_ns][u32 rss_kb]        (12 bytes)
-//                      future fields appended as u32s; readers
-//                      use payload_len to know what's present.
+//   0x01 GC pause      payload: [i64 ts_ns][u32 duration_us]              (12 bytes)
+//   0x02 MemorySample  payload: [i64 ts_ns][u32 rss_kb]                   (12 bytes — RSS-only fallback)
+//                      or:      [i64 ts_ns][u32 rss_kb]
+//                               [u32 java_heap_kb][u32 native_heap_kb]    (20 bytes — JNI attached)
+//                      future fields append more u32s; readers use
+//                      payload_len to know what's present.
 //
 // We avoid the C++ standard library entirely (no <mutex>, <thread>, <vector>,
 // <chrono>, <atomic>): linking libc++ statically into a JVMTI agent leaks
@@ -43,13 +45,17 @@ constexpr size_t QUEUE_CAP = 4096;
 constexpr uint8_t KIND_GC = 0x01;
 constexpr uint8_t KIND_MEMORY = 0x02;
 
-// `value` carries the kind-specific u32: GC duration_us, or RSS in KB. Future
-// memory fields (java/native heap) will be appended as additional u32 slots
-// here and as trailing u32s on the wire — readers gate on payload_len.
+// `value` carries the kind-specific u32: GC duration_us, or RSS in KB.
+// `java_heap_kb` and `native_heap_kb` are populated for memory events only,
+// when JNI attach succeeded. The sentinel `UINT32_MAX` means "not collected"
+// — `send_event` falls back to the 12-byte payload in that case so older
+// hosts (and bring-up before JNI is wired) keep working.
 struct Event {
     uint8_t kind;
     int64_t ts_ns;
     uint32_t value;
+    uint32_t java_heap_kb;
+    uint32_t native_heap_kb;
 };
 
 // Fixed-size ring buffer guarded by a pthread mutex. drop-oldest on overflow.
@@ -100,7 +106,7 @@ void JNICALL OnGCFinish(jvmtiEnv*) {
     int64_t start = g_gc_start_ns;
     if (start == 0) return;
     int64_t end = now_ns();
-    Event e{KIND_GC, end, (uint32_t)((end - start) / 1000)};
+    Event e{KIND_GC, end, (uint32_t)((end - start) / 1000), UINT32_MAX, UINT32_MAX};
     enqueue(e);
 }
 
@@ -128,9 +134,97 @@ uint32_t read_rss_kb() {
     return (uint32_t)(pages * page_kb);
 }
 
-void* sampler_loop(void*) {
+// JNI handles for the per-tick heap reads. Initialized once in `sampler_loop`
+// after AttachCurrentThreadAsDaemon; stay valid for the agent's lifetime as
+// global refs. If attach or any lookup fails, `g_jni_ok` stays false and the
+// sampler emits RSS-only memory events (12-byte payload).
+struct JniHeap {
+    JNIEnv* env;
+    jclass runtime_cls;
+    jobject runtime_obj;
+    jmethodID total_mid;
+    jmethodID free_mid;
+    jclass debug_cls;
+    jmethodID native_alloc_mid;
+};
+
+bool init_jni_heap(JavaVM* vm, JniHeap* h) {
+    *h = JniHeap{};
+    if (vm == nullptr) return false;
+    if (vm->AttachCurrentThreadAsDaemon(&h->env, nullptr) != JNI_OK || h->env == nullptr) {
+        LOGE("AttachCurrentThreadAsDaemon failed");
+        return false;
+    }
+    JNIEnv* env = h->env;
+    jclass local_runtime = env->FindClass("java/lang/Runtime");
+    jclass local_debug   = env->FindClass("android/os/Debug");
+    if (local_runtime == nullptr || local_debug == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        LOGE("FindClass for Runtime/Debug failed");
+        return false;
+    }
+    h->runtime_cls = (jclass)env->NewGlobalRef(local_runtime);
+    h->debug_cls   = (jclass)env->NewGlobalRef(local_debug);
+    env->DeleteLocalRef(local_runtime);
+    env->DeleteLocalRef(local_debug);
+
+    jmethodID get_runtime_mid = env->GetStaticMethodID(h->runtime_cls, "getRuntime", "()Ljava/lang/Runtime;");
+    h->total_mid = env->GetMethodID(h->runtime_cls, "totalMemory", "()J");
+    h->free_mid  = env->GetMethodID(h->runtime_cls, "freeMemory",  "()J");
+    h->native_alloc_mid = env->GetStaticMethodID(h->debug_cls, "getNativeHeapAllocatedSize", "()J");
+    if (get_runtime_mid == nullptr || h->total_mid == nullptr ||
+        h->free_mid == nullptr || h->native_alloc_mid == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        LOGE("GetMethodID lookup failed");
+        return false;
+    }
+
+    jobject local_rt = env->CallStaticObjectMethod(h->runtime_cls, get_runtime_mid);
+    if (env->ExceptionCheck() || local_rt == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        LOGE("Runtime.getRuntime() failed");
+        return false;
+    }
+    h->runtime_obj = env->NewGlobalRef(local_rt);
+    env->DeleteLocalRef(local_rt);
+    return true;
+}
+
+// Read Java + native heap via cached JNI handles. On any exception, clear and
+// fall back to 0 for that field (the chart treats absent values as a skipped
+// tick rather than a real zero).
+void read_jni_heap(JniHeap* h, uint32_t* java_kb, uint32_t* native_kb) {
+    JNIEnv* env = h->env;
+    jlong total = env->CallLongMethod(h->runtime_obj, h->total_mid);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); total = 0; }
+    jlong free_ = env->CallLongMethod(h->runtime_obj, h->free_mid);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); free_ = 0; }
+    jlong used = total - free_;
+    if (used < 0) used = 0;
+    jlong native_bytes = env->CallStaticLongMethod(h->debug_cls, h->native_alloc_mid);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); native_bytes = 0; }
+    *java_kb   = (uint32_t)(used / 1024);
+    *native_kb = (uint32_t)(native_bytes / 1024);
+}
+
+void* sampler_loop(void* arg) {
+    JavaVM* vm = (JavaVM*)arg;
+    JniHeap heap;
+    bool jni_ok = init_jni_heap(vm, &heap);
+    if (!jni_ok) {
+        LOGI("sampler running RSS-only (no JNI heap fields)");
+    }
     for (;;) {
-        Event e{KIND_MEMORY, now_ns(), read_rss_kb()};
+        Event e;
+        e.kind = KIND_MEMORY;
+        e.ts_ns = now_ns();
+        e.value = read_rss_kb();
+        if (jni_ok) {
+            read_jni_heap(&heap, &e.java_heap_kb, &e.native_heap_kb);
+        } else {
+            e.java_heap_kb = UINT32_MAX;
+            e.native_heap_kb = UINT32_MAX;
+        }
         enqueue(e);
         ::usleep(1000 * 1000);
     }
@@ -160,8 +254,20 @@ bool send_all(int fd, const uint8_t* buf, size_t n) {
 
 bool send_event(int fd, const Event& e) {
     // GC: [u8 kind][u32 len=12][i64 ts_ns][u32 duration_us]
-    // Memory v1: [u8 kind][u32 len=12][i64 ts_ns][u32 rss_kb]
-    // Future memory fields append u32s after value; bump the len accordingly.
+    // Memory (RSS only): [u8 kind][u32 len=12][i64 ts_ns][u32 rss_kb]
+    // Memory + heap:     [u8 kind][u32 len=20][i64 ts_ns][u32 rss_kb]
+    //                    [u32 java_heap_kb][u32 native_heap_kb]
+    bool has_heap = (e.kind == KIND_MEMORY) && (e.java_heap_kb != UINT32_MAX);
+    if (has_heap) {
+        uint8_t buf[1 + 4 + 20];
+        buf[0] = e.kind;
+        put_be32(buf + 1, 20);
+        put_be64(buf + 5, e.ts_ns);
+        put_be32(buf + 13, e.value);
+        put_be32(buf + 17, e.java_heap_kb);
+        put_be32(buf + 21, e.native_heap_kb);
+        return send_all(fd, buf, sizeof(buf));
+    }
     uint8_t buf[1 + 4 + 12];
     buf[0] = e.kind;
     put_be32(buf + 1, 12);
@@ -279,7 +385,7 @@ jint attach(JavaVM* vm) {
             LOGE("pthread_create(writer) failed: %d", errno);
         }
         pthread_t sampler_tid;
-        if (pthread_create(&sampler_tid, nullptr, sampler_loop, nullptr) == 0) {
+        if (pthread_create(&sampler_tid, nullptr, sampler_loop, vm) == 0) {
             pthread_detach(sampler_tid);
         } else {
             LOGE("pthread_create(sampler) failed: %d", errno);
