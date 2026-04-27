@@ -1,9 +1,9 @@
 # JVMTI Agent
 
 Holo's Monitor panel shows live CPU%, thread count, Java / native / RSS
-memory, and GC pause marks. All of it comes from a tiny C++ agent
-(`libholoagent.so`) that Holo loads into the target app on the device. This
-doc explains, in plain terms, how that works end to end.
+memory, GC pause marks, and per-app rx/tx bytes. All of it comes from a
+tiny C++ agent (`libholoagent.so`) that Holo loads into the target app on
+the device. This doc explains, in plain terms, how that works end to end.
 
 ## Supported configurations
 
@@ -24,12 +24,15 @@ panel starts streaming once the agent is attached:
 - **Memory view** — three lines on the same chart: Java heap
   (`Runtime.totalMemory() - freeMemory()`), native heap
   (`Debug.getNativeHeapAllocatedSize()`), and RSS (from `/proc/self/statm`).
+- **Network view** — download / upload rate in B/s plus cumulative totals
+  (`↓ 1.2 KB/s (4.5 MB)` / `↑ 200 B/s (180 KB)`) sourced from
+  `TrafficStats.getUidRxBytes(myUid())` / `getUidTxBytes(myUid())`.
 - **GC marks** — every time ART runs a garbage collection, a `◆` mark shows
   up at the moment the GC finished. The chip row shows the count in the
   visible window (`◆ 7 GC`).
 
-All four signals share the agent's `CLOCK_MONOTONIC` clock, so GC marks line
-up with the CPU and memory curves they correspond to.
+All five signals share the agent's `CLOCK_MONOTONIC` clock, so GC marks line
+up with the CPU, memory, and network curves they correspond to.
 
 Nothing shows up for non-debuggable (release) builds. That is by design —
 the OS only lets us inject code into apps that opted in via
@@ -69,9 +72,11 @@ There are three things at play:
    - **JVMTI GC callbacks** — `GarbageCollectionStart` /
      `GarbageCollectionFinish` time each pause and enqueue a GC frame.
    - **A 1 Hz sampler thread** — reads `/proc/self/stat` for CPU jiffies
-     and thread count, `/proc/self/statm` for RSS, and JNI-attaches to
-     call `Runtime.totalMemory()` / `freeMemory()` /
-     `Debug.getNativeHeapAllocatedSize()` for Java and native heap.
+     and thread count, `/proc/self/statm` for RSS, and JNI-calls
+     `Runtime.totalMemory()` / `freeMemory()` /
+     `Debug.getNativeHeapAllocatedSize()` for Java and native heap, plus
+     `TrafficStats.getUidRxBytes(myUid())` / `getUidTxBytes(myUid())` for
+     cumulative per-app network bytes.
    A background pthread serves the ring over an abstract Unix socket.
 
 2. **The transport** — an abstract Unix socket named `@holoagent-<pid>`
@@ -81,23 +86,26 @@ There are three things at play:
 
 3. **The host reader** — `src/vitals/reader.rs` reads length-prefixed
    binary frames off the TCP socket, decodes them into `VitalsEvent::{Gc,
-   Cpu, Memory}` values, which `data.rs` forwards into the Monitor state
-   for rendering.
+   Cpu, Memory, Network}` values, which `data.rs` forwards into the
+   Monitor state for rendering.
 
 ## Wire format
 
 Frames are big-endian: `[u8 kind][u32 payload_len][payload]`.
 
-| Kind   | Name        | Payload                                                                     |
-| ------ | ----------- | --------------------------------------------------------------------------- |
-| `0x01` | GC pause    | `[i64 ts_ns][u32 duration_us]` (12 bytes)                                   |
-| `0x02` | MemorySample| `[i64 ts_ns][u32 rss_kb][u32 java_heap_kb][u32 native_heap_kb]` (20 bytes)  |
-| `0x03` | CpuSample   | `[i64 ts_ns][u32 cpu_centi_percent][u32 num_threads]` (16 bytes)            |
+| Kind   | Name         | Payload                                                                     |
+| ------ | ------------ | --------------------------------------------------------------------------- |
+| `0x01` | GC pause     | `[i64 ts_ns][u32 duration_us]` (12 bytes)                                   |
+| `0x02` | MemorySample | `[i64 ts_ns][u32 rss_kb][u32 java_heap_kb][u32 native_heap_kb]` (20 bytes)  |
+| `0x03` | CpuSample    | `[i64 ts_ns][u32 cpu_centi_percent][u32 num_threads]` (16 bytes)            |
+| `0x04` | NetworkSample| `[i64 ts_ns][u64 rx_bytes][u64 tx_bytes]` (24 bytes)                        |
 
 `ts_ns` is the agent's `CLOCK_MONOTONIC` reading at the moment the event was
 produced. `cpu_centi_percent` is the divided-by-cores percentage × 100
-(range `0..=10000`). The host enforces strict payload-length checks; agent
-and host ship together via `build.rs`, so there is no version negotiation.
+(range `0..=10000`). `rx_bytes` / `tx_bytes` are cumulative per-uid totals
+since boot (host computes bps deltas). The host enforces strict
+payload-length checks; agent and host ship together via `build.rs`, so
+there is no version negotiation.
 
 ## How it's built and bundled
 

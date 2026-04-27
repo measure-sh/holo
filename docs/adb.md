@@ -10,14 +10,14 @@ All ADB commands used by holo, organized by feature area.
 | 1s        | Process PID   | `adb shell pidof -s <package>`                     |
 | 5s        | Disk          | `adb shell run-as <package> du -s .`               |
 | 5s        | Connectivity  | `adb get-state`                                    |
-| 2s        | Network bytes | `adb shell dumpsys netstats detail`                |
 | 5s        | Permissions   | `adb shell dumpsys package <package>`              |
 | 5s        | Crashes       | `adb shell dumpsys dropbox --print data_app_crash` |
 | 5s        | ANRs          | `adb shell dumpsys dropbox --print data_app_anr`   |
 | 30s       | Battery       | `adb shell dumpsys battery`                        |
 
-CPU, memory, GC pauses, and thread count come from the JVMTI agent at 1 Hz over a
-binary stream — see [Vitals (JVMTI agent)](#vitals-jvmti-agent) below.
+CPU, memory, GC pauses, thread count, and per-app rx/tx bytes come from the
+JVMTI agent at 1 Hz over a binary stream — see
+[Vitals (JVMTI agent)](#vitals-jvmti-agent) below.
 
 ## Commands by Feature
 
@@ -59,15 +59,9 @@ binary stream — see [Vitals (JVMTI agent)](#vitals-jvmti-agent) below.
 | ------------------------------------ | ---------------------------------------- |
 | `adb shell run-as <package> du -s .` | App data size on disk (polled every 5s)  |
 
-CPU%, RSS / Java heap / native heap, GC pauses, and thread count are all
-streamed by the JVMTI agent — see [Vitals (JVMTI agent)](#vitals-jvmti-agent).
-
-### Network (no Measure SDK)
-
-| Command                               | Purpose                                            |
-| ------------------------------------- | -------------------------------------------------- |
-| `adb shell dumpsys package <package>` | Resolve app UID via `userId=` line                 |
-| `adb shell dumpsys netstats detail`   | Per-UID rxBytes/txBytes counters (polled every 2s) |
+CPU%, RSS / Java heap / native heap, GC pauses, thread count, and per-app
+rx/tx bytes are all streamed by the JVMTI agent — see
+[Vitals (JVMTI agent)](#vitals-jvmti-agent).
 
 ### Permissions
 
@@ -103,7 +97,8 @@ streamed by the JVMTI agent — see [Vitals (JVMTI agent)](#vitals-jvmti-agent).
 ### Vitals (JVMTI agent)
 
 Used to attach the embedded `libholoagent.so` to a debuggable app. The agent
-streams CPU%, thread count, RSS, Java heap, native heap, and GC pause events
+streams CPU%, thread count, RSS, Java heap, native heap, GC pause events,
+and per-app rx/tx bytes (via `TrafficStats.getUidRxBytes` / `getUidTxBytes`)
 over an abstract Unix socket bridged to host loopback. See
 [`docs/jvmti.md`](jvmti.md) for the wire format and end-to-end flow. The agent
 is pushed once per app and attached at runtime.
