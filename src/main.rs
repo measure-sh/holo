@@ -187,6 +187,7 @@ fn run_app(
         if !event::poll(poll_timeout)? {
             continue;
         }
+        let mut input_dispatched = false;
         loop {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
@@ -197,6 +198,7 @@ fn run_app(
                     if let Some(d) = &ctx.data {
                         d.update_monitor_visibility(app.panel_visibility());
                     }
+                    input_dispatched = true;
                 }
                 Event::Key(_) => {
                     // Ignore Repeat/Release. Falling through (instead of
@@ -218,16 +220,34 @@ fn run_app(
                         if ctx.dispatch(action, &mut app) {
                             return Ok(());
                         }
+                        input_dispatched = true;
                     }
                 }
                 Event::Resize(_, _) => {
                     terminal.clear()?;
+                    input_dispatched = true;
                 }
                 _ => {}
             }
             if !event::poll(Duration::ZERO)? {
                 break;
             }
+        }
+        // Render the post-event frame *now* instead of waiting for the next
+        // outer-loop iteration. Without this, `terminal.draw` only fires after
+        // we re-traverse `poll_receivers` + the data-poll block, which gives
+        // input a perceptible "swallowed" feel — a Ctrl+D press dispatches but
+        // the popup only appears on the *next* event.
+        if input_dispatched {
+            let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);
+            let logcat_lines: &[String] = ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines);
+            if ctx.pending_redraw {
+                terminal.clear()?;
+                ctx.pending_redraw = false;
+            }
+            terminal.draw(|frame| {
+                ui::render_app(frame, &ctx.title, battery_level, &mut app, logcat_lines)
+            })?;
         }
     }
 }
