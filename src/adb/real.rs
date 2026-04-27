@@ -1,10 +1,78 @@
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
 use super::{Adb, Device, FileMeta, MemInfo, NetworkBytes};
+
+/// Host-only adb commands that don't traverse the device transport. Fast even
+/// when the device adbd is wedged.
+const ADB_HOST_TIMEOUT: Duration = Duration::from_secs(5);
+/// Default for `adb shell` and similar device-transport calls. Long enough for
+/// `dumpsys`, short enough that a wedged transport is recoverable in seconds.
+const ADB_SHELL_TIMEOUT: Duration = Duration::from_secs(15);
+/// Bulk transfers (`pull`, `push`, `exec-out cat`, `screencap`) and trace
+/// pipelines that legitimately need minutes for large payloads.
+const ADB_TRANSFER_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// `Command::output()` blocks indefinitely. Wedged adb shells used to take the
+/// whole UI thread with them — every call site needs a deadline, so all of
+/// `RealAdb` goes through this helper.
+trait OutputTimed {
+    fn output_timed(&mut self, timeout: Duration) -> Result<Output>;
+}
+
+impl OutputTimed for Command {
+    fn output_timed(&mut self, timeout: Duration) -> Result<Output> {
+        let child = self
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        wait_with_output_timed(child, timeout)
+    }
+}
+
+/// Drain stdout/stderr in helper threads (so a child writing to a full kernel
+/// buffer can't deadlock our wait loop), then poll `try_wait` until the child
+/// exits or the deadline passes. On timeout, kill and reap the child so it
+/// doesn't outlive the call.
+fn wait_with_output_timed(mut child: std::process::Child, timeout: Duration) -> Result<Output> {
+    let mut stdout = child.stdout.take().expect("piped");
+    let mut stderr = child.stderr.take().expect("piped");
+    let stdout_h = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_h = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf);
+        buf
+    });
+
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(s) = child.try_wait()? {
+            break s;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            bail!("adb timed out after {:?}", timeout);
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    let stdout_buf = stdout_h.join().unwrap_or_default();
+    let stderr_buf = stderr_h.join().unwrap_or_default();
+    Ok(Output {
+        status,
+        stdout: stdout_buf,
+        stderr: stderr_buf,
+    })
+}
 
 fn emulator_path() -> PathBuf {
     std::env::var_os("ANDROID_HOME")
@@ -17,7 +85,7 @@ pub struct RealAdb;
 
 impl Adb for RealAdb {
     fn list_devices(&self) -> Result<Vec<Device>> {
-        let output = Command::new("adb").args(["devices", "-l"]).output()?;
+        let output = Command::new("adb").args(["devices", "-l"]).output_timed(ADB_HOST_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -31,7 +99,7 @@ impl Adb for RealAdb {
     fn get_battery_level(&self, serial: &str) -> Result<u8> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "battery"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -45,7 +113,7 @@ impl Adb for RealAdb {
     fn list_packages(&self, serial: &str) -> Result<Vec<String>> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "pm", "list", "packages", "-3"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -59,7 +127,7 @@ impl Adb for RealAdb {
     fn pidof(&self, serial: &str, package: &str) -> Result<Option<u32>> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "pidof", "-s", package])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let trimmed = stdout.trim();
@@ -73,7 +141,7 @@ impl Adb for RealAdb {
         let component = resolve_launcher_component(serial, package)?;
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "am", "start-activity", "-n", &component])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("adb am start-activity failed: {stderr}");
@@ -88,7 +156,7 @@ impl Adb for RealAdb {
                 "-a", "android.settings.APPLICATION_DETAILS_SETTINGS",
                 "-d", &format!("package:{package}"),
             ])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -100,7 +168,7 @@ impl Adb for RealAdb {
     fn kill_app(&self, serial: &str, package: &str) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "am", "force-stop", package])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -112,7 +180,7 @@ impl Adb for RealAdb {
     fn clear_app_data(&self, serial: &str, package: &str) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "pm", "clear", package])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -124,7 +192,7 @@ impl Adb for RealAdb {
     fn uninstall_app(&self, serial: &str, package: &str) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "uninstall", package])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -136,7 +204,7 @@ impl Adb for RealAdb {
     fn list_databases(&self, serial: &str, package: &str) -> Result<Vec<String>> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "run-as", package, "ls", "databases/"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -154,7 +222,7 @@ impl Adb for RealAdb {
         );
         let output = Command::new("adb")
             .args(["-s", serial, "shell", &shell_cmd])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -169,13 +237,13 @@ impl Adb for RealAdb {
             let remote_path = format!("databases/{db_name}{suffix}");
             let check = Command::new("adb")
                 .args(["-s", serial, "shell", "run-as", package, "ls", &remote_path])
-                .output()?;
+                .output_timed(ADB_SHELL_TIMEOUT)?;
             if !check.status.success() {
                 continue;
             }
             let output = Command::new("adb")
                 .args(["-s", serial, "exec-out", "run-as", package, "cat", &remote_path])
-                .output()?;
+                .output_timed(ADB_TRANSFER_TIMEOUT)?;
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 bail!("pull {db_name}{suffix} failed: {stderr}");
@@ -190,7 +258,7 @@ impl Adb for RealAdb {
     fn wake_screen(&self, serial: &str) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -202,7 +270,7 @@ impl Adb for RealAdb {
     fn get_layout_bounds(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "getprop", "debug.layout"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         let value = String::from_utf8_lossy(&output.stdout);
         Ok(value.trim() == "true")
     }
@@ -211,20 +279,20 @@ impl Adb for RealAdb {
         let value = if enabled { "true" } else { "false" };
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "setprop", "debug.layout", value])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("setprop debug.layout failed: {stderr}");
         }
         let _ = Command::new("adb")
             .args(["-s", serial, "shell", "service", "call", "activity", "1599295570"])
-            .output();
+            .output_timed(ADB_SHELL_TIMEOUT).ok();
         Ok(())
     }
     fn get_airplane_mode(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "get", "global", "airplane_mode_on"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         let value = String::from_utf8_lossy(&output.stdout);
         Ok(parse_airplane_mode(&value))
     }
@@ -233,7 +301,7 @@ impl Adb for RealAdb {
         let mode = if enabled { "enable" } else { "disable" };
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "cmd", "connectivity", "airplane-mode", mode])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("airplane-mode {mode} failed: {stderr}");
@@ -244,7 +312,7 @@ impl Adb for RealAdb {
     fn list_permissions(&self, serial: &str, package: &str) -> Result<Vec<(String, bool)>> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "package", package])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -258,7 +326,7 @@ impl Adb for RealAdb {
     fn grant_permission(&self, serial: &str, package: &str, permission: &str) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "pm", "grant", package, permission])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -270,7 +338,7 @@ impl Adb for RealAdb {
     fn revoke_permission(&self, serial: &str, package: &str, permission: &str) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "pm", "revoke", package, permission])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -282,7 +350,7 @@ impl Adb for RealAdb {
     fn get_app_version(&self, serial: &str, package: &str) -> Result<(String, String)> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "package", package])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -296,7 +364,7 @@ impl Adb for RealAdb {
     fn list_files(&self, serial: &str, package: &str, path: &str) -> Result<Vec<(String, bool)>> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "run-as", package, "ls", "-p", path])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -310,7 +378,7 @@ impl Adb for RealAdb {
     fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "top", "-b", "-n", "1", "-q"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -327,7 +395,7 @@ impl Adb for RealAdb {
                 "-s", serial, "shell",
                 "nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo",
             ])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -346,7 +414,7 @@ impl Adb for RealAdb {
         );
         let output = Command::new("adb")
             .args(["-s", serial, "shell", &cmd])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         Ok(parse_proc_mem(&stdout))
@@ -355,7 +423,7 @@ impl Adb for RealAdb {
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "exec-out", "run-as", package, "cat", remote_path])
-            .output()?;
+            .output_timed(ADB_TRANSFER_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -376,7 +444,7 @@ impl Adb for RealAdb {
                 "-s", serial, "shell", "run-as", package,
                 "stat", "-c", "%s|%y|%A", remote_path,
             ])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if stat_out.status.success() {
             let stdout = String::from_utf8_lossy(&stat_out.stdout);
@@ -387,7 +455,7 @@ impl Adb for RealAdb {
 
         let ls_out = Command::new("adb")
             .args(["-s", serial, "shell", "run-as", package, "ls", "-la", remote_path])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
 
         if !ls_out.status.success() {
             let stderr = String::from_utf8_lossy(&ls_out.stderr);
@@ -406,7 +474,7 @@ impl Adb for RealAdb {
                 "-s", serial, "exec-out", "run-as", package,
                 "head", "-c", &max, remote_path,
             ])
-            .output()?;
+            .output_timed(ADB_TRANSFER_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -422,16 +490,16 @@ impl Adb for RealAdb {
                 "-s", serial, "shell", "perfetto", "-d", "--txt", "-c", "-",
                 "-o", "/data/misc/perfetto-traces/holo_trace.perfetto-trace",
             ])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()?;
 
         if let Some(mut stdin) = child.stdin.take() {
             stdin.write_all(config.as_bytes())?;
         }
 
-        let output = child.wait_with_output()?;
+        let output = wait_with_output_timed(child, ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("perfetto start failed: {stderr}");
@@ -442,7 +510,7 @@ impl Adb for RealAdb {
     fn stop_and_pull_trace(&self, serial: &str, dest: &std::path::Path) -> Result<()> {
         let _ = Command::new("adb")
             .args(["-s", serial, "shell", "pkill", "-INT", "perfetto"])
-            .output();
+            .output_timed(ADB_SHELL_TIMEOUT).ok();
 
         std::thread::sleep(std::time::Duration::from_secs(2));
 
@@ -456,7 +524,7 @@ impl Adb for RealAdb {
                 "/data/misc/perfetto-traces/holo_trace.perfetto-trace",
                 &dest.to_string_lossy(),
             ])
-            .output()?;
+            .output_timed(ADB_TRANSFER_TIMEOUT)?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -469,7 +537,7 @@ impl Adb for RealAdb {
         let shell = |args: &[&str]| -> Result<()> {
             let mut cmd_args = vec!["-s", serial, "shell"];
             cmd_args.extend_from_slice(args);
-            let output = Command::new("adb").args(&cmd_args).output()?;
+            let output = Command::new("adb").args(&cmd_args).output_timed(ADB_SHELL_TIMEOUT)?;
             if !output.status.success() {
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 bail!("adb shell failed: {stderr}");
@@ -488,7 +556,7 @@ impl Adb for RealAdb {
 
         let result = Command::new("adb")
             .args(["-s", serial, "exec-out", "screencap", "-p"])
-            .output();
+            .output_timed(ADB_TRANSFER_TIMEOUT);
 
         let _ = shell(&["am", "broadcast", "-a", "com.android.systemui.demo", "-e", "command", "exit"]);
 
@@ -509,7 +577,7 @@ impl Adb for RealAdb {
     fn get_wifi_enabled(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "get", "global", "wifi_on"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         let value = String::from_utf8_lossy(&output.stdout);
         Ok(parse_wifi_enabled(&value))
     }
@@ -518,7 +586,7 @@ impl Adb for RealAdb {
         let state = if enabled { "enable" } else { "disable" };
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "svc", "wifi", state])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("svc wifi {state} failed: {stderr}");
@@ -529,7 +597,7 @@ impl Adb for RealAdb {
     fn enable_wireless_adb(&self, serial: &str) -> Result<String> {
         let output = Command::new("adb")
             .args(["-s", serial, "tcpip", "5555"])
-            .output()?;
+            .output_timed(ADB_HOST_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("adb tcpip failed: {stderr}");
@@ -539,7 +607,7 @@ impl Adb for RealAdb {
 
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "ip", "route"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let ip = parse_device_ip(&stdout)
             .ok_or_else(|| color_eyre::eyre::eyre!("could not detect device IP"))?;
@@ -547,7 +615,7 @@ impl Adb for RealAdb {
         let addr = format!("{ip}:5555");
         let output = Command::new("adb")
             .args(["connect", &addr])
-            .output()?;
+            .output_timed(ADB_HOST_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("adb connect failed: {stderr}");
@@ -558,7 +626,7 @@ impl Adb for RealAdb {
     fn get_disk_usage(&self, serial: &str, package: &str) -> Result<(u64, u64)> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "run-as", package, "du", "-s", ".", "./cache"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("du failed: {stderr}");
@@ -570,7 +638,7 @@ impl Adb for RealAdb {
     fn get_dark_mode(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "get", "secure", "ui_night_mode"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         let value = String::from_utf8_lossy(&output.stdout);
         Ok(value.trim() == "2")
     }
@@ -579,7 +647,7 @@ impl Adb for RealAdb {
         let mode = if enabled { "yes" } else { "no" };
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "cmd", "uimode", "night", mode])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("cmd uimode night {mode} failed: {stderr}");
@@ -588,7 +656,7 @@ impl Adb for RealAdb {
     }
 
     fn list_avds(&self) -> Result<Vec<String>> {
-        let output = Command::new(emulator_path()).arg("-list-avds").output()?;
+        let output = Command::new(emulator_path()).arg("-list-avds").output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("emulator -list-avds failed: {stderr}");
@@ -610,7 +678,7 @@ impl Adb for RealAdb {
     fn get_avd_name(&self, serial: &str) -> Result<String> {
         let output = Command::new("adb")
             .args(["-s", serial, "emu", "avd", "name"])
-            .output()?;
+            .output_timed(ADB_HOST_TIMEOUT)?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let name = stdout.lines().next().unwrap_or("").trim().to_string();
         if name.is_empty() {
@@ -622,24 +690,22 @@ impl Adb for RealAdb {
     fn get_state(&self, serial: &str) -> Result<String> {
         let output = Command::new("adb")
             .args(["-s", serial, "get-state"])
-            .output()?;
+            .output_timed(ADB_HOST_TIMEOUT)?;
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
 
     fn is_debuggable(&self, serial: &str, package: &str) -> bool {
         Command::new("adb")
             .args(["-s", serial, "shell", "run-as", package, "id"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
+            .output_timed(ADB_SHELL_TIMEOUT)
+            .map(|o| o.status.success())
             .unwrap_or(false)
     }
 
     fn get_abi(&self, serial: &str) -> Result<String> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "getprop", "ro.product.cpu.abi"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("getprop ro.product.cpu.abi failed: {stderr}");
@@ -655,7 +721,7 @@ impl Adb for RealAdb {
         let staged = "/data/local/tmp/libholoagent.so";
         let push = Command::new("adb")
             .args(["-s", serial, "push", local.to_string_lossy().as_ref(), staged])
-            .output()?;
+            .output_timed(ADB_TRANSFER_TIMEOUT)?;
         let _ = std::fs::remove_file(&local);
         if !push.status.success() {
             let stderr = String::from_utf8_lossy(&push.stderr);
@@ -669,7 +735,7 @@ impl Adb for RealAdb {
         );
         let copy = Command::new("adb")
             .args(["-s", serial, "shell", &inner])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !copy.status.success() {
             let stderr = String::from_utf8_lossy(&copy.stderr);
             bail!("run-as cp failed: {stderr}");
@@ -684,7 +750,7 @@ impl Adb for RealAdb {
                 "-s", serial, "shell",
                 "cmd", "activity", "attach-agent", package, so_path,
             ])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("attach-agent failed: {stderr}");
@@ -696,7 +762,7 @@ impl Adb for RealAdb {
         let remote = format!("localabstract:{abstract_name}");
         let output = Command::new("adb")
             .args(["-s", serial, "forward", "tcp:0", &remote])
-            .output()?;
+            .output_timed(ADB_HOST_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("adb forward failed: {stderr}");
@@ -712,7 +778,7 @@ impl Adb for RealAdb {
         let spec = format!("tcp:{local_port}");
         let output = Command::new("adb")
             .args(["-s", serial, "forward", "--remove", &spec])
-            .output()?;
+            .output_timed(ADB_HOST_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("adb forward --remove failed: {stderr}");
@@ -723,7 +789,7 @@ impl Adb for RealAdb {
     fn get_show_taps(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "get", "system", "show_touches"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         Ok(String::from_utf8_lossy(&output.stdout).trim() == "1")
     }
 
@@ -731,7 +797,7 @@ impl Adb for RealAdb {
         let val = if enabled { "1" } else { "0" };
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "put", "system", "show_touches", val])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("settings put show_touches failed: {stderr}");
@@ -742,7 +808,7 @@ impl Adb for RealAdb {
     fn get_pointer_location(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "get", "system", "pointer_location"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         Ok(String::from_utf8_lossy(&output.stdout).trim() == "1")
     }
 
@@ -750,7 +816,7 @@ impl Adb for RealAdb {
         let val = if enabled { "1" } else { "0" };
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "put", "system", "pointer_location", val])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("settings put pointer_location failed: {stderr}");
@@ -761,7 +827,7 @@ impl Adb for RealAdb {
     fn get_gpu_rendering(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "getprop", "debug.hwui.profile"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         Ok(String::from_utf8_lossy(&output.stdout).trim() == "visual_bars")
     }
 
@@ -769,21 +835,21 @@ impl Adb for RealAdb {
         let val = if enabled { "visual_bars" } else { "false" };
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "setprop", "debug.hwui.profile", val])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("setprop debug.hwui.profile failed: {stderr}");
         }
         Command::new("adb")
             .args(["-s", serial, "shell", "service", "call", "activity", "1599295570"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         Ok(())
     }
 
     fn get_talkback_enabled(&self, serial: &str) -> Result<bool> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "get", "secure", "enabled_accessibility_services"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         let value = String::from_utf8_lossy(&output.stdout);
         Ok(value.to_lowercase().contains("talkback"))
     }
@@ -794,7 +860,7 @@ impl Adb for RealAdb {
         let current = {
             let output = Command::new("adb")
                 .args(["-s", serial, "shell", "settings", "get", "secure", "enabled_accessibility_services"])
-                .output()?;
+                .output_timed(ADB_SHELL_TIMEOUT)?;
             String::from_utf8_lossy(&output.stdout).trim().to_string()
         };
 
@@ -816,7 +882,7 @@ impl Adb for RealAdb {
 
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "settings", "put", "secure", "enabled_accessibility_services", &new_value])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("settings put enabled_accessibility_services failed: {stderr}");
@@ -827,7 +893,7 @@ impl Adb for RealAdb {
     fn get_dropbox_crashes(&self, serial: &str) -> Result<String> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "dropbox", "--print", "data_app_crash"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("dumpsys dropbox failed: {stderr}");
@@ -838,7 +904,7 @@ impl Adb for RealAdb {
     fn get_dropbox_anrs(&self, serial: &str) -> Result<String> {
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "dropbox", "--print", "data_app_anr"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("dumpsys dropbox failed: {stderr}");
@@ -860,7 +926,7 @@ impl Adb for RealAdb {
 
         let output = Command::new("adb")
             .args(["-s", serial, "shell", "dumpsys", "netstats", "detail"])
-            .output()?;
+            .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("dumpsys netstats failed: {stderr}");
@@ -876,7 +942,7 @@ fn resolve_launcher_component(serial: &str, package: &str) -> Result<String> {
             "-s", serial, "shell",
             "cmd", "package", "resolve-activity", "--brief", package,
         ])
-        .output()?;
+        .output_timed(ADB_SHELL_TIMEOUT)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         bail!("resolve-activity failed: {stderr}");
@@ -896,7 +962,7 @@ fn parse_launcher_component(output: &str, package: &str) -> Option<String> {
 fn dumpsys_package(serial: &str, package: &str) -> Option<String> {
     Command::new("adb")
         .args(["-s", serial, "shell", "dumpsys", "package", package])
-        .output()
+        .output_timed(ADB_SHELL_TIMEOUT)
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
 }
@@ -1269,6 +1335,38 @@ pub fn parse_avd_list(output: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_timed_kills_a_hung_child() {
+        // `sleep 30` would block forever in the old `.output()` path. The
+        // helper has to terminate it inside the deadline window.
+        let started = Instant::now();
+        let err = Command::new("sh")
+            .arg("-c")
+            .arg("sleep 30")
+            .output_timed(Duration::from_millis(200))
+            .expect_err("expected timeout");
+        let elapsed = started.elapsed();
+        assert!(
+            err.to_string().contains("timed out"),
+            "expected timeout error, got: {err}"
+        );
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "wait should have aborted near the deadline, took {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn output_timed_returns_normally_when_child_exits() {
+        let out = Command::new("sh")
+            .arg("-c")
+            .arg("printf hello")
+            .output_timed(Duration::from_secs(2))
+            .expect("should run");
+        assert!(out.status.success());
+        assert_eq!(out.stdout, b"hello");
+    }
 
     #[test]
     fn parses_single_device() {
