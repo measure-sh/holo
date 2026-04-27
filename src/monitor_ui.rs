@@ -201,7 +201,27 @@ fn build_metrics(
         window_secs: cpu_window,
     });
 
-    let mem_samples: Vec<u64> = state.memory_history.iter().map(|m| m.rss_kb).collect();
+    // Prefer Java heap for the headline memory metric — it actually moves on
+    // GC, where RSS barely budges. Fall back to RSS when an older agent is
+    // attached (no java_heap_kb in its 0x02 payload).
+    let has_java = state.memory_history.iter().any(|s| s.java_heap_kb.is_some());
+    let (mem_name, mem_label_prefix, mem_samples): (&'static str, &'static str, Vec<u64>) = if has_java {
+        (
+            "Java",
+            "Java",
+            state
+                .memory_history
+                .iter()
+                .map(|s| s.java_heap_kb.unwrap_or(0))
+                .collect(),
+        )
+    } else {
+        (
+            "RSS",
+            "RSS",
+            state.memory_history.iter().map(|s| s.rss_kb).collect(),
+        )
+    };
     let mem_now = *mem_samples.last().unwrap_or(&0);
     let (mem_spark, mem_max) = range_shifted(&mem_samples);
     // Anchor "now" on the freshest agent timestamp across both streams. Both
@@ -215,8 +235,8 @@ fn build_metrics(
         .collect();
     let mem_window_secs = mem_secs_ago.first().copied().unwrap_or(0.0);
     metrics.push(Metric {
-        name: "RSS",
-        label: format!(" RSS {}  ", format_mb(mem_now)),
+        name: mem_name,
+        label: format!(" {} {}  ", mem_label_prefix, format_mb(mem_now)),
         sparkline_data: mem_spark,
         sparkline_max: mem_max,
         values: mem_samples.iter().map(|&v| v as f64).collect(),
@@ -709,7 +729,7 @@ mod tests {
     }
 
     #[test]
-    fn rss_metric_aligns_gc_tick_with_matching_memory_sample() {
+    fn memory_metric_aligns_gc_tick_with_matching_memory_sample() {
         use crate::monitor::MonitorState;
 
         // Memory samples spaced unevenly on the agent clock. A GC event
@@ -722,23 +742,51 @@ mod tests {
         state.push_gc(1_500_000_000, 42);
 
         let metrics = build_metrics(&state, &[], None);
-        let rss = metrics.iter().find(|m| m.name == "RSS").unwrap();
+        let mem = metrics.iter().find(|m| m.name == "RSS").unwrap();
 
         // window_secs is the spread of the memory samples (5 s).
-        assert!((rss.window_secs - 5.0).abs() < 1e-9);
+        assert!((mem.window_secs - 5.0).abs() < 1e-9);
 
         // Per-sample secs_ago: 5, 3.5, 0 (oldest → newest).
-        assert_eq!(rss.secs_ago.len(), 3);
-        assert!((rss.secs_ago[0] - 5.0).abs() < 1e-9);
-        assert!((rss.secs_ago[1] - 3.5).abs() < 1e-9);
-        assert!((rss.secs_ago[2] - 0.0).abs() < 1e-9);
+        assert_eq!(mem.secs_ago.len(), 3);
+        assert!((mem.secs_ago[0] - 5.0).abs() < 1e-9);
+        assert!((mem.secs_ago[1] - 3.5).abs() < 1e-9);
+        assert!((mem.secs_ago[2] - 0.0).abs() < 1e-9);
 
         // GC tick rounds 3.5 s to 3 (u32 floor at second granularity). The
         // tick row column for "3 s ago" with window=5 in a 21-cell strip:
         let width = 21;
-        let row = build_tick_row(width, rss.window_secs, &rss.tick_secs_ago);
+        let row = build_tick_row(width, mem.window_secs, &mem.tick_secs_ago);
         let tick_col = row.chars().position(|c| c == '◆').unwrap();
         // (1 - 3/5) * 20 = 8.
         assert_eq!(tick_col, 8);
+    }
+
+    #[test]
+    fn memory_metric_uses_java_heap_when_available() {
+        use crate::monitor::MonitorState;
+
+        let mut state = MonitorState::new();
+        state.push_memory(0, 300_000, Some(42_000), Some(8_000));
+        state.push_memory(1_000_000_000, 310_000, Some(50_000), Some(9_000));
+
+        let metrics = build_metrics(&state, &[], None);
+        let mem = metrics.iter().find(|m| m.name == "Java").unwrap();
+        assert_eq!(mem.values, vec![42_000.0, 50_000.0]);
+        assert!(mem.label.contains("Java"));
+    }
+
+    #[test]
+    fn memory_metric_falls_back_to_rss_when_no_java_heap() {
+        use crate::monitor::MonitorState;
+
+        let mut state = MonitorState::new();
+        state.push_memory(0, 300_000, None, None);
+        state.push_memory(1_000_000_000, 310_000, None, None);
+
+        let metrics = build_metrics(&state, &[], None);
+        let mem = metrics.iter().find(|m| m.name == "RSS").unwrap();
+        assert_eq!(mem.values, vec![300_000.0, 310_000.0]);
+        assert!(mem.label.contains("RSS"));
     }
 }
