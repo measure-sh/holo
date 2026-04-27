@@ -96,165 +96,154 @@ fn run_app(
         ));
     }
 
+    // The loop is structured as: wait → process events → run housekeeping →
+    // render. Rendering at the end means the frame always reflects the most
+    // recent state. The inner event drain breaks after a single key press so
+    // each keystroke gets its own redraw (rapid Ctrl+D / Ctrl+A bursts no
+    // longer coalesce invisibly). Mouse-scroll and ignored events keep
+    // draining inside the inner loop — a 30-event scroll burst is still
+    // collapsed into a single redraw.
+    render_frame(&mut terminal, &mut ctx, &mut app)?;
+
     loop {
-        ctx.poll_receivers(&mut app);
-
-        let (serial, package) = {
-            let tb = app.toolbar();
-            (
-                tb.device.as_ref().map(|d| d.serial.clone()),
-                tb.package.clone(),
-            )
-        };
-
-        if let Some(d) = &mut ctx.data
-            && let (Some(s), Some(_)) = (&serial, &package)
-        {
-            let was_connected = d.device_connected;
-            d.poll(&mut app, s);
-            app.toolbar_mut().device_connected = d.device_connected;
-            if let Some(path) = d.take_pending_editor_open()
-                && dispatch::launch_editor(&path)
-            {
-                ctx.pending_redraw = true;
-            }
-            if !was_connected && d.device_connected
-                && let Some(device) = app.toolbar().device.clone()
-                && let Some(pkg) = package.clone()
-            {
-                app.reset_for_new_app(&pkg);
-                ctx.data = None;
-                ctx.title = String::new();
-                ctx.pending_build_rx = Some(dispatch::spawn_build(
-                    ctx.adb.clone(),
-                    device,
-                    pkg,
-                    *app.panel_visibility(),
-                ));
-            }
-        }
-
-        app.database_state_mut().panel_visible = app.is_panel_visible(panel::DATABASE);
-
-        if let (Some(d), Some(s), Some(p)) = (&mut ctx.data, &serial, &package) {
-            if app.database_state().needs_table_refresh()
-                && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
-            {
-                app.database_state_mut().mark_refresh_started();
-                d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::Tail);
-            } else if let Some(offset) = app.database_state().needs_previous_rows()
-                && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
-            {
-                app.database_state_mut().mark_load_more_started();
-                d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::At(offset));
-            } else if let Some(offset) = app.database_state().needs_next_rows()
-                && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
-            {
-                app.database_state_mut().mark_load_more_started();
-                d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::At(offset));
-            }
-
-            if !d.files_stat_in_flight()
-                && app.files_state().loading_meta
-                && let Some(path) = app.files_state().selected_file.clone()
-            {
-                d.start_stat_file(ctx.adb.clone(), s.clone(), p.clone(), path);
-            }
-            if !d.files_cat_in_flight()
-                && let Some(path) = app.files_state_mut().take_pending_cat()
-            {
-                d.start_cat_file(ctx.adb.clone(), s.clone(), p.clone(), path);
-            }
-        }
-
-        let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);
-        let logcat_lines: &[String] = ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines);
-
-        if ctx.pending_redraw {
-            terminal.clear()?;
-            ctx.pending_redraw = false;
-        }
-
-        terminal.draw(|frame| {
-            ui::render_app(frame, &ctx.title, battery_level, &mut app, logcat_lines)
-        })?;
-
         let poll_timeout = if app.has_active_animation() {
             Duration::from_millis(50)
         } else {
             Duration::from_secs(1)
         };
-        if !event::poll(poll_timeout)? {
-            continue;
-        }
-        let mut input_dispatched = false;
-        loop {
-            let mut break_after_key = false;
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    let action = app.handle_key(key);
-                    if ctx.dispatch(action, &mut app) {
-                        return Ok(());
-                    }
-                    if let Some(d) = &ctx.data {
-                        d.update_monitor_visibility(app.panel_visibility());
-                    }
-                    input_dispatched = true;
-                    // Force a redraw between rapid keypresses. Without this,
-                    // bursts like Ctrl+D → Ctrl+A → Ctrl+D drain in one inner
-                    // iteration and only the final state is ever painted, so
-                    // most presses look swallowed. Mouse-scroll events still
-                    // coalesce through the drain check below.
-                    break_after_key = true;
-                }
-                Event::Key(_) => {
-                    // Ignore Repeat/Release. Falling through (instead of
-                    // `continue`-ing back into a blocking `event::read`) lets
-                    // the drain check below break the loop so the outer loop
-                    // can redraw — otherwise a single keypress's trailing
-                    // Release would leave the next frame unrendered until the
-                    // user pressed another key.
-                }
-                Event::Mouse(mouse) => {
-                    let code = match mouse.kind {
-                        MouseEventKind::ScrollUp => Some(KeyCode::Up),
-                        MouseEventKind::ScrollDown => Some(KeyCode::Down),
-                        _ => None,
-                    };
-                    if let Some(code) = code {
-                        let key = KeyEvent::new(code, KeyModifiers::NONE);
+
+        if event::poll(poll_timeout)? {
+            loop {
+                let event = event::read()?;
+                let processed_key = match event {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => {
                         let action = app.handle_key(key);
                         if ctx.dispatch(action, &mut app) {
                             return Ok(());
                         }
-                        input_dispatched = true;
+                        if let Some(d) = &ctx.data {
+                            d.update_monitor_visibility(app.panel_visibility());
+                        }
+                        true
                     }
+                    Event::Key(_) => false,
+                    Event::Mouse(mouse) => {
+                        let code = match mouse.kind {
+                            MouseEventKind::ScrollUp => Some(KeyCode::Up),
+                            MouseEventKind::ScrollDown => Some(KeyCode::Down),
+                            _ => None,
+                        };
+                        if let Some(code) = code {
+                            let key = KeyEvent::new(code, KeyModifiers::NONE);
+                            let action = app.handle_key(key);
+                            if ctx.dispatch(action, &mut app) {
+                                return Ok(());
+                            }
+                        }
+                        false
+                    }
+                    Event::Resize(_, _) => {
+                        terminal.clear()?;
+                        false
+                    }
+                    _ => false,
+                };
+                if processed_key || !event::poll(Duration::ZERO)? {
+                    break;
                 }
-                Event::Resize(_, _) => {
-                    terminal.clear()?;
-                    input_dispatched = true;
-                }
-                _ => {}
-            }
-            if break_after_key || !event::poll(Duration::ZERO)? {
-                break;
             }
         }
-        // Render the post-event frame *now* instead of waiting for the next
-        // outer-loop iteration. Without this, `terminal.draw` only fires after
-        // we re-traverse `poll_receivers` + the data-poll block, which gives
-        // input a perceptible "swallowed" feel — a Ctrl+D press dispatches but
-        // the popup only appears on the *next* event.
-        if input_dispatched {
-            let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);
-            let logcat_lines: &[String] = ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines);
-            if ctx.pending_redraw {
-                terminal.clear()?;
-                ctx.pending_redraw = false;
-            }
-            terminal.draw(|frame| {
-                ui::render_app(frame, &ctx.title, battery_level, &mut app, logcat_lines)
-            })?;
+
+        run_housekeeping(&mut ctx, &mut app);
+        render_frame(&mut terminal, &mut ctx, &mut app)?;
+    }
+}
+
+fn run_housekeeping(ctx: &mut DispatchContext, app: &mut App) {
+    ctx.poll_receivers(app);
+
+    let (serial, package) = {
+        let tb = app.toolbar();
+        (
+            tb.device.as_ref().map(|d| d.serial.clone()),
+            tb.package.clone(),
+        )
+    };
+
+    if let Some(d) = &mut ctx.data
+        && let (Some(s), Some(_)) = (&serial, &package)
+    {
+        let was_connected = d.device_connected;
+        d.poll(app, s);
+        app.toolbar_mut().device_connected = d.device_connected;
+        if let Some(path) = d.take_pending_editor_open()
+            && dispatch::launch_editor(&path)
+        {
+            ctx.pending_redraw = true;
+        }
+        if !was_connected && d.device_connected
+            && let Some(device) = app.toolbar().device.clone()
+            && let Some(pkg) = package.clone()
+        {
+            app.reset_for_new_app(&pkg);
+            ctx.data = None;
+            ctx.title = String::new();
+            ctx.pending_build_rx = Some(dispatch::spawn_build(
+                ctx.adb.clone(),
+                device,
+                pkg,
+                *app.panel_visibility(),
+            ));
         }
     }
+
+    app.database_state_mut().panel_visible = app.is_panel_visible(panel::DATABASE);
+
+    if let (Some(d), Some(s), Some(p)) = (&mut ctx.data, &serial, &package) {
+        if app.database_state().needs_table_refresh()
+            && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
+        {
+            app.database_state_mut().mark_refresh_started();
+            d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::Tail);
+        } else if let Some(offset) = app.database_state().needs_previous_rows()
+            && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
+        {
+            app.database_state_mut().mark_load_more_started();
+            d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::At(offset));
+        } else if let Some(offset) = app.database_state().needs_next_rows()
+            && let Some((db_name, table_name)) = app.database_state().selected_table.clone()
+        {
+            app.database_state_mut().mark_load_more_started();
+            d.start_fetch_table_data(ctx.adb.clone(), s.clone(), p.clone(), db_name, table_name, database::FetchKind::At(offset));
+        }
+
+        if !d.files_stat_in_flight()
+            && app.files_state().loading_meta
+            && let Some(path) = app.files_state().selected_file.clone()
+        {
+            d.start_stat_file(ctx.adb.clone(), s.clone(), p.clone(), path);
+        }
+        if !d.files_cat_in_flight()
+            && let Some(path) = app.files_state_mut().take_pending_cat()
+        {
+            d.start_cat_file(ctx.adb.clone(), s.clone(), p.clone(), path);
+        }
+    }
+}
+
+fn render_frame(
+    terminal: &mut ratatui::DefaultTerminal,
+    ctx: &mut DispatchContext,
+    app: &mut App,
+) -> Result<()> {
+    let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);
+    let logcat_lines: &[String] = ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines);
+    if ctx.pending_redraw {
+        terminal.clear()?;
+        ctx.pending_redraw = false;
+    }
+    terminal.draw(|frame| {
+        ui::render_app(frame, &ctx.title, battery_level, app, logcat_lines)
+    })?;
+    Ok(())
 }
