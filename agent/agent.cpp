@@ -10,10 +10,13 @@
 //                               [u32 java_heap_kb][u32 native_heap_kb]    (20 bytes)
 //                      future fields append more u32s; readers use
 //                      payload_len to know what's present.
-//   0x03 CpuSample     payload: [i64 ts_ns][u32 cpu_centi_percent]        (12 bytes)
+//   0x03 CpuSample     payload: [i64 ts_ns][u32 cpu_centi_percent]
+//                                [u32 num_threads]                        (16 bytes)
 //                      cpu_centi_percent is the process's CPU usage
 //                      averaged across all cores, in 1/100ths of a percent
 //                      (e.g. 1234 = 12.34%). Range 0..=10000.
+//                      num_threads is the live thread count from
+//                      /proc/self/stat field 20.
 //
 // We avoid the C++ standard library entirely (no <mutex>, <thread>, <vector>,
 // <chrono>, <atomic>): linking libc++ statically into a JVMTI agent leaks
@@ -51,13 +54,14 @@ constexpr uint8_t KIND_CPU = 0x03;
 
 // `value` carries the kind-specific u32: GC duration_us, RSS in KB, or
 // cpu_centi_percent. `java_heap_kb` and `native_heap_kb` are only used for
-// memory events.
+// memory events; `num_threads` is only used for CPU events.
 struct Event {
     uint8_t kind;
     int64_t ts_ns;
     uint32_t value;
     uint32_t java_heap_kb;
     uint32_t native_heap_kb;
+    uint32_t num_threads;
 };
 
 // Fixed-size ring buffer guarded by a pthread mutex. drop-oldest on overflow.
@@ -108,7 +112,7 @@ void JNICALL OnGCFinish(jvmtiEnv*) {
     int64_t start = g_gc_start_ns;
     if (start == 0) return;
     int64_t end = now_ns();
-    Event e{KIND_GC, end, (uint32_t)((end - start) / 1000), 0, 0};
+    Event e{KIND_GC, end, (uint32_t)((end - start) / 1000), 0, 0, 0};
     enqueue(e);
 }
 
@@ -136,35 +140,57 @@ uint32_t read_rss_kb() {
     return (uint32_t)(pages * page_kb);
 }
 
-// Read /proc/self/stat and return utime+stime in clock ticks. The format is
+// Snapshot of /proc/self/stat: jiffies = utime+stime (field 14+15) and
+// num_threads (field 20). Both come from a single read of the same file.
+struct CpuStat {
+    int64_t jiffies;
+    uint32_t num_threads;
+};
+
+// Read /proc/self/stat and return jiffies (utime+stime, fields 14+15) and
+// num_threads (field 20). Format is:
 //   "pid (comm) state ppid pgrp session tty_nr tpgid flags
-//    minflt cminflt majflt cmajflt utime stime ..."
+//    minflt cminflt majflt cmajflt utime stime cutime cstime
+//    priority nice num_threads ..."
 // `comm` can contain spaces and parentheses, so we anchor on the LAST ')' and
-// skip 12 spaces past it to land on utime. Returns 0 on any read/parse error.
-int64_t read_cpu_jiffies() {
+// skip 12 spaces past it to land on utime. Returns {0, 0} on any parse error.
+CpuStat read_cpu_stat() {
+    CpuStat out{0, 0};
     int fd = ::open("/proc/self/stat", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return 0;
+    if (fd < 0) return out;
     char buf[1024];
     ssize_t n = ::read(fd, buf, sizeof(buf) - 1);
     ::close(fd);
-    if (n <= 0) return 0;
+    if (n <= 0) return out;
     buf[n] = '\0';
     char* p = strrchr(buf, ')');
-    if (p == nullptr) return 0;
+    if (p == nullptr) return out;
     ++p;
     int spaces = 0;
     while (*p && spaces < 12) {
         if (*p == ' ') ++spaces;
         ++p;
     }
-    if (spaces < 12) return 0;
+    if (spaces < 12) return out;
     char* end = nullptr;
     long long utime = strtoll(p, &end, 10);
-    if (end == p) return 0;
+    if (end == p) return out;
     p = end;
     long long stime = strtoll(p, &end, 10);
-    if (end == p) return 0;
-    return (int64_t)(utime + stime);
+    if (end == p) return out;
+    p = end;
+    // Skip cutime, cstime, priority, nice (fields 16..19) — strtoll auto-skips
+    // leading whitespace, so four sequential calls walk us forward.
+    for (int i = 0; i < 4; ++i) {
+        (void)strtoll(p, &end, 10);
+        if (end == p) return out;
+        p = end;
+    }
+    long long num_threads = strtoll(p, &end, 10);
+    if (end == p) return out;
+    out.jiffies = (int64_t)(utime + stime);
+    out.num_threads = num_threads > 0 ? (uint32_t)num_threads : 0;
+    return out;
 }
 
 // JNI handles for the per-tick heap reads. Initialized once in `sampler_loop`
@@ -255,20 +281,21 @@ void* sampler_loop(void* arg) {
     int64_t prev_jiffies = 0;
     for (;;) {
         int64_t ts_ns = now_ns();
-        int64_t jiffies = read_cpu_jiffies();
+        CpuStat stat = read_cpu_stat();
 
         Event mem;
         mem.kind = KIND_MEMORY;
         mem.ts_ns = ts_ns;
         mem.value = read_rss_kb();
         read_jni_heap(&heap, &mem.java_heap_kb, &mem.native_heap_kb);
+        mem.num_threads = 0;
         enqueue(mem);
 
         // CPU% = (delta_jiffies / clock_ticks_per_sec) / delta_secs / cores * 100.
         // Skip the first tick (no delta yet); also skip if jiffies decreased
         // (shouldn't happen, but be defensive).
-        if (prev_ts_ns != 0 && jiffies >= prev_jiffies) {
-            int64_t delta_jiffies = jiffies - prev_jiffies;
+        if (prev_ts_ns != 0 && stat.jiffies >= prev_jiffies) {
+            int64_t delta_jiffies = stat.jiffies - prev_jiffies;
             int64_t delta_ns = ts_ns - prev_ts_ns;
             if (delta_ns > 0) {
                 int64_t numer = delta_jiffies * 10000LL * 1000000000LL;
@@ -282,11 +309,12 @@ void* sampler_loop(void* arg) {
                 cpu.value = (uint32_t)centi;
                 cpu.java_heap_kb = 0;
                 cpu.native_heap_kb = 0;
+                cpu.num_threads = stat.num_threads;
                 enqueue(cpu);
             }
         }
         prev_ts_ns = ts_ns;
-        prev_jiffies = jiffies;
+        prev_jiffies = stat.jiffies;
 
         ::usleep(1000 * 1000);
     }
