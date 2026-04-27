@@ -22,9 +22,24 @@ pub struct DispatchContext {
     pub devices_rx: Option<mpsc::Receiver<Vec<Device>>>,
     pub packages_rx: Option<mpsc::Receiver<Vec<String>>>,
     pub pending_emulator_rx: Option<mpsc::Receiver<Device>>,
+    pub pending_build_rx: Option<mpsc::Receiver<PendingBuild>>,
     pub command_tx: mpsc::Sender<CommandResult>,
     pub command_rx: mpsc::Receiver<CommandResult>,
     pub pending_redraw: bool,
+}
+
+pub struct PendingBuild {
+    pub device: Device,
+    /// Populated when we just (re)selected a device and ran `list_packages`.
+    pub packages: Option<Vec<String>>,
+    /// The built `DataSources` + package, present once `DataSources::new` returned.
+    pub built: Option<AutoBuild>,
+}
+
+pub struct AutoBuild {
+    pub package: String,
+    pub data: DataSources,
+    pub title: String,
 }
 
 impl DispatchContext {
@@ -42,8 +57,12 @@ impl DispatchContext {
                 app.toolbar_mut().package = Some(auto_pkg.clone());
                 app.reset_for_new_app(&auto_pkg);
                 if let Some(device) = app.toolbar().device.clone() {
-                    self.data = Some(build_data(&self.adb, &device, &auto_pkg, app));
-                    self.title = build_title(self.data.as_ref().unwrap());
+                    self.pending_build_rx = Some(spawn_build(
+                        self.adb.clone(),
+                        device,
+                        auto_pkg,
+                        *app.panel_visibility(),
+                    ));
                 }
             }
             self.packages_rx = None;
@@ -53,6 +72,12 @@ impl DispatchContext {
         {
             self.pending_emulator_rx = None;
             self.dispatch(Action::ChangeDevice(device), app);
+        }
+        if let Some(rx) = &self.pending_build_rx
+            && let Ok(pb) = rx.try_recv()
+        {
+            self.pending_build_rx = None;
+            apply_pending_build(self, app, pb);
         }
         while let Ok(cr) = self.command_rx.try_recv() {
             if cr.result.is_err() {
@@ -89,27 +114,30 @@ impl DispatchContext {
                 app.toolbar_mut().device = Some(d.clone());
                 app.toolbar_mut().device_connected = true;
                 app.toolbar_mut().package = None;
+                app.reset_for_new_app("");
                 self.data = None;
                 self.title = String::new();
-                let (packages, auto) = try_auto_select_package(&self.adb, &d, last.as_deref());
-                app.toolbar_mut().receive_packages(packages);
-                if let Some(pkg) = auto {
-                    app.toolbar_mut().package = Some(pkg.clone());
-                    app.reset_for_new_app(&pkg);
-                    self.data = Some(build_data(&self.adb, &d, &pkg, app));
-                    self.title = build_title(self.data.as_ref().unwrap());
-                } else {
-                    app.reset_for_new_app("");
-                }
+                self.pending_build_rx = Some(spawn_select_and_build(
+                    self.adb.clone(),
+                    d,
+                    last,
+                    *app.panel_visibility(),
+                ));
             }
             Action::ChangeApp(p) => {
                 app.toolbar_mut().package = Some(p.clone());
                 app.toolbar_mut().last_package = Some(p.clone());
                 toolbar::save_last_package(&p);
                 app.reset_for_new_app(&p);
+                self.data = None;
+                self.title = String::new();
                 if let Some(device) = app.toolbar().device.clone() {
-                    self.data = Some(build_data(&self.adb, &device, &p, app));
-                    self.title = build_title(self.data.as_ref().unwrap());
+                    self.pending_build_rx = Some(spawn_build(
+                        self.adb.clone(),
+                        device,
+                        p,
+                        *app.panel_visibility(),
+                    ));
                 }
             }
             Action::OpenApp => {
@@ -568,20 +596,6 @@ fn spawn_await_emulator(adb: Arc<dyn Adb>, avd_name: String) -> mpsc::Receiver<D
     rx
 }
 
-pub fn build_data(adb: &Arc<dyn Adb>, device: &Device, package: &str, app: &mut App) -> DataSources {
-    let data = DataSources::new(adb.clone(), &device.serial, package, app.panel_visibility());
-    app.set_layout_bounds(data.initial_layout_bounds);
-    app.set_airplane_mode(data.initial_airplane_mode);
-    app.set_wifi_enabled(data.initial_wifi_enabled);
-    app.set_dark_mode(data.initial_dark_mode);
-    app.set_show_taps(data.initial_show_taps);
-    app.set_pointer_location(data.initial_pointer_location);
-    app.set_gpu_rendering(data.initial_gpu_rendering);
-    app.set_talkback(data.initial_talkback);
-    app.set_measure_sdk_detected(data.has_measure_sdk);
-    data
-}
-
 pub fn build_title(data: &DataSources) -> String {
     match &data.app_version {
         Some((name, code)) if !name.is_empty() => {
@@ -591,10 +605,88 @@ pub fn build_title(data: &DataSources) -> String {
     }
 }
 
-pub fn try_auto_select_package(adb: &Arc<dyn Adb>, device: &Device, last_package: Option<&str>) -> (Vec<String>, Option<String>) {
-    let packages = adb.list_packages(&device.serial).unwrap_or_default();
-    let auto = last_package.and_then(|lp| {
-        packages.iter().find(|p| p.as_str() == lp).cloned()
+pub fn apply_initial_state(app: &mut App, data: &DataSources) {
+    app.set_layout_bounds(data.initial_layout_bounds);
+    app.set_airplane_mode(data.initial_airplane_mode);
+    app.set_wifi_enabled(data.initial_wifi_enabled);
+    app.set_dark_mode(data.initial_dark_mode);
+    app.set_show_taps(data.initial_show_taps);
+    app.set_pointer_location(data.initial_pointer_location);
+    app.set_gpu_rendering(data.initial_gpu_rendering);
+    app.set_talkback(data.initial_talkback);
+    app.set_measure_sdk_detected(data.has_measure_sdk);
+}
+
+/// Wedged adb shells made startup synchronous — by the time `DataSources::new`
+/// returns, the user has already seen a blank, unresponsive TUI. Spawn the
+/// `list_packages` + `DataSources::new` path so the main loop can render and
+/// take input while the device is being probed.
+pub fn spawn_select_and_build(
+    adb: Arc<dyn Adb>,
+    device: Device,
+    last_package: Option<String>,
+    panel_vis: [bool; 8],
+) -> mpsc::Receiver<PendingBuild> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let packages = adb.list_packages(&device.serial).unwrap_or_default();
+        let auto_pkg = last_package
+            .as_deref()
+            .and_then(|lp| packages.iter().find(|p| p.as_str() == lp).cloned());
+        let built = auto_pkg.map(|pkg| {
+            let data = DataSources::new(adb.clone(), &device.serial, &pkg, &panel_vis);
+            let title = build_title(&data);
+            AutoBuild { package: pkg, data, title }
+        });
+        let _ = tx.send(PendingBuild {
+            device,
+            packages: Some(packages),
+            built,
+        });
     });
-    (packages, auto)
+    rx
+}
+
+/// Same off-thread treatment as [`spawn_select_and_build`], for paths that
+/// already know which package to build (ChangeApp, reconnect).
+pub fn spawn_build(
+    adb: Arc<dyn Adb>,
+    device: Device,
+    package: String,
+    panel_vis: [bool; 8],
+) -> mpsc::Receiver<PendingBuild> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let data = DataSources::new(adb.clone(), &device.serial, &package, &panel_vis);
+        let title = build_title(&data);
+        let _ = tx.send(PendingBuild {
+            device,
+            packages: None,
+            built: Some(AutoBuild { package, data, title }),
+        });
+    });
+    rx
+}
+
+fn apply_pending_build(ctx: &mut DispatchContext, app: &mut App, pb: PendingBuild) {
+    // Drop late-arriving results that no longer match the toolbar's device.
+    if app.toolbar().device.as_ref().map(|d| d.serial.as_str()) != Some(pb.device.serial.as_str()) {
+        return;
+    }
+    if let Some(packages) = pb.packages {
+        app.toolbar_mut().receive_packages(packages);
+    }
+    match pb.built {
+        Some(auto) => {
+            app.toolbar_mut().package = Some(auto.package.clone());
+            app.reset_for_new_app(&auto.package);
+            apply_initial_state(app, &auto.data);
+            ctx.title = auto.title;
+            ctx.data = Some(auto.data);
+        }
+        None => {
+            // No auto-selected package — let the user pick from the dropdown.
+            app.toolbar_mut().open = Some(toolbar::DropdownKind::App);
+        }
+    }
 }

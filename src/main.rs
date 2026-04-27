@@ -77,6 +77,7 @@ fn run_app(
         devices_rx: None,
         packages_rx: None,
         pending_emulator_rx: None,
+        pending_build_rx: None,
         command_tx,
         command_rx,
         pending_redraw: false,
@@ -84,16 +85,12 @@ fn run_app(
 
     if let Some(device) = &initial_device {
         app.commands_mut().is_emulator = device.serial.starts_with("emulator-");
-        let (packages, auto) = dispatch::try_auto_select_package(&adb, device, app.toolbar().last_package.as_deref());
-        app.toolbar_mut().receive_packages(packages);
-        if let Some(pkg) = auto {
-            app.toolbar_mut().package = Some(pkg.clone());
-            app.reset_for_new_app(&pkg);
-            ctx.data = Some(dispatch::build_data(&adb, device, &pkg, &mut app));
-            ctx.title = dispatch::build_title(ctx.data.as_ref().unwrap());
-        } else {
-            app.toolbar_mut().open = Some(toolbar::DropdownKind::App);
-        }
+        ctx.pending_build_rx = Some(dispatch::spawn_select_and_build(
+            adb.clone(),
+            device.clone(),
+            app.toolbar().last_package.clone(),
+            *app.panel_visibility(),
+        ));
     }
 
     loop {
@@ -123,8 +120,14 @@ fn run_app(
                 && let Some(pkg) = package.clone()
             {
                 app.reset_for_new_app(&pkg);
-                ctx.data = Some(dispatch::build_data(&ctx.adb, &device, &pkg, &mut app));
-                ctx.title = dispatch::build_title(ctx.data.as_ref().unwrap());
+                ctx.data = None;
+                ctx.title = String::new();
+                ctx.pending_build_rx = Some(dispatch::spawn_build(
+                    ctx.adb.clone(),
+                    device,
+                    pkg,
+                    *app.panel_visibility(),
+                ));
             }
         }
 
