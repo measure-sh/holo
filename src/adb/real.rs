@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use color_eyre::{Result, eyre::bail};
 use std::io::Write;
 
-use super::{Adb, Device, FileMeta, NetworkBytes};
+use super::{Adb, Device, FileMeta};
 
 /// Host-only adb commands that don't traverse the device transport. Fast even
 /// when the device adbd is wedged.
@@ -914,27 +914,14 @@ impl Adb for RealAdb {
     }
 
     fn has_measure_sdk(&self, serial: &str, package: &str) -> bool {
-        dumpsys_package(serial, package)
-            .map(|s| s.contains("sh.measure"))
+        Command::new("adb")
+            .args(["-s", serial, "shell", "dumpsys", "package", package])
+            .output_timed(ADB_SHELL_TIMEOUT)
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("sh.measure"))
             .unwrap_or(false)
     }
 
-    fn get_network_bytes(&self, serial: &str, package: &str) -> Result<NetworkBytes> {
-        let pkg_dump = dumpsys_package(serial, package)
-            .ok_or_else(|| color_eyre::eyre::eyre!("dumpsys package failed"))?;
-        let uid = parse_uid(&pkg_dump)
-            .ok_or_else(|| color_eyre::eyre::eyre!("could not resolve uid for {package}"))?;
-
-        let output = Command::new("adb")
-            .args(["-s", serial, "shell", "dumpsys", "netstats", "detail"])
-            .output_timed(ADB_SHELL_TIMEOUT)?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("dumpsys netstats failed: {stderr}");
-        }
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_netstats_for_uid(&stdout, uid))
-    }
 }
 
 fn resolve_launcher_component(serial: &str, package: &str) -> Result<String> {
@@ -958,115 +945,6 @@ fn parse_launcher_component(output: &str, package: &str) -> Option<String> {
         .map(str::trim)
         .find(|l| l.starts_with(&format!("{package}/")))
         .map(str::to_string)
-}
-
-fn dumpsys_package(serial: &str, package: &str) -> Option<String> {
-    Command::new("adb")
-        .args(["-s", serial, "shell", "dumpsys", "package", package])
-        .output_timed(ADB_SHELL_TIMEOUT)
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-}
-
-fn parse_uid(dumpsys_output: &str) -> Option<u32> {
-    for line in dumpsys_output.lines() {
-        let trimmed = line.trim();
-        for key in ["userId=", "appId="] {
-            if let Some(rest) = trimmed.strip_prefix(key) {
-                return rest.split_whitespace().next()?.parse().ok();
-            }
-        }
-    }
-    None
-}
-
-fn parse_netstats_for_uid(output: &str, uid: u32) -> NetworkBytes {
-    if let Some(bytes) = parse_app_uid_stats_map(output, uid) {
-        return bytes;
-    }
-    parse_netstats_history_for_uid(output, uid)
-}
-
-// Modern Android (eBPF, Android 9+): the live per-uid totals live in the
-// `mAppUidStatsMap:` section under `BPF map content:` — updated as packets
-// are processed, not aggregated into 2h history buckets.
-//
-// Layout:
-//   mAppUidStatsMap:
-//     uid rxBytes rxPackets txBytes txPackets
-//     10232 818516958 638070 13278833 181965
-//     ...
-//
-// Returns Some(zero) if the section exists but our uid is absent (the app
-// just hasn't transferred anything), and None if the section isn't present.
-fn parse_app_uid_stats_map(output: &str, uid: u32) -> Option<NetworkBytes> {
-    let mut in_map = false;
-    let mut found_map = false;
-    for line in output.lines() {
-        let trimmed = line.trim_start();
-        if trimmed == "mAppUidStatsMap:" {
-            in_map = true;
-            found_map = true;
-            continue;
-        }
-        if !in_map {
-            continue;
-        }
-        if !line.starts_with("    ") {
-            if trimmed.is_empty() {
-                continue;
-            }
-            in_map = false;
-            continue;
-        }
-        let mut parts = trimmed.split_whitespace();
-        let Some(first) = parts.next() else { continue };
-        if first == "uid" {
-            continue;
-        }
-        if first.parse::<u32>() == Ok(uid) {
-            let rx = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-            let _rx_packets = parts.next();
-            let tx = parts.next().and_then(|s| s.parse().ok()).unwrap_or(0);
-            return Some(NetworkBytes { rx, tx });
-        }
-    }
-    found_map.then_some(NetworkBytes { rx: 0, tx: 0 })
-}
-
-fn parse_netstats_history_for_uid(output: &str, uid: u32) -> NetworkBytes {
-    let needle = format!("uid={uid}");
-    let mut rx = 0u64;
-    let mut tx = 0u64;
-    let mut in_block = false;
-    for line in output.lines() {
-        if line.trim_start().starts_with("ident=") {
-            in_block = line.split_whitespace().any(|tok| tok == needle);
-        }
-        if in_block {
-            let rx_val = extract_kv_u64(line, "rxBytes=")
-                .or_else(|| extract_kv_u64(line, "rb="))
-                .unwrap_or(0);
-            let tx_val = extract_kv_u64(line, "txBytes=")
-                .or_else(|| extract_kv_u64(line, "tb="))
-                .unwrap_or(0);
-            rx = rx.saturating_add(rx_val);
-            tx = tx.saturating_add(tx_val);
-        }
-    }
-    NetworkBytes { rx, tx }
-}
-
-fn extract_kv_u64(line: &str, key: &str) -> Option<u64> {
-    let start = line.find(key)? + key.len();
-    let rest = &line[start..];
-    let end = rest
-        .find(|c: char| !c.is_ascii_digit())
-        .unwrap_or(rest.len());
-    if end == 0 {
-        return None;
-    }
-    rest[..end].parse().ok()
 }
 
 fn parse_du_output(output: &str) -> u64 {
@@ -1619,117 +1497,4 @@ mod tests {
         assert!(devices[0].connected);
     }
 
-    #[test]
-    fn parses_uid_from_dumpsys_package() {
-        let output = "Package [com.example.app] (abc123):\n  userId=10234\n  pkg=Package{...}\n";
-        assert_eq!(parse_uid(output), Some(10234));
-    }
-
-    #[test]
-    fn parse_uid_takes_first_match() {
-        let output = "  userId=10234\n  appId=10234\n  userId=99999\n";
-        assert_eq!(parse_uid(output), Some(10234));
-    }
-
-    #[test]
-    fn parse_uid_none_when_missing() {
-        assert_eq!(parse_uid("Package [com.example.app]\n"), None);
-    }
-
-    #[test]
-    fn parses_netstats_sums_uid_entries() {
-        let output = "\
-Active interfaces:
-  iface=wlan0 ident=...
-Active UID stats:
-  ident=[...] uid=10234 set=DEFAULT tag=0x0 metered=N defaultNetwork=Y rxBytes=12345 rxPackets=10 txBytes=678 txPackets=5
-  ident=[...] uid=10234 set=FOREGROUND tag=0x0 metered=N defaultNetwork=Y rxBytes=1000 rxPackets=2 txBytes=200 txPackets=1
-  ident=[...] uid=99999 set=DEFAULT tag=0x0 metered=N defaultNetwork=Y rxBytes=99999 rxPackets=99 txBytes=99999 txPackets=99
-";
-        let bytes = parse_netstats_for_uid(output, 10234);
-        assert_eq!(bytes.rx, 13345);
-        assert_eq!(bytes.tx, 878);
-    }
-
-    #[test]
-    fn parses_netstats_zero_when_uid_absent() {
-        let output = "  ident=[...] uid=99999 rxBytes=100 txBytes=200\n";
-        let bytes = parse_netstats_for_uid(output, 10234);
-        assert_eq!(bytes.rx, 0);
-        assert_eq!(bytes.tx, 0);
-    }
-
-    #[test]
-    fn parses_netstats_handles_missing_fields() {
-        let output = "  ident=[...] uid=10234 rxBytes=500\n";
-        let bytes = parse_netstats_for_uid(output, 10234);
-        assert_eq!(bytes.rx, 500);
-        assert_eq!(bytes.tx, 0);
-    }
-
-    #[test]
-    fn parses_uid_from_android14_dumpsys_package() {
-        let output = "\
-Package [com.example.app]:
-    uid=10232 gids=[] type=0 prot=signature
-    appId=10232
-    installerPackageUid=-1
-";
-        assert_eq!(parse_uid(output), Some(10232));
-    }
-
-    #[test]
-    fn parses_netstats_prefers_app_uid_stats_map() {
-        // mAppUidStatsMap is the live BPF map — preferred over the stale
-        // NetworkStatsHistory buckets when both are present.
-        let output = "\
-BPF map content:
-  mAppUidStatsMap:
-    uid rxBytes rxPackets txBytes txPackets
-    10232 818516958 638070 13278833 181965
-    10154 8413791 7535 690398 4823
-  mStatsMapA:
-Active UID stats:
-  ident=[...] uid=10232 set=DEFAULT tag=0x0
-    NetworkStatsHistory: bucketDuration=7200
-      st=1776578400 rb=999 rp=1 tb=999 tp=1 op=0
-";
-        let bytes = parse_netstats_for_uid(output, 10232);
-        assert_eq!(bytes.rx, 818516958);
-        assert_eq!(bytes.tx, 13278833);
-    }
-
-    #[test]
-    fn parses_netstats_app_uid_stats_map_zero_when_uid_absent() {
-        // BPF map present but uid not listed — app has zero traffic.
-        let output = "\
-  mAppUidStatsMap:
-    uid rxBytes rxPackets txBytes txPackets
-    10135 8246 14 2537 15
-  mStatsMapA:
-";
-        let bytes = parse_netstats_for_uid(output, 10232);
-        assert_eq!(bytes.rx, 0);
-        assert_eq!(bytes.tx, 0);
-    }
-
-    #[test]
-    fn parses_netstats_multiline_history_format() {
-        let output = "\
-Active UID stats:
-  ident=[...] uid=10232 set=DEFAULT tag=0x0
-    NetworkStatsHistory: bucketDuration=7200
-      st=1776571200 rb=132 rp=2 tb=170 tp=2 op=0
-      st=1776578400 rb=62560 rp=96 tb=9079 tp=91 op=0
-  ident=[...] uid=10232 set=FOREGROUND tag=0x0
-    NetworkStatsHistory: bucketDuration=7200
-      st=1776578400 rb=1000 rp=10 tb=200 tp=5 op=0
-  ident=[...] uid=99999 set=DEFAULT tag=0x0
-    NetworkStatsHistory: bucketDuration=7200
-      st=1776578400 rb=99999 rp=99 tb=99999 tp=99 op=0
-";
-        let bytes = parse_netstats_for_uid(output, 10232);
-        assert_eq!(bytes.rx, 132 + 62560 + 1000);
-        assert_eq!(bytes.tx, 170 + 9079 + 200);
-    }
 }

@@ -64,6 +64,26 @@ pub struct CpuSample {
     pub num_threads: u32,
 }
 
+/// Per-app network bytes emitted by the agent at ~1 Hz, sourced from
+/// `TrafficStats.getUidRxBytes` / `getUidTxBytes`. `rx_bytes` / `tx_bytes`
+/// are cumulative since boot; `rx_bps` / `tx_bps` are deltas computed
+/// host-side in `push_network`.
+#[derive(Debug, Clone, Copy)]
+pub struct NetworkSample {
+    pub ts_ns: i64,
+    pub rx_bps: u64,
+    pub tx_bps: u64,
+    pub rx_bytes: u64,
+    pub tx_bytes: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NetworkAccum {
+    ts_ns: i64,
+    rx_bytes: u64,
+    tx_bytes: u64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MonitorView {
     All,
@@ -110,6 +130,8 @@ pub struct MonitorState {
     pub gc_events: Vec<GcEvent>,
     pub memory_history: Vec<MemorySample>,
     pub cpu_history: Vec<CpuSample>,
+    pub network_history: Vec<NetworkSample>,
+    prev_network: Option<NetworkAccum>,
     pub debuggable: bool,
     pub view: MonitorView,
 }
@@ -136,6 +158,8 @@ impl MonitorState {
             gc_events: Vec::new(),
             memory_history: Vec::new(),
             cpu_history: Vec::new(),
+            network_history: Vec::new(),
+            prev_network: None,
             debuggable: true,
             view: MonitorView::All,
         }
@@ -181,14 +205,46 @@ impl MonitorState {
         self.evict_at_ns(ts_ns);
     }
 
-    /// Drop GC, memory, and CPU samples older than `RETENTION_NS` relative to
-    /// the just-pushed `now_ns`. All three streams share the agent's
-    /// `CLOCK_MONOTONIC`, so a single cutoff applies cleanly to all of them.
+    /// Push a TrafficStats reading. The first call only stashes the cumulative
+    /// counters as a baseline — bps requires two readings — so no sample is
+    /// emitted yet. Subsequent calls compute rx_bps / tx_bps from the delta.
+    /// TrafficStats counters are per-UID-since-boot, so they survive an agent
+    /// reattach correctly. `MonitorState` is rebuilt on package switch via
+    /// `App::reset_panel_data_for_app`, which clears `prev_network`.
+    pub fn push_network(&mut self, ts_ns: i64, rx_bytes: u64, tx_bytes: u64) {
+        if let Some(prev) = self.prev_network {
+            let delta_ns = ts_ns.saturating_sub(prev.ts_ns);
+            if delta_ns > 0 {
+                let secs = delta_ns as f64 / NS_PER_SEC as f64;
+                let rx_delta = rx_bytes.saturating_sub(prev.rx_bytes);
+                let tx_delta = tx_bytes.saturating_sub(prev.tx_bytes);
+                let rx_bps = (rx_delta as f64 / secs) as u64;
+                let tx_bps = (tx_delta as f64 / secs) as u64;
+                self.network_history.push(NetworkSample {
+                    ts_ns,
+                    rx_bps,
+                    tx_bps,
+                    rx_bytes,
+                    tx_bytes,
+                });
+                if self.network_history.len() > MAX_SAMPLES {
+                    self.network_history.remove(0);
+                }
+            }
+        }
+        self.prev_network = Some(NetworkAccum { ts_ns, rx_bytes, tx_bytes });
+        self.evict_at_ns(ts_ns);
+    }
+
+    /// Drop GC, memory, CPU, and network samples older than `RETENTION_NS`
+    /// relative to the just-pushed `now_ns`. All four streams share the
+    /// agent's `CLOCK_MONOTONIC`, so a single cutoff applies cleanly.
     fn evict_at_ns(&mut self, now_ns: i64) {
         let cutoff = now_ns.saturating_sub(RETENTION_NS);
         self.gc_events.retain(|e| e.ts_ns >= cutoff);
         self.memory_history.retain(|s| s.ts_ns >= cutoff);
         self.cpu_history.retain(|s| s.ts_ns >= cutoff);
+        self.network_history.retain(|s| s.ts_ns >= cutoff);
     }
 
     /// Latest known agent timestamp across all streams — used as the chart's
@@ -198,7 +254,8 @@ impl MonitorState {
         let mem = self.memory_history.last().map(|s| s.ts_ns);
         let gc = self.gc_events.last().map(|e| e.ts_ns);
         let cpu = self.cpu_history.last().map(|s| s.ts_ns);
-        [mem, gc, cpu].into_iter().flatten().max()
+        let net = self.network_history.last().map(|s| s.ts_ns);
+        [mem, gc, cpu, net].into_iter().flatten().max()
     }
 
     #[allow(dead_code)]
@@ -451,6 +508,11 @@ mod tests {
         assert_eq!(state.latest_agent_ts_ns(), Some(300));
         state.push_cpu(400, 12.5, 17);
         assert_eq!(state.latest_agent_ts_ns(), Some(400));
+        state.push_network(450, 0, 0);
+        // First call only stashes the baseline; ts shouldn't advance.
+        assert_eq!(state.latest_agent_ts_ns(), Some(400));
+        state.push_network(500, 100, 200);
+        assert_eq!(state.latest_agent_ts_ns(), Some(500));
     }
 
     #[test]
@@ -471,5 +533,55 @@ mod tests {
         state.gc_events.push(GcEvent { ts_ns: 0, duration_us: 5 });
         state.push_cpu(RETENTION_NS + NS_PER_SEC, 25.0, 17);
         assert!(state.gc_events.is_empty());
+    }
+
+    #[test]
+    fn push_network_skips_first_sample() {
+        let mut state = MonitorState::new();
+        state.push_network(NS_PER_SEC, 1000, 2000);
+        assert!(state.network_history.is_empty());
+    }
+
+    #[test]
+    fn push_network_computes_bps_from_delta() {
+        let mut state = MonitorState::new();
+        state.push_network(0, 0, 0);
+        state.push_network(NS_PER_SEC, 1000, 2000);
+        assert_eq!(state.network_history.len(), 1);
+        let s = &state.network_history[0];
+        assert_eq!(s.ts_ns, NS_PER_SEC);
+        assert_eq!(s.rx_bps, 1000);
+        assert_eq!(s.tx_bps, 2000);
+        assert_eq!(s.rx_bytes, 1000);
+        assert_eq!(s.tx_bytes, 2000);
+    }
+
+    #[test]
+    fn push_network_caps_at_max_samples() {
+        let mut state = MonitorState::new();
+        // First call stashes baseline; need MAX_SAMPLES + 5 *additional* calls
+        // for the same number of stored samples.
+        state.push_network(0, 0, 0);
+        for i in 1..=(MAX_SAMPLES as i64 + 5) {
+            state.push_network(i * NS_PER_SEC, (i as u64) * 1000, (i as u64) * 2000);
+        }
+        assert_eq!(state.network_history.len(), MAX_SAMPLES);
+    }
+
+    #[test]
+    fn push_network_evicts_stale_samples() {
+        let mut state = MonitorState::new();
+        state.network_history.push(NetworkSample {
+            ts_ns: 0,
+            rx_bps: 0,
+            tx_bps: 0,
+            rx_bytes: 0,
+            tx_bytes: 0,
+        });
+        state.prev_network = Some(NetworkAccum { ts_ns: 0, rx_bytes: 0, tx_bytes: 0 });
+        state.push_network(RETENTION_NS + NS_PER_SEC, 100, 100);
+        // Only the new sample (ts >= cutoff) should remain.
+        assert_eq!(state.network_history.len(), 1);
+        assert_eq!(state.network_history[0].ts_ns, RETENTION_NS + NS_PER_SEC);
     }
 }

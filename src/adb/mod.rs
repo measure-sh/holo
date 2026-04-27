@@ -6,12 +6,6 @@ pub use status::{report_timeout, set_status_sender, AdbStatus};
 
 use color_eyre::Result;
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct NetworkBytes {
-    pub rx: u64,
-    pub tx: u64,
-}
-
 #[derive(Debug, Clone)]
 pub struct Device {
     pub serial: String,
@@ -83,5 +77,4 @@ pub trait Adb: Send + Sync {
     fn get_dropbox_crashes(&self, serial: &str) -> Result<String>;
     fn get_dropbox_anrs(&self, serial: &str) -> Result<String>;
     fn has_measure_sdk(&self, serial: &str, package: &str) -> bool;
-    fn get_network_bytes(&self, serial: &str, package: &str) -> Result<NetworkBytes>;
 }

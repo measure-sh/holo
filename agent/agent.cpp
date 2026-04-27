@@ -17,6 +17,10 @@
 //                      (e.g. 1234 = 12.34%). Range 0..=10000.
 //                      num_threads is the live thread count from
 //                      /proc/self/stat field 20.
+//   0x04 NetworkSample payload: [i64 ts_ns][u64 rx_bytes][u64 tx_bytes]   (24 bytes)
+//                      rx_bytes / tx_bytes are cumulative since boot for
+//                      the agent's UID, read via TrafficStats.getUidRxBytes
+//                      / getUidTxBytes (host computes bps deltas).
 //
 // We avoid the C++ standard library entirely (no <mutex>, <thread>, <vector>,
 // <chrono>, <atomic>): linking libc++ statically into a JVMTI agent leaks
@@ -51,10 +55,12 @@ constexpr size_t QUEUE_CAP = 4096;
 constexpr uint8_t KIND_GC = 0x01;
 constexpr uint8_t KIND_MEMORY = 0x02;
 constexpr uint8_t KIND_CPU = 0x03;
+constexpr uint8_t KIND_NETWORK = 0x04;
 
 // `value` carries the kind-specific u32: GC duration_us, RSS in KB, or
 // cpu_centi_percent. `java_heap_kb` and `native_heap_kb` are only used for
-// memory events; `num_threads` is only used for CPU events.
+// memory events; `num_threads` is only used for CPU events; `rx_bytes` and
+// `tx_bytes` are only used for network events.
 struct Event {
     uint8_t kind;
     int64_t ts_ns;
@@ -62,6 +68,8 @@ struct Event {
     uint32_t java_heap_kb;
     uint32_t native_heap_kb;
     uint32_t num_threads;
+    uint64_t rx_bytes;
+    uint64_t tx_bytes;
 };
 
 // Fixed-size ring buffer guarded by a pthread mutex. drop-oldest on overflow.
@@ -112,7 +120,7 @@ void JNICALL OnGCFinish(jvmtiEnv*) {
     int64_t start = g_gc_start_ns;
     if (start == 0) return;
     int64_t end = now_ns();
-    Event e{KIND_GC, end, (uint32_t)((end - start) / 1000), 0, 0, 0};
+    Event e{KIND_GC, end, (uint32_t)((end - start) / 1000), 0, 0, 0, 0, 0};
     enqueue(e);
 }
 
@@ -266,6 +274,79 @@ void read_jni_heap(JniHeap* h, uint32_t* java_kb, uint32_t* native_kb) {
     *native_kb = (uint32_t)(native_bytes / 1024);
 }
 
+// JNI handles for android.net.TrafficStats per-uid byte counters. Initialized
+// from the same daemon thread as `JniHeap` (reuses its JNIEnv*). On any setup
+// failure or if TrafficStats reports UNSUPPORTED for our uid, `init_jni_net`
+// returns false and the sampler skips emitting network events.
+struct JniNet {
+    jclass traffic_cls;
+    jmethodID rx_mid;
+    jmethodID tx_mid;
+    jint uid;
+};
+
+bool init_jni_net(JNIEnv* env, JniNet* n) {
+    *n = JniNet{};
+    jclass local_traffic = env->FindClass("android/net/TrafficStats");
+    if (local_traffic == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        LOGE("FindClass for TrafficStats failed");
+        return false;
+    }
+    n->traffic_cls = (jclass)env->NewGlobalRef(local_traffic);
+    env->DeleteLocalRef(local_traffic);
+    n->rx_mid = env->GetStaticMethodID(n->traffic_cls, "getUidRxBytes", "(I)J");
+    n->tx_mid = env->GetStaticMethodID(n->traffic_cls, "getUidTxBytes", "(I)J");
+    if (n->rx_mid == nullptr || n->tx_mid == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        LOGE("GetStaticMethodID for TrafficStats getUid{Rx,Tx}Bytes failed");
+        return false;
+    }
+
+    jclass proc_cls = env->FindClass("android/os/Process");
+    if (proc_cls == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        LOGE("FindClass for Process failed");
+        return false;
+    }
+    jmethodID my_uid_mid = env->GetStaticMethodID(proc_cls, "myUid", "()I");
+    if (my_uid_mid == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(proc_cls);
+        LOGE("GetStaticMethodID for Process.myUid failed");
+        return false;
+    }
+    n->uid = env->CallStaticIntMethod(proc_cls, my_uid_mid);
+    env->DeleteLocalRef(proc_cls);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("Process.myUid() threw");
+        return false;
+    }
+
+    // TrafficStats.UNSUPPORTED == -1: kernel doesn't track per-uid stats on
+    // this device. Probe once and disable network emission rather than send
+    // a stream of zeros that look like real flat traffic.
+    jlong probe = env->CallStaticLongMethod(n->traffic_cls, n->rx_mid, n->uid);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); probe = -1; }
+    if (probe == -1) {
+        LOGI("TrafficStats reports UNSUPPORTED for uid %d; skipping network samples", n->uid);
+        return false;
+    }
+    return true;
+}
+
+// Read cumulative rx/tx bytes for our uid via cached JNI handles. On any
+// exception, treat as 0 (host treats it as a skipped tick).
+void read_jni_net(JNIEnv* env, JniNet* n, uint64_t* rx, uint64_t* tx) {
+    jlong rxv = env->CallStaticLongMethod(n->traffic_cls, n->rx_mid, n->uid);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); rxv = 0; }
+    jlong txv = env->CallStaticLongMethod(n->traffic_cls, n->tx_mid, n->uid);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); txv = 0; }
+    *rx = rxv > 0 ? (uint64_t)rxv : 0;
+    *tx = txv > 0 ? (uint64_t)txv : 0;
+}
+
 void* sampler_loop(void* arg) {
     JavaVM* vm = (JavaVM*)arg;
     JniHeap heap;
@@ -273,6 +354,8 @@ void* sampler_loop(void* arg) {
         LOGE("sampler stopping: JNI heap setup failed");
         return nullptr;
     }
+    JniNet net;
+    bool net_ok = init_jni_net(heap.env, &net);
     long clock_ticks = sysconf(_SC_CLK_TCK);
     if (clock_ticks <= 0) clock_ticks = 100;
     long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
@@ -289,6 +372,8 @@ void* sampler_loop(void* arg) {
         mem.value = read_rss_kb();
         read_jni_heap(&heap, &mem.java_heap_kb, &mem.native_heap_kb);
         mem.num_threads = 0;
+        mem.rx_bytes = 0;
+        mem.tx_bytes = 0;
         enqueue(mem);
 
         // CPU% = (delta_jiffies / clock_ticks_per_sec) / delta_secs / cores * 100.
@@ -310,11 +395,25 @@ void* sampler_loop(void* arg) {
                 cpu.java_heap_kb = 0;
                 cpu.native_heap_kb = 0;
                 cpu.num_threads = stat.num_threads;
+                cpu.rx_bytes = 0;
+                cpu.tx_bytes = 0;
                 enqueue(cpu);
             }
         }
         prev_ts_ns = ts_ns;
         prev_jiffies = stat.jiffies;
+
+        if (net_ok) {
+            Event netev;
+            netev.kind = KIND_NETWORK;
+            netev.ts_ns = ts_ns;
+            netev.value = 0;
+            netev.java_heap_kb = 0;
+            netev.native_heap_kb = 0;
+            netev.num_threads = 0;
+            read_jni_net(heap.env, &net, &netev.rx_bytes, &netev.tx_bytes);
+            enqueue(netev);
+        }
 
         ::usleep(1000 * 1000);
     }
@@ -343,11 +442,12 @@ bool send_all(int fd, const uint8_t* buf, size_t n) {
 }
 
 bool send_event(int fd, const Event& e) {
-    // GC:     [u8 kind][u32 len=12][i64 ts_ns][u32 duration_us]
-    // CPU:    [u8 kind][u32 len=16][i64 ts_ns][u32 cpu_centi_percent]
-    //                  [u32 num_threads]
-    // Memory: [u8 kind][u32 len=20][i64 ts_ns][u32 rss_kb]
-    //                  [u32 java_heap_kb][u32 native_heap_kb]
+    // GC:      [u8 kind][u32 len=12][i64 ts_ns][u32 duration_us]
+    // CPU:     [u8 kind][u32 len=16][i64 ts_ns][u32 cpu_centi_percent]
+    //                   [u32 num_threads]
+    // Memory:  [u8 kind][u32 len=20][i64 ts_ns][u32 rss_kb]
+    //                   [u32 java_heap_kb][u32 native_heap_kb]
+    // Network: [u8 kind][u32 len=24][i64 ts_ns][u64 rx_bytes][u64 tx_bytes]
     if (e.kind == KIND_MEMORY) {
         uint8_t buf[1 + 4 + 20];
         buf[0] = e.kind;
@@ -365,6 +465,17 @@ bool send_event(int fd, const Event& e) {
         put_be64(buf + 5, e.ts_ns);
         put_be32(buf + 13, e.value);
         put_be32(buf + 17, e.num_threads);
+        return send_all(fd, buf, sizeof(buf));
+    }
+    if (e.kind == KIND_NETWORK) {
+        // put_be64 takes int64_t but only writes the bit pattern; casting u64
+        // through int64_t round-trips the bytes. Host decodes with u64::from_be_bytes.
+        uint8_t buf[1 + 4 + 24];
+        buf[0] = e.kind;
+        put_be32(buf + 1, 24);
+        put_be64(buf + 5, e.ts_ns);
+        put_be64(buf + 13, (int64_t)e.rx_bytes);
+        put_be64(buf + 21, (int64_t)e.tx_bytes);
         return send_all(fd, buf, sizeof(buf));
     }
     uint8_t buf[1 + 4 + 12];

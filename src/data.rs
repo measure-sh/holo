@@ -81,8 +81,6 @@ pub struct DataSources {
     /// transport calls from accumulating.
     connectivity: Arc<AtomicBool>,
     pub device_connected: bool,
-
-    traffic_rx: Option<mpsc::Receiver<network::TrafficSample>>,
 }
 
 impl DataSources {
@@ -101,12 +99,6 @@ impl DataSources {
         let vitals_debuggable = adb.is_debuggable(serial, package);
         let connectivity = Arc::new(AtomicBool::new(true));
         spawn_connectivity_poller(adb.clone(), serial.to_string(), connectivity.clone());
-        let traffic_rx = Some(network::spawn_traffic_poller(
-            adb.clone(),
-            serial.to_string(),
-            package.to_string(),
-            connectivity.clone(),
-        ));
         Self {
             adb: adb.clone(),
             battery_rx: battery::spawn_poller(
@@ -187,7 +179,6 @@ impl DataSources {
             monitor_visibility,
             connectivity,
             device_connected: true,
-            traffic_rx,
         }
     }
 
@@ -197,11 +188,6 @@ impl DataSources {
 
     pub fn poll(&mut self, app: &mut App, serial: &str) {
         self.device_connected = self.connectivity.load(Ordering::Relaxed);
-        if let Some(rx) = &self.traffic_rx {
-            while let Ok(sample) = rx.try_recv() {
-                app.network_state_mut().push_traffic(sample);
-            }
-        }
         while let Ok(level) = self.battery_rx.try_recv() {
             self.battery_level = Some(level);
         }
@@ -245,6 +231,9 @@ impl DataSources {
                     VitalsEvent::Cpu { ts_ns, cpu_centi_percent, num_threads } => {
                         let cpu_percent = cpu_centi_percent as f32 / 100.0;
                         app.monitor_state_mut().push_cpu(ts_ns, cpu_percent, num_threads);
+                    }
+                    VitalsEvent::Network { ts_ns, rx_bytes, tx_bytes } => {
+                        app.monitor_state_mut().push_network(ts_ns, rx_bytes, tx_bytes);
                     }
                 }
             }

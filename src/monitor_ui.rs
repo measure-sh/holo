@@ -16,8 +16,7 @@ const BASELINE_BARS: symbols::bar::Set = symbols::bar::Set {
     ..symbols::bar::NINE_LEVELS
 };
 
-use crate::monitor::{GcEvent, MonitorState, MonitorView};
-use crate::network::TrafficSample;
+use crate::monitor::{GcEvent, MonitorState, MonitorView, NetworkSample};
 use crate::panel;
 use crate::theme;
 use crate::ui::{panel_block, render_pane_chip, split_chip};
@@ -176,11 +175,7 @@ fn format_ago(secs: u64) -> String {
     }
 }
 
-fn build_metrics(
-    state: &MonitorState,
-    traffic: &[TrafficSample],
-    traffic_baseline: Option<(u64, u64)>,
-) -> Vec<Metric> {
+fn build_metrics(state: &MonitorState) -> Vec<Metric> {
     let t = theme::current();
     let mut metrics = Vec::new();
 
@@ -265,42 +260,53 @@ fn build_metrics(
         chip_extra: None,
     });
 
-    let last = traffic.last().copied().unwrap_or_default();
-    let rx_total = traffic_baseline
-        .map(|(b, _)| last.rx_total.saturating_sub(b))
-        .unwrap_or(0);
-    let tx_total = traffic_baseline
-        .map(|(_, b)| last.tx_total.saturating_sub(b))
-        .unwrap_or(0);
+    let traffic = &state.network_history;
+    let last_rx_bps = traffic.last().map(|s| s.rx_bps).unwrap_or(0);
+    let last_tx_bps = traffic.last().map(|s| s.tx_bps).unwrap_or(0);
+    let baseline = traffic.first().map(|s| (s.rx_bytes, s.tx_bytes));
+    let last_bytes = traffic.last().map(|s| (s.rx_bytes, s.tx_bytes));
+    let (rx_total, tx_total) = match (baseline, last_bytes) {
+        (Some((b_rx, b_tx)), Some((l_rx, l_tx))) => {
+            (l_rx.saturating_sub(b_rx), l_tx.saturating_sub(b_tx))
+        }
+        _ => (0, 0),
+    };
     let rx_spark: Vec<SparklineBar> = traffic.iter().map(|s| SparklineBar::from(Some(s.rx_bps))).collect();
     let tx_spark: Vec<SparklineBar> = traffic.iter().map(|s| SparklineBar::from(Some(s.tx_bps))).collect();
     let rx_max = traffic.iter().map(|s| s.rx_bps).max().unwrap_or(0);
     let tx_max = traffic.iter().map(|s| s.tx_bps).max().unwrap_or(0);
-    let rate_window = sample_index_window(traffic.len());
+    let net_secs_ago: Vec<f64> = traffic
+        .iter()
+        .map(|s| (now_ns.saturating_sub(s.ts_ns).max(0) as f64) / NS_PER_SEC_F64)
+        .collect();
+    let net_window = net_secs_ago
+        .first()
+        .copied()
+        .unwrap_or_else(|| sample_index_window(traffic.len()));
     metrics.push(Metric {
         name: "↓",
-        label: format!(" ↓ {} ({})  ", format_rate(last.rx_bps), format_bytes(rx_total)),
+        label: format!(" ↓ {} ({})  ", format_rate(last_rx_bps), format_bytes(rx_total)),
         sparkline_data: rx_spark,
         sparkline_max: rx_max,
         values: traffic.iter().map(|s| s.rx_bps as f64).collect(),
         color: t.spark_rx,
         scale: MetricScale::RateBps,
-        secs_ago: Vec::new(),
+        secs_ago: net_secs_ago.clone(),
         tick_secs_ago: Vec::new(),
-        window_secs: rate_window,
+        window_secs: net_window,
         chip_extra: None,
     });
     metrics.push(Metric {
         name: "↑",
-        label: format!(" ↑ {} ({})  ", format_rate(last.tx_bps), format_bytes(tx_total)),
+        label: format!(" ↑ {} ({})  ", format_rate(last_tx_bps), format_bytes(tx_total)),
         sparkline_data: tx_spark,
         sparkline_max: tx_max,
         values: traffic.iter().map(|s| s.tx_bps as f64).collect(),
         color: t.spark_tx,
         scale: MetricScale::RateBps,
-        secs_ago: Vec::new(),
+        secs_ago: net_secs_ago,
         tick_secs_ago: Vec::new(),
-        window_secs: rate_window,
+        window_secs: net_window,
         chip_extra: None,
     });
 
@@ -583,13 +589,7 @@ fn render_memory_detail(frame: &mut Frame, area: Rect, state: &MonitorState, foc
     frame.render_widget(chart, chart_area);
 }
 
-fn render_network_detail(
-    frame: &mut Frame,
-    area: Rect,
-    traffic: &[TrafficSample],
-    traffic_baseline: Option<(u64, u64)>,
-    focused: bool,
-) {
+fn render_network_detail(frame: &mut Frame, area: Rect, state: &MonitorState, focused: bool) {
     let t = theme::current();
     if area.width == 0 || area.height == 0 {
         return;
@@ -598,21 +598,24 @@ fn render_network_detail(
     let (chip_area, body) = split_chip(area);
     render_pane_chip(frame, chip_area, "Network", focused, false);
 
-    let last = traffic.last().copied().unwrap_or_default();
-    let rx_total = traffic_baseline
-        .map(|(b, _)| last.rx_total.saturating_sub(b))
-        .unwrap_or(0);
-    let tx_total = traffic_baseline
-        .map(|(_, b)| last.tx_total.saturating_sub(b))
-        .unwrap_or(0);
+    let traffic: &[NetworkSample] = &state.network_history;
+    let last_rx_bps = traffic.last().map(|s| s.rx_bps).unwrap_or(0);
+    let last_tx_bps = traffic.last().map(|s| s.tx_bps).unwrap_or(0);
+    let (rx_total, tx_total) = match (traffic.first(), traffic.last()) {
+        (Some(first), Some(last)) => (
+            last.rx_bytes.saturating_sub(first.rx_bytes),
+            last.tx_bytes.saturating_sub(first.tx_bytes),
+        ),
+        _ => (0, 0),
+    };
     let header = Line::from(vec![
         Span::styled(
-            format!("↓ {} ({})", format_rate(last.rx_bps), format_bytes(rx_total)),
+            format!("↓ {} ({})", format_rate(last_rx_bps), format_bytes(rx_total)),
             Style::new().fg(t.spark_rx).add_modifier(Modifier::BOLD),
         ),
         Span::styled("  ·  ", Style::new().fg(t.muted)),
         Span::styled(
-            format!("↑ {} ({})", format_rate(last.tx_bps), format_bytes(tx_total)),
+            format!("↑ {} ({})", format_rate(last_tx_bps), format_bytes(tx_total)),
             Style::new().fg(t.spark_tx).add_modifier(Modifier::BOLD),
         ),
     ])
@@ -636,16 +639,21 @@ fn render_network_detail(
     let y_lo = 0.0;
     let y_hi = combined_max as f64 + pad;
 
-    let last_idx = traffic.len().saturating_sub(1).max(1) as f64;
+    let now_ns = state.latest_agent_ts_ns().unwrap_or(0);
+    let secs_ago: Vec<f64> = traffic
+        .iter()
+        .map(|s| (now_ns.saturating_sub(s.ts_ns).max(0) as f64) / NS_PER_SEC_F64)
+        .collect();
+    let window_secs = secs_ago.first().copied().unwrap_or(0.0).max(1.0);
     let rx_points: Vec<(f64, f64)> = traffic
         .iter()
-        .enumerate()
-        .map(|(i, s)| (i as f64 / last_idx * last_idx, s.rx_bps as f64))
+        .zip(secs_ago.iter())
+        .map(|(s, &ago)| ((window_secs - ago).max(0.0), s.rx_bps as f64))
         .collect();
     let tx_points: Vec<(f64, f64)> = traffic
         .iter()
-        .enumerate()
-        .map(|(i, s)| (i as f64 / last_idx * last_idx, s.tx_bps as f64))
+        .zip(secs_ago.iter())
+        .map(|(s, &ago)| ((window_secs - ago).max(0.0), s.tx_bps as f64))
         .collect();
 
     let datasets = vec![
@@ -661,7 +669,7 @@ fn render_network_detail(
             .data(&tx_points),
     ];
 
-    let total_secs = last_idx as u64;
+    let total_secs = window_secs.round() as u64;
     let x_labels = if body.width >= 36 && total_secs >= 2 {
         vec![
             Line::from(format_ago(total_secs)),
@@ -683,7 +691,7 @@ fn render_network_detail(
         .x_axis(
             Axis::default()
                 .style(Style::new().fg(t.muted))
-                .bounds([0.0, last_idx])
+                .bounds([0.0, window_secs])
                 .labels(x_labels),
         )
         .y_axis(
@@ -905,14 +913,7 @@ fn view_hint(view: MonitorView) -> Line<'static> {
     ])
 }
 
-pub fn render_monitor_panel(
-    frame: &mut Frame,
-    area: Rect,
-    focused: bool,
-    state: &MonitorState,
-    traffic: &[TrafficSample],
-    traffic_baseline: Option<(u64, u64)>,
-) {
+pub fn render_monitor_panel(frame: &mut Frame, area: Rect, focused: bool, state: &MonitorState) {
     let t = theme::current();
     let mut block = panel_block(panel::MONITOR, focused);
     if focused {
@@ -946,12 +947,12 @@ pub fn render_monitor_panel(
             return;
         }
         MonitorView::Network => {
-            render_network_detail(frame, inner, traffic, traffic_baseline, focused);
+            render_network_detail(frame, inner, state, focused);
             return;
         }
         _ => {}
     }
-    let metrics = build_metrics(state, traffic, traffic_baseline);
+    let metrics = build_metrics(state);
     let detail = match state.view {
         MonitorView::All => None,
         MonitorView::Cpu => Some(0),
@@ -1071,7 +1072,7 @@ mod tests {
         state.push_memory(5_000_000_000, 120, 60, 12); // 5.0 s in
         state.push_gc(1_500_000_000, 42);
 
-        let metrics = build_metrics(&state, &[], None);
+        let metrics = build_metrics(&state);
         let mem = metrics.iter().find(|m| m.name == "Java").unwrap();
 
         // window_secs is the spread of the memory samples (5 s).
@@ -1100,7 +1101,7 @@ mod tests {
         state.push_memory(0, 300_000, 42_000, 8_000);
         state.push_memory(1_000_000_000, 310_000, 50_000, 9_000);
 
-        let metrics = build_metrics(&state, &[], None);
+        let metrics = build_metrics(&state);
         let mem = metrics.iter().find(|m| m.name == "Java").unwrap();
         assert_eq!(mem.values, vec![42_000.0, 50_000.0]);
         assert!(mem.label.contains("Java"));
