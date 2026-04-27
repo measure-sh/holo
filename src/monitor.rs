@@ -42,15 +42,82 @@ pub struct MonitorState {
     pub history: Vec<MonitorSample>,
     pub gc_events: Vec<GcEvent>,
     pub debuggable: bool,
+    pub selected_metric: usize,
+    pub detail_open: bool,
+    pub detail_focused: bool,
 }
 
 impl MonitorState {
-    pub fn handle_key(&mut self, key: KeyEvent) -> Option<Action> {
+    pub fn handle_key(&mut self, key: KeyEvent, metric_count: usize) -> Option<Action> {
+        let max_index = metric_count.saturating_sub(1);
+
+        if self.detail_open && self.detail_focused {
+            return match key.code {
+                KeyCode::Tab => {
+                    self.detail_focused = false;
+                    Some(Action::Noop)
+                }
+                KeyCode::Enter => {
+                    self.close_detail();
+                    Some(Action::Noop)
+                }
+                KeyCode::Esc => {
+                    self.detail_focused = false;
+                    Some(Action::Noop)
+                }
+                _ => Some(Action::Noop),
+            };
+        }
+
+        if self.detail_open {
+            return match key.code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.selected_metric = self.selected_metric.saturating_sub(1);
+                    Some(Action::Noop)
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.selected_metric = (self.selected_metric + 1).min(max_index);
+                    Some(Action::Noop)
+                }
+                KeyCode::Tab => {
+                    self.detail_focused = true;
+                    Some(Action::Noop)
+                }
+                KeyCode::Enter => {
+                    self.close_detail();
+                    Some(Action::Noop)
+                }
+                KeyCode::Esc => {
+                    self.close_detail();
+                    Some(Action::Unfocus)
+                }
+                _ => Some(Action::Noop),
+            };
+        }
+
         match key.code {
-            KeyCode::Enter => Some(Action::ZoomIn),
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.selected_metric = self.selected_metric.saturating_sub(1);
+                Some(Action::Noop)
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.selected_metric = (self.selected_metric + 1).min(max_index);
+                Some(Action::Noop)
+            }
+            KeyCode::Enter => {
+                if metric_count > 0 {
+                    self.detail_open = true;
+                }
+                Some(Action::Noop)
+            }
             KeyCode::Esc => Some(Action::Unfocus),
             _ => None,
         }
+    }
+
+    fn close_detail(&mut self) {
+        self.detail_open = false;
+        self.detail_focused = false;
     }
 
     pub fn new() -> Self {
@@ -58,6 +125,9 @@ impl MonitorState {
             history: Vec::new(),
             gc_events: Vec::new(),
             debuggable: true,
+            selected_metric: 0,
+            detail_open: false,
+            detail_focused: false,
         }
     }
 
@@ -250,17 +320,72 @@ mod tests {
     }
 
     #[test]
-    fn handle_key_enter_zooms_in() {
+    fn handle_key_enter_opens_detail() {
         let mut state = MonitorState::new();
-        let action = state.handle_key(key_event(KeyCode::Enter));
-        assert!(matches!(action, Some(Action::ZoomIn)));
+        let action = state.handle_key(key_event(KeyCode::Enter), 5);
+        assert!(matches!(action, Some(Action::Noop)));
+        assert!(state.detail_open);
+        assert!(!state.detail_focused);
+    }
+
+    #[test]
+    fn handle_key_enter_noop_when_no_metrics() {
+        let mut state = MonitorState::new();
+        state.handle_key(key_event(KeyCode::Enter), 0);
+        assert!(!state.detail_open);
     }
 
     #[test]
     fn handle_key_esc_unfocuses() {
         let mut state = MonitorState::new();
-        let action = state.handle_key(key_event(KeyCode::Esc));
+        let action = state.handle_key(key_event(KeyCode::Esc), 5);
         assert!(matches!(action, Some(Action::Unfocus)));
+    }
+
+    #[test]
+    fn handle_key_down_advances_selection_clamped() {
+        let mut state = MonitorState::new();
+        for _ in 0..10 {
+            state.handle_key(key_event(KeyCode::Down), 3);
+        }
+        assert_eq!(state.selected_metric, 2);
+    }
+
+    #[test]
+    fn handle_key_up_decreases_selection_saturating() {
+        let mut state = MonitorState::new();
+        state.selected_metric = 1;
+        state.handle_key(key_event(KeyCode::Up), 5);
+        state.handle_key(key_event(KeyCode::Up), 5);
+        assert_eq!(state.selected_metric, 0);
+    }
+
+    #[test]
+    fn handle_key_tab_toggles_detail_focus() {
+        let mut state = MonitorState::new();
+        state.detail_open = true;
+        state.handle_key(key_event(KeyCode::Tab), 5);
+        assert!(state.detail_focused);
+        state.handle_key(key_event(KeyCode::Tab), 5);
+        assert!(!state.detail_focused);
+    }
+
+    #[test]
+    fn handle_key_enter_closes_detail() {
+        let mut state = MonitorState::new();
+        state.detail_open = true;
+        let action = state.handle_key(key_event(KeyCode::Enter), 5);
+        assert!(matches!(action, Some(Action::Noop)));
+        assert!(!state.detail_open);
+    }
+
+    #[test]
+    fn handle_key_esc_in_detail_closes_and_unfocuses() {
+        let mut state = MonitorState::new();
+        state.detail_open = true;
+        let action = state.handle_key(key_event(KeyCode::Esc), 5);
+        assert!(matches!(action, Some(Action::Unfocus)));
+        assert!(!state.detail_open);
     }
 
     #[test]

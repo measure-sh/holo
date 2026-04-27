@@ -1,5 +1,5 @@
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
     text::{Line, Span},
@@ -23,10 +23,6 @@ use crate::network::TrafficSample;
 use crate::panel;
 use crate::theme;
 use crate::ui::{panel_block, render_pane_chip, split_chip};
-
-/// Minimum height per stacked chart in the detail view (chip row + chart body).
-/// Below this, fall back to the compact list.
-const STACKED_MIN_HEIGHT: u16 = 5;
 
 fn format_mb(kb: u64) -> String {
     let mb = kb as f64 / 1024.0;
@@ -110,9 +106,6 @@ struct Metric {
     values: Vec<f64>,
     color: Color,
     scale: MetricScale,
-    /// Cumulative bytes transferred since holo started watching. Only set
-    /// for network rx/tx; None for CPU/mem/disk.
-    total_bytes: Option<u64>,
     /// Seconds-ago for each event to overlay on the sparkline (rightmost = now).
     /// Empty for metrics without overlays.
     tick_secs_ago: Vec<u32>,
@@ -198,7 +191,6 @@ fn build_metrics(
         values: cpu_values,
         color: t.spark_cpu,
         scale: MetricScale::Percent,
-        total_bytes: None,
         tick_secs_ago: Vec::new(),
     });
 
@@ -213,7 +205,6 @@ fn build_metrics(
         values: mem_samples.iter().map(|&v| v as f64).collect(),
         color: t.spark_mem,
         scale: MetricScale::MemKb,
-        total_bytes: None,
         tick_secs_ago: gc_secs_ago(&state.gc_events),
     });
 
@@ -228,7 +219,6 @@ fn build_metrics(
         values: disk_samples.iter().map(|&v| v as f64).collect(),
         color: t.spark_disk,
         scale: MetricScale::DiskKb,
-        total_bytes: None,
         tick_secs_ago: Vec::new(),
     });
 
@@ -258,7 +248,6 @@ fn build_metrics(
             values: traffic.iter().map(|s| s.rx_bps as f64).collect(),
             color: t.spark_rx,
             scale: MetricScale::RateBps,
-            total_bytes: Some(rx_total),
             tick_secs_ago: Vec::new(),
         });
         metrics.push(Metric {
@@ -269,7 +258,6 @@ fn build_metrics(
             values: traffic.iter().map(|s| s.tx_bps as f64).collect(),
             color: t.spark_tx,
             scale: MetricScale::RateBps,
-            total_bytes: Some(tx_total),
             tick_secs_ago: Vec::new(),
         });
     }
@@ -277,16 +265,30 @@ fn build_metrics(
     metrics
 }
 
-fn sparkline_row(frame: &mut Frame, area: Rect, metric: &Metric, label_width: u16) {
+fn sparkline_row(
+    frame: &mut Frame,
+    area: Rect,
+    metric: &Metric,
+    label_width: u16,
+    selected: bool,
+    list_active: bool,
+) {
     let t = theme::current();
     let chunks = Layout::horizontal([
         Constraint::Length(label_width),
         Constraint::Min(0),
     ])
     .split(area);
-    let label_style = Style::new().fg(t.fg);
+    let (label_style, prefix) = if selected && list_active {
+        (Style::new().fg(t.accent).add_modifier(Modifier::BOLD), "▸ ")
+    } else if selected {
+        (Style::new().fg(t.muted).add_modifier(Modifier::BOLD), "  ")
+    } else {
+        (Style::new().fg(t.fg), "  ")
+    };
+    let display = format!("{}{}", prefix, metric.label.trim_start());
     frame.render_widget(
-        Paragraph::new(Line::styled(metric.label.clone(), label_style)),
+        Paragraph::new(Line::styled(display, label_style)),
         chunks[0],
     );
     let reversed: Vec<SparklineBar> = metric.sparkline_data.iter().rev().cloned().collect();
@@ -318,7 +320,13 @@ fn render_ticks(frame: &mut Frame, area: Rect, ticks: &[u32], window: f64, color
     );
 }
 
-fn render_compact_list(frame: &mut Frame, area: Rect, metrics: &[Metric]) {
+fn render_compact_list(
+    frame: &mut Frame,
+    area: Rect,
+    metrics: &[Metric],
+    selected: usize,
+    list_active: bool,
+) {
     if metrics.is_empty() || area.height == 0 {
         return;
     }
@@ -330,12 +338,17 @@ fn render_compact_list(frame: &mut Frame, area: Rect, metrics: &[Metric]) {
     } else {
         (metrics.len().min(area.height as usize), 0)
     };
-    let label_width = metrics.iter().map(|m| m.label.chars().count()).max().unwrap_or(0) as u16;
+    let label_width = metrics
+        .iter()
+        .map(|m| m.label.trim_start().chars().count())
+        .max()
+        .unwrap_or(0) as u16
+        + 2;
     let constraints: Vec<Constraint> = (0..visible_rows).map(|_| Constraint::Length(1)).collect();
     let chunks = Layout::vertical(constraints).spacing(spacing).split(area);
 
     for (i, metric) in metrics.iter().take(visible_rows).enumerate() {
-        sparkline_row(frame, chunks[i], metric, label_width);
+        sparkline_row(frame, chunks[i], metric, label_width, i == selected, list_active);
     }
 }
 
@@ -522,7 +535,6 @@ fn render_charts(
     traffic: &[TrafficSample],
     traffic_baseline: Option<(u64, u64)>,
     focused: bool,
-    zoomed: bool,
 ) {
     if inner.width == 0 || inner.height == 0 {
         return;
@@ -533,178 +545,36 @@ fn render_charts(
         return;
     }
 
-    let slots = detail_slots(&metrics);
-    let gap = slots.len().saturating_sub(1) as u16;
-    let stacked_fits = inner.height.saturating_sub(gap) / slots.len() as u16 >= STACKED_MIN_HEIGHT;
-    if !zoomed || !stacked_fits {
-        render_compact_list(frame, inner, &metrics);
+    let selected = state.selected_metric.min(metrics.len() - 1);
+    let list_active = focused && !state.detail_focused;
+
+    if !state.detail_open {
+        render_compact_list(frame, inner, &metrics, selected, list_active);
         return;
     }
 
-    render_stacked_charts(frame, inner, &slots, focused);
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(inner);
+    render_compact_list(frame, chunks[0], &metrics, selected, list_active);
+    render_metric_detail_pane(
+        frame,
+        chunks[1],
+        &metrics[selected],
+        focused && state.detail_focused,
+    );
 }
 
-enum DetailSlot<'a> {
-    Single(&'a Metric),
-    Pair(&'a Metric, &'a Metric),
-}
-
-/// Group metrics for the stacked detail view: consecutive RateBps metrics
-/// (rx/tx) render together in one combined chart.
-fn detail_slots(metrics: &[Metric]) -> Vec<DetailSlot<'_>> {
-    let mut slots = Vec::new();
-    let mut i = 0;
-    while i < metrics.len() {
-        if i + 1 < metrics.len()
-            && metrics[i].scale == MetricScale::RateBps
-            && metrics[i + 1].scale == MetricScale::RateBps
-        {
-            slots.push(DetailSlot::Pair(&metrics[i], &metrics[i + 1]));
-            i += 2;
-        } else {
-            slots.push(DetailSlot::Single(&metrics[i]));
-            i += 1;
-        }
-    }
-    slots
-}
-
-fn render_stacked_charts(frame: &mut Frame, area: Rect, slots: &[DetailSlot<'_>], focused: bool) {
-    let constraints: Vec<Constraint> = slots.iter().map(|_| Constraint::Fill(1)).collect();
-    let chunks = Layout::vertical(constraints).spacing(1).split(area);
-    for (i, slot) in slots.iter().enumerate() {
-        match slot {
-            DetailSlot::Single(metric) => render_metric_detail(frame, chunks[i], metric, focused),
-            DetailSlot::Pair(rx, tx) => render_pair_detail(frame, chunks[i], rx, tx, focused),
-        }
-    }
-}
-
-fn render_pair_detail(
-    frame: &mut Frame,
-    area: Rect,
-    rx: &Metric,
-    tx: &Metric,
-    focused: bool,
-) {
+/// Detail pane for the selected metric: chart on top, area below reserved
+/// for future development.
+fn render_metric_detail_pane(frame: &mut Frame, area: Rect, metric: &Metric, focused: bool) {
     if area.width == 0 || area.height == 0 {
         return;
     }
-
-    let t = theme::current();
-    let (chip_area, body) = split_chip(area);
-    render_pane_chip(frame, chip_area, "Network", focused, false);
-
-    let rx_current = *rx.values.last().unwrap_or(&0.0);
-    let tx_current = *tx.values.last().unwrap_or(&0.0);
-    let rx_total = rx.total_bytes.unwrap_or(0);
-    let tx_total = tx.total_bytes.unwrap_or(0);
-    let stats_line = Line::from(vec![
-        Span::styled(
-            format!("{} {}", rx.name, format_scale(rx_current, rx.scale)),
-            Style::new().fg(rx.color).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!(" ({})", format_bytes(rx_total)),
-            Style::new().fg(t.muted),
-        ),
-        Span::raw("   "),
-        Span::styled(
-            format!("{} {}", tx.name, format_scale(tx_current, tx.scale)),
-            Style::new().fg(tx.color).add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!(" ({})", format_bytes(tx_total)),
-            Style::new().fg(t.muted),
-        ),
-    ])
-    .alignment(Alignment::Right);
-    frame.render_widget(stats_line, chip_area);
-
-    if body.height < 3 || body.width < 8 {
-        return;
-    }
-    render_combined_chart(frame, body, rx, tx);
-}
-
-fn render_combined_chart(frame: &mut Frame, area: Rect, rx: &Metric, tx: &Metric) {
-    let t = theme::current();
-    let rx_points: Vec<(f64, f64)> = rx
-        .values
-        .iter()
-        .enumerate()
-        .map(|(i, &v)| (i as f64, v))
-        .collect();
-    let tx_points: Vec<(f64, f64)> = tx
-        .values
-        .iter()
-        .enumerate()
-        .map(|(i, &v)| (i as f64, v))
-        .collect();
-
-    if rx_points.len() < 2 && tx_points.len() < 2 {
-        let hint = Paragraph::new(Line::styled(
-            " gathering samples…",
-            Style::new().fg(t.muted),
-        ));
-        frame.render_widget(hint, area);
-        return;
-    }
-
-    let rx_max = rx.values.iter().copied().fold(0.0_f64, f64::max);
-    let tx_max = tx.values.iter().copied().fold(0.0_f64, f64::max);
-    let max = rx_max.max(tx_max);
-    let pad = max.max(1.0) * 0.1;
-    let y_lo = 0.0;
-    let y_hi = max + pad;
-    let y_mid = y_hi / 2.0;
-    let y_labels = vec![
-        Line::from(format_scale(y_lo, rx.scale)),
-        Line::from(format_scale(y_mid, rx.scale)),
-        Line::from(format_scale(y_hi, rx.scale)),
-    ];
-
-    let sample_count = rx.values.len().max(tx.values.len());
-    let x_max = sample_count.saturating_sub(1) as f64;
-    let total_secs = sample_count.saturating_sub(1) as u64;
-    let x_labels = if area.width >= 36 && total_secs >= 2 {
-        vec![
-            Line::from(format_ago(total_secs)),
-            Line::from(format_ago(total_secs / 2)),
-            Line::from("now"),
-        ]
-    } else {
-        vec![Line::from(format_ago(total_secs)), Line::from("now")]
-    };
-
-    let rx_dataset = Dataset::default()
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::new().fg(rx.color))
-        .data(&rx_points);
-    let tx_dataset = Dataset::default()
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::new().fg(tx.color))
-        .data(&tx_points);
-
-    let chart = Chart::new(vec![rx_dataset, tx_dataset])
-        .style(Style::new().bg(t.bg))
-        .x_axis(
-            Axis::default()
-                .style(Style::new().fg(t.muted))
-                .bounds([0.0, x_max.max(1.0)])
-                .labels(x_labels),
-        )
-        .y_axis(
-            Axis::default()
-                .style(Style::new().fg(t.muted))
-                .bounds([y_lo, y_hi])
-                .labels(y_labels)
-                .labels_alignment(Alignment::Right),
-        );
-
-    frame.render_widget(chart, area);
+    let split = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(area);
+    render_metric_detail(frame, split[0], metric, focused);
 }
 
 pub fn render_monitor_panel(
@@ -714,7 +584,6 @@ pub fn render_monitor_panel(
     state: &MonitorState,
     traffic: &[TrafficSample],
     traffic_baseline: Option<(u64, u64)>,
-    zoomed: bool,
 ) {
     let t = theme::current();
     let block = panel_block(panel::MONITOR, focused);
@@ -737,7 +606,7 @@ pub fn render_monitor_panel(
         return;
     }
 
-    render_charts(frame, inner, state, traffic, traffic_baseline, focused, zoomed);
+    render_charts(frame, inner, state, traffic, traffic_baseline, focused);
 }
 
 #[cfg(test)]

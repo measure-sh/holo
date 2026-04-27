@@ -58,7 +58,6 @@ pub enum Action {
     ToggleAirplaneMode,
     TogglePermission(String, bool),
     OpenLogcat,
-    ZoomIn,
     RefreshFiles,
     ExpandDir(String),
     OpenFile(String),
@@ -383,7 +382,10 @@ impl App {
             panel::TRACE => self.trace_state.handle_key(key),
             panel::ISSUES => self.issues_state.handle_key(key),
             panel::NETWORK => self.network_state.handle_key(key),
-            panel::MONITOR => self.monitor_state.handle_key(key),
+            panel::MONITOR => {
+                let metric_count = if self.network_state.traffic.is_empty() { 3 } else { 5 };
+                self.monitor_state.handle_key(key, metric_count)
+            }
             panel::DATABASE => self.database_state.handle_key(key),
             _ => None,
         };
@@ -406,12 +408,6 @@ impl App {
             Action::Unfocus => {
                 self.restore_zoom();
                 self.focused = None;
-                Some(Action::Noop)
-            }
-            Action::ZoomIn => {
-                if !self.is_zoomed() {
-                    self.toggle_zoom();
-                }
                 Some(Action::Noop)
             }
             other => Some(other),

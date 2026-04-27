@@ -332,9 +332,6 @@ impl DispatchContext {
                     }
                 }
             }
-            Action::ZoomIn => {
-                // Handled in dispatch_panel_key
-            }
             Action::RunQuery(db, sql) => {
                 if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
                     d.start_query(self.adb.clone(), s.clone(), p.clone(), db, sql);
