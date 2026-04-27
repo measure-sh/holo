@@ -189,10 +189,7 @@ fn run_app(
         }
         loop {
             match event::read()? {
-                Event::Key(key) => {
-                    if key.kind != KeyEventKind::Press {
-                        continue;
-                    }
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
                     let action = app.handle_key(key);
                     if ctx.dispatch(action, &mut app) {
                         return Ok(());
@@ -200,6 +197,14 @@ fn run_app(
                     if let Some(d) = &ctx.data {
                         d.update_monitor_visibility(app.panel_visibility());
                     }
+                }
+                Event::Key(_) => {
+                    // Ignore Repeat/Release. Falling through (instead of
+                    // `continue`-ing back into a blocking `event::read`) lets
+                    // the drain check below break the loop so the outer loop
+                    // can redraw — otherwise a single keypress's trailing
+                    // Release would leave the next frame unrendered until the
+                    // user pressed another key.
                 }
                 Event::Mouse(mouse) => {
                     let code = match mouse.kind {
