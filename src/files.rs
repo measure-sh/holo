@@ -183,17 +183,12 @@ impl FilesState {
     }
 
     fn open_detail_for(&mut self, path: String) -> Action {
-        let first_open = !self.detail_open;
         if self.selected_file.as_deref() == Some(path.as_str()) && self.detail_open {
             return Action::Noop;
         }
         self.detail_open = true;
         self.start_detail_load(&path);
-        if first_open {
-            Action::ZoomIn
-        } else {
-            Action::Noop
-        }
+        Action::Noop
     }
 
     fn start_detail_load(&mut self, path: &str) {

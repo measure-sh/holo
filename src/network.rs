@@ -222,10 +222,8 @@ impl NetworkState {
             KeyCode::Enter => {
                 if self.entries.get(self.selected).is_some() {
                     self.detail_open = true;
-                    Some(Action::ZoomIn)
-                } else {
-                    Some(Action::Noop)
                 }
+                Some(Action::Noop)
             }
             KeyCode::Char('o') => {
                 self.entries.get(self.selected).map(|entry| {

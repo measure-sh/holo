@@ -325,12 +325,8 @@ impl DatabaseState {
                 self.detail_scroll = 0;
                 self.detail_h_scroll = 0;
                 self.detail_focused = true;
-                if self.detail_open {
-                    Action::Noop
-                } else {
-                    self.detail_open = true;
-                    Action::ZoomIn
-                }
+                self.detail_open = true;
+                Action::Noop
             }
             TreeNode::Loading { .. } | TreeNode::NoTables { .. } => Action::Noop,
         }
