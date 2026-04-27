@@ -180,14 +180,27 @@ fn build_metrics(
     let t = theme::current();
     let mut metrics = Vec::new();
 
-    let cpu_now = state.history.last().map(|m| m.cpu_percent).unwrap_or(0.0);
-    let cpu_values: Vec<f64> = state.history.iter().map(|m| m.cpu_percent.max(0.0) as f64).collect();
+    // Anchor "now" on the freshest agent timestamp across all streams. CPU,
+    // memory, and GC all come from the agent's CLOCK_MONOTONIC, so tick
+    // positions and chart x-values share the same time origin.
+    let now_ns = state.latest_agent_ts_ns().unwrap_or(0);
+
+    let cpu_now = state.cpu_history.last().map(|s| s.cpu_percent).unwrap_or(0.0);
+    let cpu_values: Vec<f64> = state.cpu_history.iter().map(|s| s.cpu_percent.max(0.0) as f64).collect();
     let cpu_spark: Vec<SparklineBar> = state
-        .history
+        .cpu_history
         .iter()
-        .map(|m| SparklineBar::from(Some(m.cpu_percent.max(0.0).round() as u64)))
+        .map(|s| SparklineBar::from(Some(s.cpu_percent.max(0.0).round() as u64)))
         .collect();
-    let cpu_window = sample_index_window(cpu_values.len());
+    let cpu_secs_ago: Vec<f64> = state
+        .cpu_history
+        .iter()
+        .map(|s| (now_ns.saturating_sub(s.ts_ns).max(0) as f64) / NS_PER_SEC_F64)
+        .collect();
+    let cpu_window = cpu_secs_ago
+        .first()
+        .copied()
+        .unwrap_or_else(|| sample_index_window(cpu_values.len()));
     metrics.push(Metric {
         name: "CPU",
         label: format!(" CPU {:.1}%  ", cpu_now),
@@ -196,7 +209,7 @@ fn build_metrics(
         values: cpu_values,
         color: t.spark_cpu,
         scale: MetricScale::Percent,
-        secs_ago: Vec::new(),
+        secs_ago: cpu_secs_ago,
         tick_secs_ago: Vec::new(),
         window_secs: cpu_window,
     });
@@ -206,10 +219,6 @@ fn build_metrics(
     let mem_samples: Vec<u64> = state.memory_history.iter().map(|s| s.java_heap_kb).collect();
     let mem_now = *mem_samples.last().unwrap_or(&0);
     let (mem_spark, mem_max) = range_shifted(&mem_samples);
-    // Anchor "now" on the freshest agent timestamp across both streams. Both
-    // GC events and memory samples come from the agent's CLOCK_MONOTONIC, so
-    // tick positions and chart x-values use the same time origin.
-    let now_ns = state.latest_agent_ts_ns().unwrap_or(0);
     let mem_secs_ago: Vec<f64> = state
         .memory_history
         .iter()

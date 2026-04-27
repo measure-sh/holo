@@ -8,8 +8,7 @@ use crate::adb::Adb;
 use crate::app::Action;
 use crate::panel;
 
-pub const POLL_SYSTEM: u8 = 1;
-pub const POLL_DISK: u8 = 2;
+pub const POLL_DISK: u8 = 1;
 
 const MAX_SAMPLES: usize = 120;
 const NS_PER_SEC: i64 = 1_000_000_000;
@@ -19,11 +18,8 @@ const RETENTION_NS: i64 = MAX_SAMPLES as i64 * NS_PER_SEC;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MonitorSample {
-    pub cpu_percent: f32,
     pub data_kb: u64,
-    pub cache_kb: u64,
     pub debuggable: bool,
-    pub num_cores: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,6 +50,16 @@ pub struct MemorySample {
     pub rss_kb: u64,
     pub java_heap_kb: u64,
     pub native_heap_kb: u64,
+}
+
+/// CPU usage snapshot emitted by the agent at ~1 Hz on the same
+/// `CLOCK_MONOTONIC` clock as `MemorySample` and `GcEvent`. `cpu_percent` is
+/// process-wide (utime+stime delta) averaged across cores, so 100% means
+/// "all cores fully busy".
+#[derive(Debug, Clone, Copy)]
+pub struct CpuSample {
+    pub ts_ns: i64,
+    pub cpu_percent: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -101,6 +107,7 @@ pub struct MonitorState {
     pub history: Vec<MonitorSample>,
     pub gc_events: Vec<GcEvent>,
     pub memory_history: Vec<MemorySample>,
+    pub cpu_history: Vec<CpuSample>,
     pub debuggable: bool,
     pub view: MonitorView,
 }
@@ -126,6 +133,7 @@ impl MonitorState {
             history: Vec::new(),
             gc_events: Vec::new(),
             memory_history: Vec::new(),
+            cpu_history: Vec::new(),
             debuggable: true,
             view: MonitorView::All,
         }
@@ -163,25 +171,32 @@ impl MonitorState {
         self.evict_at_ns(ts_ns);
     }
 
-    /// Drop GC events and memory samples older than `RETENTION_NS` relative to
-    /// the just-pushed `now_ns`. Both streams share the agent's
-    /// `CLOCK_MONOTONIC`, so a single cutoff applies cleanly to both.
+    pub fn push_cpu(&mut self, ts_ns: i64, cpu_percent: f32) {
+        self.cpu_history.push(CpuSample { ts_ns, cpu_percent });
+        if self.cpu_history.len() > MAX_SAMPLES {
+            self.cpu_history.remove(0);
+        }
+        self.evict_at_ns(ts_ns);
+    }
+
+    /// Drop GC, memory, and CPU samples older than `RETENTION_NS` relative to
+    /// the just-pushed `now_ns`. All three streams share the agent's
+    /// `CLOCK_MONOTONIC`, so a single cutoff applies cleanly to all of them.
     fn evict_at_ns(&mut self, now_ns: i64) {
         let cutoff = now_ns.saturating_sub(RETENTION_NS);
         self.gc_events.retain(|e| e.ts_ns >= cutoff);
         self.memory_history.retain(|s| s.ts_ns >= cutoff);
+        self.cpu_history.retain(|s| s.ts_ns >= cutoff);
     }
 
-    /// Latest known agent timestamp across either stream — used as the chart's
+    /// Latest known agent timestamp across all streams — used as the chart's
     /// "now" anchor when rendering. Returns `None` until the agent has emitted
     /// at least one event.
     pub fn latest_agent_ts_ns(&self) -> Option<i64> {
         let mem = self.memory_history.last().map(|s| s.ts_ns);
         let gc = self.gc_events.last().map(|e| e.ts_ns);
-        match (mem, gc) {
-            (Some(a), Some(b)) => Some(a.max(b)),
-            (a, b) => a.or(b),
-        }
+        let cpu = self.cpu_history.last().map(|s| s.ts_ns);
+        [mem, gc, cpu].into_iter().flatten().max()
     }
 
     #[allow(dead_code)]
@@ -210,7 +225,7 @@ impl MonitorState {
 pub fn visibility_mask(vis: &[bool; 8]) -> u8 {
     let mut mask = 0u8;
     if vis[(panel::MONITOR - 1) as usize] {
-        mask |= POLL_SYSTEM | POLL_DISK;
+        mask |= POLL_DISK;
     }
     mask
 }
@@ -227,9 +242,7 @@ pub fn spawn_poller(
         let interval = Duration::from_secs(1);
         let mut tick: u64 = 0;
         let mut last_data_kb: u64 = 0;
-        let mut last_cache_kb: u64 = 0;
         let debuggable = adb.is_debuggable(&serial, &package);
-        let num_cores = adb.get_num_cores(&serial).unwrap_or(1).max(1);
         loop {
             let mask = visibility.load(Ordering::Relaxed);
             if mask == 0 || !connectivity.load(Ordering::Relaxed) {
@@ -237,29 +250,18 @@ pub fn spawn_poller(
                 tick += 1;
                 continue;
             }
-            let mut sample = MonitorSample::default();
-            let poll_system = mask & POLL_SYSTEM != 0;
             let poll_disk = mask & POLL_DISK != 0 && tick.is_multiple_of(5);
 
-            std::thread::scope(|s| {
-                let cpu = poll_system
-                    .then(|| s.spawn(|| adb.get_cpu_usage(&serial, &package)));
-                let disk = poll_disk
-                    .then(|| s.spawn(|| adb.get_disk_usage(&serial, &package)));
+            if poll_disk
+                && let Ok(data) = adb.get_disk_usage(&serial, &package)
+            {
+                last_data_kb = data;
+            }
 
-                if let Some(Ok(Ok(cpu))) = cpu.map(|h| h.join()) {
-                    sample.cpu_percent = (cpu / num_cores as f32).clamp(0.0, 100.0);
-                    sample.num_cores = num_cores;
-                }
-                if let Some(Ok(Ok((data, cache)))) = disk.map(|h| h.join()) {
-                    last_data_kb = data;
-                    last_cache_kb = cache;
-                }
-            });
-
-            sample.data_kb = last_data_kb;
-            sample.cache_kb = last_cache_kb;
-            sample.debuggable = debuggable;
+            let sample = MonitorSample {
+                data_kb: last_data_kb,
+                debuggable,
+            };
 
             if tx.send(sample).is_err() {
                 return;
@@ -279,7 +281,6 @@ mod tests {
         MonitorSample {
             data_kb: data,
             debuggable: true,
-            ..Default::default()
         }
     }
 
@@ -446,5 +447,28 @@ mod tests {
         assert_eq!(state.latest_agent_ts_ns(), Some(200));
         state.push_memory(300, 2, 0, 0);
         assert_eq!(state.latest_agent_ts_ns(), Some(300));
+        state.push_cpu(400, 12.5);
+        assert_eq!(state.latest_agent_ts_ns(), Some(400));
+    }
+
+    #[test]
+    fn push_cpu_records_sample_and_caps() {
+        let mut state = MonitorState::new();
+        for i in 0..(MAX_SAMPLES as i64 + 5) {
+            state.push_cpu(i * NS_PER_SEC, i as f32);
+        }
+        assert_eq!(state.cpu_history.len(), MAX_SAMPLES);
+        assert_eq!(
+            state.cpu_history.last().unwrap().cpu_percent,
+            (MAX_SAMPLES as i64 + 4) as f32,
+        );
+    }
+
+    #[test]
+    fn push_cpu_evicts_stale_gc_events() {
+        let mut state = MonitorState::new();
+        state.gc_events.push(GcEvent { ts_ns: 0, duration_us: 5 });
+        state.push_cpu(RETENTION_NS + NS_PER_SEC, 25.0);
+        assert!(state.gc_events.is_empty());
     }
 }

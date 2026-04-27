@@ -242,6 +242,10 @@ impl DataSources {
                         app.monitor_state_mut()
                             .push_memory(ts_ns, rss_kb, java_heap_kb, native_heap_kb);
                     }
+                    VitalsEvent::Cpu { ts_ns, cpu_centi_percent } => {
+                        let cpu_percent = cpu_centi_percent as f32 / 100.0;
+                        app.monitor_state_mut().push_cpu(ts_ns, cpu_percent);
+                    }
                 }
             }
         }

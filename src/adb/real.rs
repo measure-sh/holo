@@ -417,38 +417,6 @@ impl Adb for RealAdb {
         Ok(parse_file_list(&stdout))
     }
 
-    fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32> {
-        let output = Command::new("adb")
-            .args(["-s", serial, "shell", "top", "-b", "-n", "1", "-q"])
-            .output_timed(ADB_SHELL_TIMEOUT)?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("top failed: {stderr}");
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        Ok(parse_top_cpu(&stdout, package))
-    }
-
-    fn get_num_cores(&self, serial: &str) -> Result<u8> {
-        let output = Command::new("adb")
-            .args([
-                "-s", serial, "shell",
-                "nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo",
-            ])
-            .output_timed(ADB_SHELL_TIMEOUT)?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            bail!("nproc failed: {stderr}");
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        parse_num_cores(&stdout)
-            .ok_or_else(|| color_eyre::eyre::eyre!("could not parse core count"))
-    }
-
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()> {
         let output = Command::new("adb")
             .args(["-s", serial, "exec-out", "run-as", package, "cat", remote_path])
@@ -656,9 +624,9 @@ impl Adb for RealAdb {
         Ok(addr)
     }
 
-    fn get_disk_usage(&self, serial: &str, package: &str) -> Result<(u64, u64)> {
+    fn get_disk_usage(&self, serial: &str, package: &str) -> Result<u64> {
         let output = Command::new("adb")
-            .args(["-s", serial, "shell", "run-as", package, "du", "-s", ".", "./cache"])
+            .args(["-s", serial, "shell", "run-as", package, "du", "-s", "."])
             .output_timed(ADB_SHELL_TIMEOUT)?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1101,23 +1069,17 @@ fn extract_kv_u64(line: &str, key: &str) -> Option<u64> {
     rest[..end].parse().ok()
 }
 
-fn parse_du_output(output: &str) -> (u64, u64) {
-    let mut data_kb = 0u64;
-    let mut cache_kb = 0u64;
+fn parse_du_output(output: &str) -> u64 {
     for line in output.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
         if parts.len() >= 2
             && let Ok(size) = parts[0].trim().parse::<u64>()
+            && parts[1].trim() == "."
         {
-            let path = parts[1].trim();
-            if path == "./cache" {
-                cache_kb = size;
-            } else if path == "." {
-                data_kb = size;
-            }
+            return size;
         }
     }
-    (data_kb, cache_kb)
+    0
 }
 
 fn parse_device_ip(output: &str) -> Option<String> {
@@ -1266,34 +1228,6 @@ fn parse_battery_level(output: &str) -> Option<u8> {
     })
 }
 
-fn parse_num_cores(output: &str) -> Option<u8> {
-    output.lines().find_map(|line| {
-        let n: u8 = line.trim().parse().ok()?;
-        (n > 0).then_some(n)
-    })
-}
-
-fn parse_top_cpu(output: &str, package: &str) -> f32 {
-    for line in output.lines() {
-        let trimmed = line.trim();
-        if !trimmed.ends_with(package) {
-            continue;
-        }
-        let cols: Vec<&str> = trimmed.split_whitespace().collect();
-        if cols.len() < 9 {
-            continue;
-        }
-        if let Some(last) = cols.last()
-            && *last != package
-        {
-            continue;
-        }
-        if let Ok(val) = cols[8].parse::<f32>() {
-            return val;
-        }
-    }
-    0.0
-}
 
 pub fn parse_database_list(output: &str) -> Vec<String> {
     output
@@ -1607,42 +1541,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_top_cpu_for_package() {
-        let output = "\
-  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS
-  567 system       20   0  15G 120M  80M S  1.1   2.0   0:05.00 system_server
-12345 u0_a123      20   0  12G  90M  60M S  5.2   3.1   1:23.45 com.example.app
-  890 u0_a456      20   0  10G  50M  30M S  0.3   1.0   0:01.00 com.other.app
-";
-        assert!((parse_top_cpu(output, "com.example.app") - 5.2).abs() < 0.01);
-    }
-
-    #[test]
-    fn parses_num_cores_nproc() {
-        assert_eq!(parse_num_cores("8\n"), Some(8));
-        assert_eq!(parse_num_cores("1"), Some(1));
-    }
-
-    #[test]
-    fn parses_num_cores_rejects_zero_and_invalid() {
-        assert_eq!(parse_num_cores("0\n"), None);
-        assert_eq!(parse_num_cores(""), None);
-        assert_eq!(parse_num_cores("oops\n"), None);
-    }
-
-    #[test]
-    fn top_cpu_zero_when_not_found() {
-        let output = "  PID USER PR NI VIRT RES SHR S[%CPU] %MEM TIME+ ARGS\n  567 system 20 0 15G 120M 80M S 1.1 2.0 0:05.00 system_server\n";
-        assert_eq!(parse_top_cpu(output, "com.example.app"), 0.0);
-    }
-
-    #[test]
-    fn top_cpu_no_partial_match() {
-        let output = "  PID USER         PR  NI VIRT  RES  SHR S[%CPU] %MEM     TIME+ ARGS\n12345 u0_a123      20   0  12G  90M  60M S  5.2   3.1   1:23.45 com.example.app.debug\n";
-        assert_eq!(parse_top_cpu(output, "com.example.app"), 0.0);
-    }
-
-    #[test]
     fn parses_wifi_enabled() {
         assert!(parse_wifi_enabled("1\n"));
         assert!(parse_wifi_enabled("1"));
@@ -1679,19 +1577,19 @@ mod tests {
 
     #[test]
     fn parses_du_output() {
-        let output = "1234\t./cache\n5678\t.\n";
-        assert_eq!(parse_du_output(output), (5678, 1234));
+        let output = "5678\t.\n";
+        assert_eq!(parse_du_output(output), 5678);
     }
 
     #[test]
-    fn parses_du_output_no_cache() {
-        let output = "5678\t.\n";
-        assert_eq!(parse_du_output(output), (5678, 0));
+    fn parses_du_output_ignores_other_lines() {
+        let output = "1234\t./cache\n5678\t.\n";
+        assert_eq!(parse_du_output(output), 5678);
     }
 
     #[test]
     fn parses_du_output_empty() {
-        assert_eq!(parse_du_output(""), (0, 0));
+        assert_eq!(parse_du_output(""), 0);
     }
 
     #[test]

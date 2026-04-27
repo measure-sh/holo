@@ -53,15 +53,13 @@ pub trait Adb: Send + Sync {
     fn pull_file(&self, serial: &str, package: &str, remote_path: &str, dest: &std::path::Path) -> Result<()>;
     fn stat_file(&self, serial: &str, package: &str, remote_path: &str) -> Result<FileMeta>;
     fn cat_file(&self, serial: &str, package: &str, remote_path: &str, max_bytes: u64) -> Result<Vec<u8>>;
-    fn get_cpu_usage(&self, serial: &str, package: &str) -> Result<f32>;
-    fn get_num_cores(&self, serial: &str) -> Result<u8>;
     fn start_trace(&self, serial: &str, config: &str) -> Result<()>;
     fn stop_and_pull_trace(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
     fn take_screenshot(&self, serial: &str, dest: &std::path::Path) -> Result<()>;
     fn get_wifi_enabled(&self, serial: &str) -> Result<bool>;
     fn set_wifi_enabled(&self, serial: &str, enabled: bool) -> Result<()>;
     fn enable_wireless_adb(&self, serial: &str) -> Result<String>;
-    fn get_disk_usage(&self, serial: &str, package: &str) -> Result<(u64, u64)>;
+    fn get_disk_usage(&self, serial: &str, package: &str) -> Result<u64>;
     fn get_dark_mode(&self, serial: &str) -> Result<bool>;
     fn set_dark_mode(&self, serial: &str, enabled: bool) -> Result<()>;
     fn list_avds(&self) -> Result<Vec<String>>;

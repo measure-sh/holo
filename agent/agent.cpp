@@ -10,6 +10,10 @@
 //                               [u32 java_heap_kb][u32 native_heap_kb]    (20 bytes)
 //                      future fields append more u32s; readers use
 //                      payload_len to know what's present.
+//   0x03 CpuSample     payload: [i64 ts_ns][u32 cpu_centi_percent]        (12 bytes)
+//                      cpu_centi_percent is the process's CPU usage
+//                      averaged across all cores, in 1/100ths of a percent
+//                      (e.g. 1234 = 12.34%). Range 0..=10000.
 //
 // We avoid the C++ standard library entirely (no <mutex>, <thread>, <vector>,
 // <chrono>, <atomic>): linking libc++ statically into a JVMTI agent leaks
@@ -43,9 +47,11 @@ namespace {
 constexpr size_t QUEUE_CAP = 4096;
 constexpr uint8_t KIND_GC = 0x01;
 constexpr uint8_t KIND_MEMORY = 0x02;
+constexpr uint8_t KIND_CPU = 0x03;
 
-// `value` carries the kind-specific u32: GC duration_us, or RSS in KB.
-// `java_heap_kb` and `native_heap_kb` are unused for GC events.
+// `value` carries the kind-specific u32: GC duration_us, RSS in KB, or
+// cpu_centi_percent. `java_heap_kb` and `native_heap_kb` are only used for
+// memory events.
 struct Event {
     uint8_t kind;
     int64_t ts_ns;
@@ -130,6 +136,37 @@ uint32_t read_rss_kb() {
     return (uint32_t)(pages * page_kb);
 }
 
+// Read /proc/self/stat and return utime+stime in clock ticks. The format is
+//   "pid (comm) state ppid pgrp session tty_nr tpgid flags
+//    minflt cminflt majflt cmajflt utime stime ..."
+// `comm` can contain spaces and parentheses, so we anchor on the LAST ')' and
+// skip 12 spaces past it to land on utime. Returns 0 on any read/parse error.
+int64_t read_cpu_jiffies() {
+    int fd = ::open("/proc/self/stat", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    char buf[1024];
+    ssize_t n = ::read(fd, buf, sizeof(buf) - 1);
+    ::close(fd);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+    char* p = strrchr(buf, ')');
+    if (p == nullptr) return 0;
+    ++p;
+    int spaces = 0;
+    while (*p && spaces < 12) {
+        if (*p == ' ') ++spaces;
+        ++p;
+    }
+    if (spaces < 12) return 0;
+    char* end = nullptr;
+    long long utime = strtoll(p, &end, 10);
+    if (end == p) return 0;
+    p = end;
+    long long stime = strtoll(p, &end, 10);
+    if (end == p) return 0;
+    return (int64_t)(utime + stime);
+}
+
 // JNI handles for the per-tick heap reads. Initialized once in `sampler_loop`
 // after AttachCurrentThreadAsDaemon; stay valid for the agent's lifetime as
 // global refs. If attach or any lookup fails, `g_jni_ok` stays false and the
@@ -210,13 +247,47 @@ void* sampler_loop(void* arg) {
         LOGE("sampler stopping: JNI heap setup failed");
         return nullptr;
     }
+    long clock_ticks = sysconf(_SC_CLK_TCK);
+    if (clock_ticks <= 0) clock_ticks = 100;
+    long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    if (num_cores < 1) num_cores = 1;
+    int64_t prev_ts_ns = 0;
+    int64_t prev_jiffies = 0;
     for (;;) {
-        Event e;
-        e.kind = KIND_MEMORY;
-        e.ts_ns = now_ns();
-        e.value = read_rss_kb();
-        read_jni_heap(&heap, &e.java_heap_kb, &e.native_heap_kb);
-        enqueue(e);
+        int64_t ts_ns = now_ns();
+        int64_t jiffies = read_cpu_jiffies();
+
+        Event mem;
+        mem.kind = KIND_MEMORY;
+        mem.ts_ns = ts_ns;
+        mem.value = read_rss_kb();
+        read_jni_heap(&heap, &mem.java_heap_kb, &mem.native_heap_kb);
+        enqueue(mem);
+
+        // CPU% = (delta_jiffies / clock_ticks_per_sec) / delta_secs / cores * 100.
+        // Skip the first tick (no delta yet); also skip if jiffies decreased
+        // (shouldn't happen, but be defensive).
+        if (prev_ts_ns != 0 && jiffies >= prev_jiffies) {
+            int64_t delta_jiffies = jiffies - prev_jiffies;
+            int64_t delta_ns = ts_ns - prev_ts_ns;
+            if (delta_ns > 0) {
+                int64_t numer = delta_jiffies * 10000LL * 1000000000LL;
+                int64_t denom = (int64_t)clock_ticks * delta_ns * (int64_t)num_cores;
+                int64_t centi = (denom > 0) ? (numer / denom) : 0;
+                if (centi < 0) centi = 0;
+                if (centi > 10000) centi = 10000;
+                Event cpu;
+                cpu.kind = KIND_CPU;
+                cpu.ts_ns = ts_ns;
+                cpu.value = (uint32_t)centi;
+                cpu.java_heap_kb = 0;
+                cpu.native_heap_kb = 0;
+                enqueue(cpu);
+            }
+        }
+        prev_ts_ns = ts_ns;
+        prev_jiffies = jiffies;
+
         ::usleep(1000 * 1000);
     }
 }
@@ -245,6 +316,7 @@ bool send_all(int fd, const uint8_t* buf, size_t n) {
 
 bool send_event(int fd, const Event& e) {
     // GC:     [u8 kind][u32 len=12][i64 ts_ns][u32 duration_us]
+    // CPU:    [u8 kind][u32 len=12][i64 ts_ns][u32 cpu_centi_percent]
     // Memory: [u8 kind][u32 len=20][i64 ts_ns][u32 rss_kb]
     //                  [u32 java_heap_kb][u32 native_heap_kb]
     if (e.kind == KIND_MEMORY) {
