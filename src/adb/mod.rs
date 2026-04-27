@@ -1,6 +1,8 @@
 mod real;
+mod status;
 
 pub use real::RealAdb;
+pub use status::{report_timeout, set_status_sender, AdbStatus};
 
 use color_eyre::Result;
 

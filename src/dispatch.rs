@@ -2,7 +2,7 @@ use std::sync::{mpsc, Arc};
 
 use color_eyre::Result;
 
-use crate::adb::{Adb, Device};
+use crate::adb::{Adb, AdbStatus, Device};
 use crate::app::{Action, App};
 use crate::data::DataSources;
 use crate::toolbar;
@@ -25,6 +25,7 @@ pub struct DispatchContext {
     pub pending_build_rx: Option<mpsc::Receiver<PendingBuild>>,
     pub command_tx: mpsc::Sender<CommandResult>,
     pub command_rx: mpsc::Receiver<CommandResult>,
+    pub adb_status_rx: mpsc::Receiver<AdbStatus>,
     pub pending_redraw: bool,
 }
 
@@ -84,6 +85,13 @@ impl DispatchContext {
                 app.set_status_flash(cr.error_msg, true);
                 if let Some(rollback) = cr.rollback {
                     rollback(app);
+                }
+            }
+        }
+        while let Ok(status) = self.adb_status_rx.try_recv() {
+            match status {
+                AdbStatus::Timeout { args } => {
+                    app.set_status_flash(format!("adb timed out: {args}"), true);
                 }
             }
         }

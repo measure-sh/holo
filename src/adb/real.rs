@@ -27,12 +27,19 @@ trait OutputTimed {
 
 impl OutputTimed for Command {
     fn output_timed(&mut self, timeout: Duration) -> Result<Output> {
+        let args = format_args_for_status(self);
         let child = self
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
-        wait_with_output_timed(child, timeout)
+        wait_with_output_timed(child, timeout, &args)
     }
+}
+
+fn format_args_for_status(cmd: &Command) -> String {
+    let mut parts: Vec<String> = vec![cmd.get_program().to_string_lossy().into_owned()];
+    parts.extend(cmd.get_args().map(|a| a.to_string_lossy().into_owned()));
+    parts.join(" ")
 }
 
 /// `std::process::Child::drop` only reaps zombies — it doesn't kill. Wrap any
@@ -63,8 +70,13 @@ impl Drop for ChildGuard {
 /// Drain stdout/stderr in helper threads (so a child writing to a full kernel
 /// buffer can't deadlock our wait loop), then poll `try_wait` until the child
 /// exits or the deadline passes. The `ChildGuard` makes sure the subprocess is
-/// killed and reaped even if this function unwinds early.
-fn wait_with_output_timed(mut child: std::process::Child, timeout: Duration) -> Result<Output> {
+/// killed and reaped even if this function unwinds early. On timeout we also
+/// report to the UI so the user sees the wedge instead of a stale pane.
+fn wait_with_output_timed(
+    mut child: std::process::Child,
+    timeout: Duration,
+    args: &str,
+) -> Result<Output> {
     let mut stdout = child.stdout.take().expect("piped");
     let mut stderr = child.stderr.take().expect("piped");
     let stdout_h = std::thread::spawn(move || {
@@ -90,7 +102,8 @@ fn wait_with_output_timed(mut child: std::process::Child, timeout: Duration) -> 
         }
         if Instant::now() >= deadline {
             // ChildGuard's Drop will kill + reap on bail.
-            bail!("adb timed out after {:?}", timeout);
+            super::report_timeout(args.to_string());
+            bail!("adb timed out after {:?}: {args}", timeout);
         }
         std::thread::sleep(Duration::from_millis(25));
     };
@@ -528,7 +541,11 @@ impl Adb for RealAdb {
             stdin.write_all(config.as_bytes())?;
         }
 
-        let output = wait_with_output_timed(child, ADB_SHELL_TIMEOUT)?;
+        let output = wait_with_output_timed(
+            child,
+            ADB_SHELL_TIMEOUT,
+            "adb shell perfetto",
+        )?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             bail!("perfetto start failed: {stderr}");

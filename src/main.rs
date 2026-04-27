@@ -70,6 +70,8 @@ fn run_app(
     theme::load_saved();
     let mut app = App::new(initial_device.clone(), None);
     let (command_tx, command_rx) = std::sync::mpsc::channel();
+    let (adb_status_tx, adb_status_rx) = std::sync::mpsc::channel();
+    adb::set_status_sender(adb_status_tx);
     let mut ctx = DispatchContext {
         adb: adb.clone(),
         data: None,
@@ -80,6 +82,7 @@ fn run_app(
         pending_build_rx: None,
         command_tx,
         command_rx,
+        adb_status_rx,
         pending_redraw: false,
     };
 
