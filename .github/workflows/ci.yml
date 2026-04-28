@@ -32,7 +32,7 @@ jobs:
           name: agent-blobs
           path: agent-blobs/
 
-  ci:
+  test:
     needs: agent-build
     runs-on: ubuntu-latest
     env:
