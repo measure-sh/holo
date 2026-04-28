@@ -182,7 +182,7 @@ pub fn render_app(
 
     let sep = Style::new().fg(t.surface);
     let mut hint_spans = vec![
-        Span::styled(" ^q ", Style::new().fg(t.danger)),
+        Span::styled(" ^", Style::new().fg(t.danger)),
         Span::styled("quit ", Style::new().fg(t.muted)),
         Span::styled("───", sep),
         Span::styled(" ^", Style::new().fg(t.danger)),
