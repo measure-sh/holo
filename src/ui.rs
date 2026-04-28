@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState},
     Frame,
@@ -241,15 +241,6 @@ pub fn render_app(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Trace a single accent segment around the perimeter while a captured
-    // session is open — a quiet "this isn't live" marker that's visible no
-    // matter where the user is looking. The block's border characters are
-    // already painted; we only override the foreground color of cells in
-    // the moving window.
-    if app.is_viewing_session() {
-        render_marching_border(frame, area);
-    }
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -422,85 +413,6 @@ fn render_session_chip(frame: &mut Frame, area: Rect, label: &str) {
         ))),
         inner,
     );
-}
-
-/// Draws a glow segment chasing around the perimeter of `area`. Used to
-/// signal that the UI is in captured-session view mode — subtle, alive,
-/// and unmistakable. Only the foreground color of border cells is
-/// touched; the actual border glyphs (rounded corners, lines) are
-/// whatever the underlying Block widget rendered.
-///
-/// The animation cadence is driven by wall-clock time, so frame skips
-/// don't desync the pattern. `App::has_active_animation()` includes
-/// view mode so the main loop polls fast enough to look smooth.
-fn render_marching_border(frame: &mut Frame, area: Rect) {
-    if area.width < 2 || area.height < 2 {
-        return;
-    }
-    let t = theme::current();
-    let w = area.width as usize;
-    let h = area.height as usize;
-    let perim = 2 * (w + h - 2);
-    if perim == 0 {
-        return;
-    }
-
-    // 80 cells/sec — at the 50ms render cadence this is ~4 cells per
-    // frame, smooth enough to read as motion on terminals of any size.
-    const CELLS_PER_SEC: u128 = 80;
-    // Trail length. The head is drawn brightest; each cell behind it
-    // fades back to the surface color in equal steps.
-    const SEGMENT: usize = 10;
-
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let head = ((now_ms * CELLS_PER_SEC / 1000) % perim as u128) as usize;
-
-    let buf = frame.buffer_mut();
-    for i in 0..SEGMENT {
-        let p = (head + perim - i) % perim;
-        let (x, y) = perimeter_xy(area, p);
-        // `i = 0` is the head (full accent); `i = SEGMENT - 1` is almost
-        // back to surface. +1 in the denominator keeps the dimmest cell
-        // still slightly tinted so the segment never quite vanishes.
-        let mix = (SEGMENT - i) as f32 / (SEGMENT as f32 + 1.0);
-        if let Some(cell) = buf.cell_mut((x, y)) {
-            cell.set_fg(blend_color(t.surface, t.accent, mix));
-        }
-    }
-}
-
-/// Map a position along the rectangle's perimeter (clockwise from the
-/// top-left corner) to absolute cell coordinates. Wraps cleanly because
-/// `p` is taken mod-perimeter by the caller.
-fn perimeter_xy(area: Rect, p: usize) -> (u16, u16) {
-    let w = area.width as usize;
-    let h = area.height as usize;
-    if p < w {
-        (area.x + p as u16, area.y)
-    } else if p < w + h - 1 {
-        (area.x + (w - 1) as u16, area.y + (p - w + 1) as u16)
-    } else if p < 2 * w + h - 2 {
-        (area.x + (2 * w + h - 3 - p) as u16, area.y + (h - 1) as u16)
-    } else {
-        (area.x, area.y + (2 * w + 2 * h - 4 - p) as u16)
-    }
-}
-
-/// Linear blend between two RGB colors. Falls back to `to` if either
-/// side isn't RGB (theme defines all relevant colors as `Color::Rgb`,
-/// so this is just defensive).
-fn blend_color(from: Color, to: Color, t: f32) -> Color {
-    let t = t.clamp(0.0, 1.0);
-    match (from, to) {
-        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
-            let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
-            Color::Rgb(lerp(r1, r2), lerp(g1, g2), lerp(b1, b2))
-        }
-        _ => to,
-    }
 }
 
 fn render_dim_overlay(frame: &mut Frame, area: Rect) {

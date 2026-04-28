@@ -863,10 +863,6 @@ impl App {
     pub fn has_active_animation(&self) -> bool {
         self.commands.has_active_animation()
             || self.status_flash_active().is_some()
-            // Marching border around the outer block while viewing a
-            // captured session — keeps the main loop polling at the
-            // animation cadence instead of the idle 1s tick.
-            || self.is_viewing_session()
     }
 
 }
