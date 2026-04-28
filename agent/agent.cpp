@@ -222,32 +222,23 @@ bool init_jni_heap(JavaVM* vm, JniHeap* h) {
         LOGE("AttachCurrentThreadAsDaemon failed");
         return false;
     }
-    LOGI("init_jni_heap: attached daemon thread, env=%p", h->env);
     JNIEnv* env = h->env;
     jclass local_runtime = env->FindClass("java/lang/Runtime");
-    LOGI("init_jni_heap: FindClass Runtime -> %p", (void*)local_runtime);
     jclass local_debug   = env->FindClass("android/os/Debug");
-    LOGI("init_jni_heap: FindClass Debug -> %p", (void*)local_debug);
     if (local_runtime == nullptr || local_debug == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         LOGE("FindClass for Runtime/Debug failed");
         return false;
     }
     h->runtime_cls = (jclass)env->NewGlobalRef(local_runtime);
-    LOGI("init_jni_heap: NewGlobalRef runtime_cls -> %p", (void*)h->runtime_cls);
     h->debug_cls   = (jclass)env->NewGlobalRef(local_debug);
-    LOGI("init_jni_heap: NewGlobalRef debug_cls -> %p", (void*)h->debug_cls);
     env->DeleteLocalRef(local_runtime);
     env->DeleteLocalRef(local_debug);
 
     jmethodID get_runtime_mid = env->GetStaticMethodID(h->runtime_cls, "getRuntime", "()Ljava/lang/Runtime;");
-    LOGI("init_jni_heap: GetStaticMethodID getRuntime -> %p", (void*)get_runtime_mid);
     h->total_mid = env->GetMethodID(h->runtime_cls, "totalMemory", "()J");
-    LOGI("init_jni_heap: GetMethodID totalMemory -> %p", (void*)h->total_mid);
     h->free_mid  = env->GetMethodID(h->runtime_cls, "freeMemory",  "()J");
-    LOGI("init_jni_heap: GetMethodID freeMemory -> %p", (void*)h->free_mid);
     h->native_alloc_mid = env->GetStaticMethodID(h->debug_cls, "getNativeHeapAllocatedSize", "()J");
-    LOGI("init_jni_heap: GetStaticMethodID getNativeHeapAllocatedSize -> %p", (void*)h->native_alloc_mid);
     if (get_runtime_mid == nullptr || h->total_mid == nullptr ||
         h->free_mid == nullptr || h->native_alloc_mid == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
@@ -256,14 +247,12 @@ bool init_jni_heap(JavaVM* vm, JniHeap* h) {
     }
 
     jobject local_rt = env->CallStaticObjectMethod(h->runtime_cls, get_runtime_mid);
-    LOGI("init_jni_heap: Runtime.getRuntime() -> %p", (void*)local_rt);
     if (env->ExceptionCheck() || local_rt == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         LOGE("Runtime.getRuntime() failed");
         return false;
     }
     h->runtime_obj = env->NewGlobalRef(local_rt);
-    LOGI("init_jni_heap: NewGlobalRef runtime_obj -> %p", (void*)h->runtime_obj);
     env->DeleteLocalRef(local_rt);
     return true;
 }
@@ -298,21 +287,16 @@ struct JniNet {
 
 bool init_jni_net(JNIEnv* env, JniNet* n) {
     *n = JniNet{};
-    LOGI("init_jni_net: enter, env=%p", env);
     jclass local_traffic = env->FindClass("android/net/TrafficStats");
-    LOGI("init_jni_net: FindClass TrafficStats -> %p", (void*)local_traffic);
     if (local_traffic == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         LOGE("FindClass for TrafficStats failed");
         return false;
     }
     n->traffic_cls = (jclass)env->NewGlobalRef(local_traffic);
-    LOGI("init_jni_net: NewGlobalRef traffic_cls -> %p", (void*)n->traffic_cls);
     env->DeleteLocalRef(local_traffic);
     n->rx_mid = env->GetStaticMethodID(n->traffic_cls, "getUidRxBytes", "(I)J");
-    LOGI("init_jni_net: GetStaticMethodID getUidRxBytes -> %p", (void*)n->rx_mid);
     n->tx_mid = env->GetStaticMethodID(n->traffic_cls, "getUidTxBytes", "(I)J");
-    LOGI("init_jni_net: GetStaticMethodID getUidTxBytes -> %p", (void*)n->tx_mid);
     if (n->rx_mid == nullptr || n->tx_mid == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         LOGE("GetStaticMethodID for TrafficStats getUid{Rx,Tx}Bytes failed");
@@ -320,14 +304,12 @@ bool init_jni_net(JNIEnv* env, JniNet* n) {
     }
 
     jclass proc_cls = env->FindClass("android/os/Process");
-    LOGI("init_jni_net: FindClass Process -> %p", (void*)proc_cls);
     if (proc_cls == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         LOGE("FindClass for Process failed");
         return false;
     }
     jmethodID my_uid_mid = env->GetStaticMethodID(proc_cls, "myUid", "()I");
-    LOGI("init_jni_net: GetStaticMethodID Process.myUid -> %p", (void*)my_uid_mid);
     if (my_uid_mid == nullptr) {
         if (env->ExceptionCheck()) env->ExceptionClear();
         env->DeleteLocalRef(proc_cls);
@@ -335,7 +317,6 @@ bool init_jni_net(JNIEnv* env, JniNet* n) {
         return false;
     }
     n->uid = env->CallStaticIntMethod(proc_cls, my_uid_mid);
-    LOGI("init_jni_net: Process.myUid() -> %d", (int)n->uid);
     env->DeleteLocalRef(proc_cls);
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
@@ -347,7 +328,6 @@ bool init_jni_net(JNIEnv* env, JniNet* n) {
     // this device. Probe once and disable network emission rather than send
     // a stream of zeros that look like real flat traffic.
     jlong probe = env->CallStaticLongMethod(n->traffic_cls, n->rx_mid, n->uid);
-    LOGI("init_jni_net: TrafficStats.getUidRxBytes probe -> %lld", (long long)probe);
     if (env->ExceptionCheck()) { env->ExceptionClear(); probe = -1; }
     if (probe == -1) {
         LOGI("TrafficStats reports UNSUPPORTED for uid %d; skipping network samples", n->uid);
@@ -368,24 +348,20 @@ void read_jni_net(JNIEnv* env, JniNet* n, uint64_t* rx, uint64_t* tx) {
 }
 
 void* sampler_loop(void* arg) {
-    LOGI("sampler_loop: starting, vm=%p", arg);
     JavaVM* vm = (JavaVM*)arg;
     JniHeap heap;
     if (!init_jni_heap(vm, &heap)) {
         LOGE("sampler stopping: JNI heap setup failed");
         return nullptr;
     }
-    LOGI("sampler_loop: heap init ok");
     JniNet net;
     bool net_ok = init_jni_net(heap.env, &net);
-    LOGI("sampler_loop: net_ok=%d", (int)net_ok);
     long clock_ticks = sysconf(_SC_CLK_TCK);
     if (clock_ticks <= 0) clock_ticks = 100;
     long num_cores = sysconf(_SC_NPROCESSORS_ONLN);
     if (num_cores < 1) num_cores = 1;
     int64_t prev_ts_ns = 0;
     int64_t prev_jiffies = 0;
-    LOGI("sampler_loop: entering tick loop");
     for (;;) {
         int64_t ts_ns = now_ns();
         CpuStat stat = read_cpu_stat();
