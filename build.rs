@@ -13,16 +13,36 @@ const NDK_ENV_VARS: &[&str] = &[
     "ANDROID_NDK_ROOT",
     "ANDROID_NDK_LATEST_HOME",
 ];
+// CI builds the agent once on a Linux x86_64 runner and points every other
+// job at the resulting blobs through this env var, so the per-target jobs
+// don't each need a working NDK.
+const PREBUILT_ENV: &str = "HOLOAGENT_PREBUILT_DIR";
 
 fn main() {
     println!("cargo:rerun-if-changed=agent/agent.cpp");
     println!("cargo:rerun-if-changed=agent/jvmti.h");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-env-changed={PREBUILT_ENV}");
     for var in NDK_ENV_VARS {
         println!("cargo:rerun-if-env-changed={var}");
     }
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    if let Ok(prebuilt) = env::var(PREBUILT_ENV) {
+        let src = PathBuf::from(&prebuilt);
+        for (abi, _) in ABIS {
+            let name = format!("libholoagent-{abi}.so");
+            let from = src.join(&name);
+            assert!(
+                from.is_file(),
+                "{PREBUILT_ENV}={prebuilt} but {} is missing",
+                from.display()
+            );
+            fs::copy(&from, out_dir.join(&name)).unwrap();
+        }
+        return;
+    }
 
     let Some(ndk) = find_ndk() else {
         println!(
