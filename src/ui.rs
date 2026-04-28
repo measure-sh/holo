@@ -182,19 +182,19 @@ pub fn render_app(
 
     let sep = Style::new().fg(t.surface);
     let mut hint_spans = vec![
-        Span::styled(" ^", Style::new().fg(t.danger)),
-        Span::styled("quit ", Style::new().fg(t.muted)),
+        Span::styled(" ^q", Style::new().fg(t.danger)),
+        Span::styled("uit ", Style::new().fg(t.muted)),
         Span::styled("───", sep),
-        Span::styled(" ^", Style::new().fg(t.danger)),
-        Span::styled("history ", Style::new().fg(t.muted)),
+        Span::styled(" ^h", Style::new().fg(t.danger)),
+        Span::styled("istory ", Style::new().fg(t.muted)),
         Span::styled("───", sep),
         Span::styled(" ^␣ ", Style::new().fg(t.danger)),
         Span::styled("settings ", Style::new().fg(t.muted)),
     ];
     if app.is_viewing_session() {
         hint_spans.push(Span::styled("───", sep));
-        hint_spans.push(Span::styled(" ^", Style::new().fg(t.danger)));
-        hint_spans.push(Span::styled("live ", Style::new().fg(t.muted)));
+        hint_spans.push(Span::styled(" ^l", Style::new().fg(t.danger)));
+        hint_spans.push(Span::styled("ive ", Style::new().fg(t.muted)));
     }
     if app.focused_panel().is_some() {
         let label = if app.is_zoomed() { "zoom out " } else { "zoom in " };
