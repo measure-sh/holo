@@ -139,7 +139,7 @@ fn build_agent(toolchain: &Path, abi: &str, triple: &str, out_dir: &Path) {
             "-Wl,-z,max-page-size=16384",
             "-Wl,-z,common-page-size=16384",
             "-Wl,-z,separate-loadable-segments",
-            "-Wl,-z,now",
+            "-Wl,-z,lazy",
             "-Wl,-z,relro",
             "-Wl,--exclude-libs,ALL",
             "-Iagent",
