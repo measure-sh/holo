@@ -13,7 +13,7 @@ jobs:
   agent-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: nttld/setup-ndk@v1
         with:
@@ -27,7 +27,7 @@ jobs:
           mkdir -p agent-blobs
           find target/debug/build -name 'libholoagent-*.so' -exec cp {} agent-blobs/ \;
           ls -la agent-blobs
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: agent-blobs
           path: agent-blobs/
@@ -38,11 +38,11 @@ jobs:
     env:
       HOLOAGENT_PREBUILT_DIR: ${{ github.workspace }}/agent-blobs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: agent-blobs
           path: agent-blobs
@@ -71,11 +71,11 @@ jobs:
     env:
       HOLOAGENT_PREBUILT_DIR: ${{ github.workspace }}/agent-blobs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: agent-blobs
           path: agent-blobs
