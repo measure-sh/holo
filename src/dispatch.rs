@@ -3,9 +3,17 @@ use std::sync::{mpsc, Arc};
 use color_eyre::Result;
 
 use crate::adb::{Adb, AdbStatus, Device};
-use crate::app::{Action, App, Navigation};
+use crate::app::{Action, App, Navigation, SessionView};
 use crate::data::DataSources;
+use crate::replay::{self, ReplaySession};
+use crate::session::{self, SessionId};
 use crate::toolbar;
+
+// Vocabulary: `replay.rs` is the *loader* (one-shot read off disk).
+// `crate::app::SessionView` is the *runtime* state held by App while the
+// user keeps a loaded session on screen. Dispatch only owns the in-flight
+// load receiver (`session_view_rx`); the view itself lives on App. User-
+// facing wording is "open session" / "viewing session" / "live".
 
 type Rollback = Box<dyn FnOnce(&mut App) + Send>;
 
@@ -27,6 +35,12 @@ pub struct DispatchContext {
     pub command_rx: mpsc::Receiver<CommandResult>,
     pub adb_status_rx: mpsc::Receiver<AdbStatus>,
     pub pending_redraw: bool,
+    /// Pending session load triggered by `Action::OpenSession`. Resolves
+    /// on the next `poll_receivers` tick by handing the loaded data to
+    /// `App::open_session_view`. Once installed there, dispatch does not
+    /// retain any view state of its own — `app.is_viewing_session()` is
+    /// the only source of truth.
+    pub session_view_rx: Option<mpsc::Receiver<Result<ReplaySession, String>>>,
 }
 
 pub struct PendingBuild {
@@ -113,6 +127,19 @@ impl DispatchContext {
                 }
             }
         }
+        if let Some(rx) = &self.session_view_rx
+            && let Ok(result) = rx.try_recv()
+        {
+            self.session_view_rx = None;
+            match result {
+                Ok(session) => self.apply_session_view(app, session),
+                Err(e) => {
+                    app.set_status_flash(format!("session load failed: {e}"), true);
+                    app.close_session_view();
+                    app.toolbar_mut().session_label = None;
+                }
+            }
+        }
     }
 
     pub fn dispatch(&mut self, action: Action, app: &mut App) -> bool {
@@ -123,6 +150,20 @@ impl DispatchContext {
                 tb.package.clone(),
             )
         };
+
+        // While viewing a captured session, side-effecting actions against
+        // the device are pointless — the user is looking at history, not
+        // touching live state. Short-circuit with a status flash so users
+        // learn the affordance without us actually dispatching the call.
+        // Quit, navigation, and session-management actions still go
+        // through.
+        if app.is_viewing_session() && action_is_blocked_while_viewing(&action) {
+            app.set_status_flash(
+                "viewing session — open ^h history to go live".into(),
+                true,
+            );
+            return false;
+        }
 
         match action {
             Action::Quit => return true,
@@ -135,6 +176,7 @@ impl DispatchContext {
                 }
             }
             Action::ChangeDevice(d) => {
+                self.clear_session_view(app);
                 let last = app.toolbar().last_package.clone();
                 app.commands_mut().is_emulator = d.serial.starts_with("emulator-");
                 app.toolbar_mut().device = Some(d.clone());
@@ -151,6 +193,7 @@ impl DispatchContext {
                 ));
             }
             Action::ChangeApp(p) => {
+                self.clear_session_view(app);
                 app.toolbar_mut().package = Some(p.clone());
                 app.toolbar_mut().last_package = Some(p.clone());
                 toolbar::save_last_package(&p);
@@ -267,19 +310,19 @@ impl DispatchContext {
                 }
             }
             Action::Screenshot => {
-                if let (Some(s), Some(p)) = (&serial, &package) {
+                if let (Some(s), Some(_p)) = (&serial, &package)
+                    && let Some(dest_dir) = artifact_dir_for(self, app, "screenshots")
+                {
                     app.set_status_flash("Taking screenshot...".into(), false);
                     let adb = self.adb.clone();
                     let serial = s.clone();
-                    let package = p.clone();
                     let tx = self.command_tx.clone();
                     std::thread::spawn(move || {
                         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                        let dest = std::env::temp_dir().join("holo")
-                            .join(&package)
-                            .join("screenshots")
-                            .join(format!("{timestamp}_screenshot.png"));
-                        let result = adb.take_screenshot(&serial, &dest);
+                        let dest = dest_dir.join(format!("{timestamp}_screenshot.png"));
+                        let result = std::fs::create_dir_all(&dest_dir)
+                            .map_err(|e| color_eyre::eyre::eyre!("create dir: {e}"))
+                            .and_then(|_| adb.take_screenshot(&serial, &dest));
                         if result.is_ok() {
                             let _ = open::that(&dest);
                         }
@@ -318,17 +361,37 @@ impl DispatchContext {
             Action::CopyDbResult(text) => {
                 crate::clipboard::copy_to_clipboard(&text);
             }
+            Action::CopyPath(text) => {
+                if crate::clipboard::copy_to_clipboard(&text) {
+                    app.set_status_flash(format!("copied {text}"), false);
+                } else {
+                    app.set_status_flash("clipboard copy failed".into(), true);
+                }
+            }
             Action::OpenLogcat => {
-                if let Some(d) = &self.data {
-                    let filter = &app.logcat_state().filter;
-                    let text: String = d.logcat_lines
-                        .iter()
-                        .filter(|line| filter.matches(line))
-                        .cloned()
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    if open_in_editor(text, package.as_deref(), "logcat", "log") {
-                        self.pending_redraw = true;
+                // The captured logcat already lives on disk inside the
+                // displayed session — no need to rewrite a filtered copy.
+                // Resolve which session is on screen (live or viewed) and
+                // hand the file to `$EDITOR` directly. Filter is dropped
+                // intentionally; users grep inside the editor instead.
+                let id = if let Some(view) = app.session_view() {
+                    Some(view.id.clone())
+                } else {
+                    self.data.as_ref().and_then(|d| d.active_session_id().cloned())
+                };
+                match id {
+                    Some(id) => {
+                        let path = id.dir().join("logcat.log");
+                        if path.exists() {
+                            if launch_editor(&path) {
+                                self.pending_redraw = true;
+                            }
+                        } else {
+                            app.set_status_flash("no session log yet".into(), true);
+                        }
+                    }
+                    None => {
+                        app.set_status_flash("no session log yet".into(), true);
                     }
                 }
             }
@@ -338,8 +401,13 @@ impl DispatchContext {
                 }
             }
             Action::PullDb(db) => {
-                if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
-                    d.start_pull(self.adb.clone(), s.clone(), p.clone(), db);
+                if let (Some(s), Some(p), Some(dest)) = (
+                    &serial,
+                    &package,
+                    artifact_dir_for(self, app, "db"),
+                ) && let Some(d) = &mut self.data
+                {
+                    d.start_pull(self.adb.clone(), s.clone(), p.clone(), db, dest);
                 }
             }
             Action::DbFetchTables(db) => {
@@ -358,8 +426,13 @@ impl DispatchContext {
                 }
             }
             Action::OpenFile(path) => {
-                if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
-                    d.start_pull_file(self.adb.clone(), s.clone(), p.clone(), path);
+                if let (Some(s), Some(p), Some(dest)) = (
+                    &serial,
+                    &package,
+                    artifact_dir_for(self, app, "files"),
+                ) && let Some(d) = &mut self.data
+                {
+                    d.start_pull_file(self.adb.clone(), s.clone(), p.clone(), path, dest);
                 }
             }
             Action::StartTrace => {
@@ -369,9 +442,14 @@ impl DispatchContext {
                 }
             }
             Action::StopTrace => {
-                if let (Some(d), Some(s), Some(p)) = (&mut self.data, &serial, &package) {
+                if let (Some(s), Some(p), Some(dest)) = (
+                    &serial,
+                    &package,
+                    artifact_dir_for(self, app, "traces"),
+                ) && let Some(d) = &mut self.data
+                {
                     let preset = app.trace_state().preset;
-                    d.stop_and_pull_trace(self.adb.clone(), s.clone(), p.clone(), preset);
+                    d.stop_and_pull_trace(self.adb.clone(), s.clone(), p.clone(), preset, dest);
                 }
             }
             Action::LaunchEmulator(name) => {
@@ -417,9 +495,26 @@ impl DispatchContext {
                 }
             }
             Action::OpenInEditor(text) => {
-                if open_in_editor(text, package.as_deref(), "issues", "txt") {
+                if let Some(dir) = artifact_dir_for(self, app, "dumps")
+                    && open_in_editor(text, &dir, "issues", "txt")
+                {
                     self.pending_redraw = true;
                 }
+            }
+            Action::RefreshSessions => {
+                refresh_sessions(self, app);
+            }
+            Action::OpenSession(id) => {
+                self.open_session(app, id);
+            }
+            Action::DeleteSession(id) => {
+                if let Err(e) = session::delete_session(&id) {
+                    app.set_status_flash(format!("delete failed: {e}"), true);
+                }
+                refresh_sessions(self, app);
+            }
+            Action::CloseSession => {
+                self.close_session(app);
             }
             Action::Noop | Action::Unfocus => {}
         }
@@ -427,17 +522,198 @@ impl DispatchContext {
     }
 }
 
-/// Writes `text` to a temp file and opens it in `$EDITOR` (or `$VISUAL`).
+/// True for actions that try to mutate the device or kick off background
+/// adb work. While viewing a captured session, these are short-circuited —
+/// the user is looking at history, not interacting with the device — but
+/// navigation, refresh, copy-to-clipboard, and session-management actions
+/// still go through.
+fn action_is_blocked_while_viewing(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::OpenApp
+            | Action::OpenAppInfo
+            | Action::KillApp
+            | Action::ClearData
+            | Action::UninstallApp
+            | Action::WakeScreen
+            | Action::ToggleLayoutBounds
+            | Action::ToggleAirplaneMode
+            | Action::TogglePermission(_, _)
+            | Action::Screenshot
+            | Action::ToggleWifi
+            | Action::ToggleDarkMode
+            | Action::ToggleShowTaps
+            | Action::TogglePointerLocation
+            | Action::ToggleGpuRendering
+            | Action::ToggleTalkback
+            | Action::WirelessAdb
+            | Action::MirrorDevice
+            | Action::StartTrace
+            | Action::StopTrace
+            | Action::RunQuery(_, _)
+            | Action::PullDb(_)
+            | Action::DbFetchTables(_)
+            | Action::RefreshDb
+            | Action::RefreshFiles
+            | Action::ExpandDir(_)
+            | Action::OpenFile(_)
+            // ResetLogcat clears `data.logcat_lines` — the live tail. The
+            // user can still see it after closing the view, so dropping
+            // it from a hidden buffer is a silent surprise.
+            | Action::ResetLogcat,
+    )
+}
+
+/// Re-scan the sessions root for the current package and stamp the active
+/// live session id (if any) so the dialog can render its `(live)` badge.
+pub fn refresh_sessions(ctx: &mut DispatchContext, app: &mut App) {
+    let package = app.toolbar().package.clone();
+    let sessions = package
+        .as_deref()
+        .map(session::list_sessions)
+        .unwrap_or_default();
+    let live_id = ctx.data.as_ref().and_then(|d| d.active_session_id().cloned());
+    let state = app.sessions_state_mut();
+    state.set_sessions(sessions);
+    state.live_id = live_id;
+}
+
+impl DispatchContext {
+    fn open_session(&mut self, app: &mut App, id: SessionId) {
+        // Capture is "always on": we keep `self.data` alive so the live
+        // SessionWriter keeps appending while the user looks at history.
+        // App-state pushes are gated by `data.rs::poll` against
+        // `app.is_viewing_session()`.
+        self.session_view_rx = Some(replay::load(id.clone()));
+        if let Some(pkg) = app.toolbar().package.clone() {
+            // Clear panel data shapes so partial-load states never bleed
+            // older session contents into the view.
+            app.reset_panel_data_for_app(&pkg);
+        }
+        app.set_status_flash(format!("loading session {}…", id.dir_name), false);
+    }
+
+    fn close_session(&mut self, app: &mut App) {
+        if !self.clear_session_view(app) {
+            return;
+        }
+        // No respawn — `self.data` was kept alive across the session view.
+        // Reset App state so the live workers' next pushes start fresh; the
+        // logcat panel continues to show the in-memory tail accumulated by
+        // `DataSources` while the captured session was open.
+        if let Some(pkg) = app.toolbar().package.clone() {
+            app.reset_panel_data_for_app(&pkg);
+        }
+    }
+
+    /// Drop session-view state without re-spawning live workers. Used by
+    /// `close_session` and by ChangeDevice/ChangeApp (which respawn the
+    /// build themselves). Returns `true` if there was anything to clear —
+    /// either an installed view or a still-pending load.
+    fn clear_session_view(&mut self, app: &mut App) -> bool {
+        let had_pending = self.session_view_rx.take().is_some();
+        let had_view = app.close_session_view();
+        if had_view {
+            app.toolbar_mut().session_label = None;
+        }
+        had_view || had_pending
+    }
+
+    fn apply_session_view(&mut self, app: &mut App, session: ReplaySession) {
+        let label = format!(
+            "{} · {}",
+            session.meta.package,
+            session.meta.started_at.format("%Y-%m-%d %H:%M:%S"),
+        );
+        app.toolbar_mut().session_label = Some(label);
+
+        // Swap captured state into App. NetworkState/IssuesState/MonitorState
+        // already match the live shapes, so no translation needed.
+        *app.network_state_mut() = session.network;
+        *app.issues_state_mut() = session.issues;
+        *app.monitor_state_mut() = session.monitor;
+        // Trace panel reads its file list from a directory; point it at the
+        // captured session's traces/.
+        let mut trace_state = crate::trace::TraceState::new(&session.meta.package);
+        trace_state.pulled_traces = crate::trace::list_perfetto_traces(&session.traces_dir);
+        *app.trace_state_mut() = trace_state;
+
+        // Single transition: install the view, snapshot+collapse layout,
+        // drop focus. After this returns there are no half-states for any
+        // caller to mishandle.
+        app.open_session_view(SessionView {
+            id: session.id,
+            logcat_lines: std::sync::Arc::from(session.logcat),
+        });
+        app.set_status_flash("session loaded".into(), false);
+    }
+}
+
+/// Resolve the on-disk directory an artifact (screenshot, pulled file,
+/// editor dump, etc.) should land in. The single source of truth for "where
+/// does this go on disk" — kept here so individual action handlers don't
+/// each re-derive the policy.
+///
+/// Resolution order:
+/// 1. Viewing a captured session → that session's dir + `kind` subdir.
+/// 2. Live capture has an active session → its dir + `kind` subdir.
+/// 3. Else → `<sessions_root>/<package>/_unsessioned/<kind>/`. The `_`
+///    prefix sorts before timestamped session dirs and is filtered out
+///    of the history dialog by the metadata.json check.
+///
+/// Returns `None` only when no `package` is selected at all (which means
+/// the action wasn't reachable to begin with — every caller already gates
+/// on `app.toolbar().package.is_some()`).
+pub(crate) fn artifact_dir_for(
+    ctx: &DispatchContext,
+    app: &App,
+    kind: &str,
+) -> Option<std::path::PathBuf> {
+    artifact_dir_for_inner(
+        app.session_view().map(|v| &v.id),
+        ctx.data.as_ref().and_then(|d| d.active_session_id()),
+        app.toolbar().package.as_deref(),
+        kind,
+    )
+}
+
+/// Pure helper, broken out so the resolution policy is testable without
+/// constructing a real `DispatchContext` (which spawns worker threads).
+/// `viewed_session` being `Some` already implies viewing mode (single
+/// source of truth on `App::session_view`), so no separate flag is needed.
+fn artifact_dir_for_inner(
+    viewed_session: Option<&SessionId>,
+    live_session: Option<&SessionId>,
+    package: Option<&str>,
+    kind: &str,
+) -> Option<std::path::PathBuf> {
+    if let Some(id) = viewed_session {
+        return Some(id.dir().join(kind));
+    }
+    if let Some(id) = live_session {
+        return Some(id.dir().join(kind));
+    }
+    let package = package?;
+    Some(
+        session::sessions_root()
+            .join(package)
+            .join("_unsessioned")
+            .join(kind),
+    )
+}
+
+/// Writes `text` into a session-resident dumps file and opens it in
+/// `$EDITOR`. The destination directory is supplied by the caller (typically
+/// via `artifact_dir_for(..., "dumps")`); `source` is folded into the file
+/// name so callers can tell `issues` and `network` dumps apart at a glance.
 /// Returns `true` when a terminal editor was launched synchronously, so the
 /// caller can force ratatui to redraw after the editor exits.
-fn open_in_editor(text: String, package: Option<&str>, subdir: &str, ext: &str) -> bool {
-    let package = package.unwrap_or("unknown");
-    let dir = std::env::temp_dir().join("holo").join(package).join(subdir);
-    if std::fs::create_dir_all(&dir).is_err() {
+fn open_in_editor(text: String, dir: &std::path::Path, source: &str, ext: &str) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
     let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let path = dir.join(format!("{timestamp}.{ext}"));
+    let path = dir.join(format!("{timestamp}_{source}.{ext}"));
     if std::fs::write(&path, &text).is_err() {
         return false;
     }
@@ -658,7 +934,13 @@ pub fn spawn_select_and_build(
             .as_deref()
             .and_then(|lp| packages.iter().find(|p| p.as_str() == lp).cloned());
         let built = auto_pkg.map(|pkg| {
-            let data = DataSources::new(adb.clone(), &device.serial, &pkg, &panel_vis);
+            let data = DataSources::new(
+                adb.clone(),
+                &device.serial,
+                device.model.as_deref(),
+                &pkg,
+                &panel_vis,
+            );
             let title = build_title(&data);
             AutoBuild { package: pkg, data, title }
         });
@@ -681,7 +963,13 @@ pub fn spawn_build(
 ) -> mpsc::Receiver<PendingBuild> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let data = DataSources::new(adb.clone(), &device.serial, &package, &panel_vis);
+        let data = DataSources::new(
+            adb.clone(),
+            &device.serial,
+            device.model.as_deref(),
+            &package,
+            &panel_vis,
+        );
         let title = build_title(&data);
         let _ = tx.send(PendingBuild {
             device,
@@ -716,5 +1004,56 @@ fn apply_pending_build(ctx: &mut DispatchContext, app: &mut App, pb: PendingBuil
             // navigation state has been observed), not here — this function
             // is a pure data update.
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn id(dir: &str) -> SessionId {
+        SessionId {
+            package: "com.test".into(),
+            dir_name: dir.into(),
+        }
+    }
+
+    #[test]
+    fn resolver_prefers_viewed_session_over_live() {
+        let viewed = id("captured");
+        let live = id("running");
+        let dir = artifact_dir_for_inner(
+            Some(&viewed),
+            Some(&live),
+            Some("com.test"),
+            "dumps",
+        )
+        .unwrap();
+        assert!(dir.ends_with("captured/dumps"));
+    }
+
+    #[test]
+    fn resolver_falls_back_to_live_when_not_viewing() {
+        let live = id("running");
+        let dir =
+            artifact_dir_for_inner(None, Some(&live), Some("com.test"), "screenshots")
+                .unwrap();
+        assert!(dir.ends_with("running/screenshots"));
+    }
+
+    #[test]
+    fn resolver_uses_unsessioned_when_no_session_active() {
+        let dir =
+            artifact_dir_for_inner(None, None, Some("com.test"), "screenshots").unwrap();
+        assert!(dir.ends_with("com.test/_unsessioned/screenshots"));
+    }
+
+    #[test]
+    fn resolver_returns_none_without_a_package() {
+        // No package selected and no session anywhere — there's nowhere
+        // useful to write, and the action wasn't reachable from any panel
+        // path that requires a package.
+        let dir = artifact_dir_for_inner(None, None, None, "screenshots");
+        assert!(dir.is_none());
     }
 }

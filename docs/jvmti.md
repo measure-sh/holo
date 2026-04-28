@@ -40,30 +40,6 @@ the OS only lets us inject code into apps that opted in via
 
 ## The pieces
 
-```
-   ┌──────────────┐                         ┌──────────────────────┐
-   │  Holo (host) │                         │  target app (device) │
-   │              │                         │                      │
-   │  vitals/     │   adb push + run-as     │   /data/data/<pkg>/  │
-   │   reader.rs  │ ──────────────────────▶ │   libholoagent.so    │
-   │              │                         │                      │
-   │              │   cmd activity          │   ART loads .so via  │
-   │              │   attach-agent          │   Agent_OnAttach()   │
-   │              │ ──────────────────────▶ │                      │
-   │              │                         │   bind() abstract    │
-   │              │                         │   socket             │
-   │              │                         │   @holoagent-<pid>   │
-   │              │                         │                      │
-   │              │   adb forward           │                      │
-   │              │   tcp:0 localabstract   │                      │
-   │              │ ──────────────────────▶ │                      │
-   │              │                         │                      │
-   │  TCP read    │ ◀───── binary frames ── │  sampler thread      │
-   │  loop        │                         │  + GC callbacks      │
-   │              │                         │  enqueue + serve     │
-   └──────────────┘                         └──────────────────────┘
-```
-
 There are three things at play:
 
 1. **The agent** — a ~50 KB native library (`agent/agent.cpp`, cross-compiled
@@ -106,6 +82,13 @@ produced. `cpu_centi_percent` is the divided-by-cores percentage × 100
 since boot (host computes bps deltas). The host enforces strict
 payload-length checks; agent and host ship together via `build.rs`, so
 there is no version negotiation.
+
+When session capture is on, the same frames are re-encoded and appended to
+`vitals.bin` inside the active session directory. Replay reads them back via
+`vitals::decode_frames` (the synchronous twin of `pump_frames`). Sessions
+include a `schema_version` in `metadata.json`; bump it whenever this wire
+format changes so older holos refuse to misinterpret newer captures. See
+[sessions.md](sessions.md).
 
 ## How it's built and bundled
 

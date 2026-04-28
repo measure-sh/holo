@@ -543,6 +543,7 @@ pub fn spawn_pull_file(
     serial: String,
     package: String,
     remote_path: String,
+    dest_dir: PathBuf,
 ) -> mpsc::Receiver<Result<PathBuf, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
@@ -552,14 +553,13 @@ pub fn spawn_pull_file(
             .to_string_lossy()
             .to_string();
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let dest = std::env::temp_dir().join("holo")
-            .join(&package)
-            .join("files")
-            .join(format!("{timestamp}_{file_name}"));
-        let result = adb
-            .pull_file(&serial, &package, &remote_path, &dest)
-            .map(|_| dest)
-            .map_err(|e| e.to_string());
+        let dest = dest_dir.join(format!("{timestamp}_{file_name}"));
+        let mk = std::fs::create_dir_all(&dest_dir).map_err(|e| e.to_string());
+        let result = mk.and_then(|_| {
+            adb.pull_file(&serial, &package, &remote_path, &dest)
+                .map(|_| dest.clone())
+                .map_err(|e| e.to_string())
+        });
         let _ = tx.send(result);
     });
     rx

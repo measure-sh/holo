@@ -47,6 +47,22 @@ impl TracePreset {
 
 type FileMap = Arc<Mutex<HashMap<String, PathBuf>>>;
 
+/// List `*.perfetto-trace` files in `dir`, sorted alphabetically. Used both
+/// by live mode (when a session writer rotates) and by replay (loading a
+/// captured session's `traces/`). Trace-format ownership belongs to this
+/// module, so consumers don't have to reach across `dispatch`.
+pub fn list_perfetto_traces(dir: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("perfetto-trace"))
+        .collect();
+    out.sort();
+    out
+}
+
 pub struct TraceState {
     pub preset: TracePreset,
     pub recording: bool,
@@ -72,26 +88,18 @@ impl Drop for TraceServer {
 }
 
 impl TraceState {
-    pub fn new(package: &str) -> Self {
-        let traces_dir = std::env::temp_dir()
-            .join("holo")
-            .join(package)
-            .join("traces");
-        let mut pulled_traces: Vec<PathBuf> = std::fs::read_dir(&traces_dir)
-            .into_iter()
-            .flatten()
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("perfetto-trace"))
-            .collect();
-        pulled_traces.sort();
+    pub fn new(_package: &str) -> Self {
+        // Trace listings are sourced from the active session's `traces/`
+        // directory. `DataSources::poll` populates `pulled_traces` when a
+        // live session writer opens; `apply_session_view` populates it for
+        // captured sessions. `TraceState` itself stays empty until then.
         Self {
             preset: TracePreset::Default,
             recording: false,
             started_at: None,
             status_message: None,
             message_at: None,
-            pulled_traces,
+            pulled_traces: Vec::new(),
             selected_index: 0,
             server: None,
         }
@@ -423,16 +431,13 @@ pub fn spawn_start_trace(
 pub fn spawn_stop_and_pull_trace(
     adb: Arc<dyn Adb>,
     serial: String,
-    package: String,
+    dest_dir: PathBuf,
     preset: TracePreset,
 ) -> mpsc::Receiver<Result<PathBuf, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let dest = std::env::temp_dir()
-            .join("holo")
-            .join(&package)
-            .join("traces")
+        let dest = dest_dir
             .join(format!("{}_{timestamp}_trace.perfetto-trace", preset.file_prefix()));
         let result = adb
             .stop_and_pull_trace(&serial, &dest)

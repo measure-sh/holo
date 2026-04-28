@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState},
     Frame,
@@ -18,6 +18,7 @@ use crate::panel;
 use crate::issues_ui;
 use crate::network_ui;
 use crate::permissions_ui;
+use crate::sessions_ui;
 use crate::theme;
 
 
@@ -179,19 +180,27 @@ pub fn render_app(
             .add_modifier(Modifier::BOLD),
     );
 
+    let sep = Style::new().fg(t.surface);
     let mut hint_spans = vec![
         Span::styled(" ^q ", Style::new().fg(t.danger)),
         Span::styled("quit ", Style::new().fg(t.muted)),
+        Span::styled("───", sep),
+        Span::styled(" ^h ", Style::new().fg(t.danger)),
+        Span::styled("history ", Style::new().fg(t.muted)),
+        Span::styled("───", sep),
         Span::styled(" ^␣ ", Style::new().fg(t.danger)),
         Span::styled("settings ", Style::new().fg(t.muted)),
     ];
     if app.focused_panel().is_some() {
         let label = if app.is_zoomed() { "zoom out " } else { "zoom in " };
+        hint_spans.push(Span::styled("───", sep));
         hint_spans.push(Span::styled(" ^z ", Style::new().fg(t.danger)));
         hint_spans.push(Span::styled(label, Style::new().fg(t.muted)));
     }
     let hint_line = Line::from(hint_spans);
 
+    // Status flashes stay centered for visibility; the steady-state
+    // branding sits at the bottom-right alongside the hints row.
     let branding_line = if let Some((msg, is_error)) = app.status_flash_active() {
         let color = if is_error { t.danger } else { t.success };
         Line::from(Span::styled(
@@ -204,7 +213,7 @@ pub fn render_app(
             Span::styled("\u{2665}", Style::new().fg(t.danger)),
             Span::styled(" by ", Style::new().fg(t.muted)),
             Span::styled("measure.sh ", Style::new().fg(t.accent)),
-        ]).alignment(Alignment::Center)
+        ]).alignment(Alignment::Right)
     };
 
     let mut block = Block::default()
@@ -220,17 +229,26 @@ pub fn render_app(
         title,
         Style::new().fg(t.muted),
     ))
-    .alignment(Alignment::Right);
+    .alignment(Alignment::Center);
 
     block = block
+        .title(info_line)
         .title_bottom(hint_line)
         .title_bottom(branding_line)
-        .title_bottom(info_line)
         .border_style(Style::new().fg(t.surface))
         .style(Style::new().bg(t.bg).fg(t.fg));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
+
+    // Trace a single accent segment around the perimeter while a captured
+    // session is open — a quiet "this isn't live" marker that's visible no
+    // matter where the user is looking. The block's border characters are
+    // already painted; we only override the foreground color of cells in
+    // the moving window.
+    if app.is_viewing_session() {
+        render_marching_border(frame, area);
+    }
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -252,6 +270,23 @@ pub fn render_app(
             render_dim_overlay(frame, area);
             render_settings(frame, area, app);
         }
+        crate::app::Navigation::Sessions => {
+            render_dim_overlay(frame, area);
+            // Pass the active flash through so it renders inside the
+            // dialog — the bottom title_bottom flash is buried under the
+            // dim overlay and unreadable while the dialog is open.
+            let flash = app
+                .status_flash_active()
+                .map(|(msg, is_error)| (msg.to_string(), is_error));
+            let viewing_id = app.session_view().map(|v| &v.id);
+            sessions_ui::render_sessions_dialog(
+                frame,
+                area,
+                app.sessions_state(),
+                viewing_id,
+                flash,
+            );
+        }
         crate::app::Navigation::Dialog(msg) => {
             render_dim_overlay(frame, area);
             render_dialog(frame, area, msg);
@@ -263,6 +298,12 @@ pub fn render_app(
 fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
     let t = theme::current();
     let tb = app.toolbar();
+
+    if let Some(label) = tb.session_label.as_deref() {
+        render_session_chip(frame, area, label);
+        return;
+    }
+
     let has_device = tb.device.is_some();
     let has_app = tb.package.is_some();
 
@@ -336,6 +377,130 @@ fn render_toolbar(frame: &mut Frame, area: Rect, app: &App) {
         ])),
         app_inner,
     );
+}
+
+/// Live-only panels (Permissions, Files, Database) keep their borders +
+/// title while a captured session is open so the layout doesn't reflow,
+/// but show a single muted line that tells the user why they're empty.
+fn render_live_only_placeholder(frame: &mut Frame, area: Rect, panel_number: u8, focused: bool) {
+    let t = theme::current();
+    let block = panel_block(panel_number, focused);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new(Line::from(Span::styled(
+            " live only — open ^h history and select Live",
+            Style::new().fg(t.muted),
+        ))),
+        inner,
+    );
+}
+
+fn render_session_chip(frame: &mut Frame, area: Rect, label: &str) {
+    let t = theme::current();
+    let content = format!(" VIEWING  {label} ");
+    let width = (content.chars().count() as u16 + 2).min(area.width.saturating_sub(2));
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let chip_area = Rect::new(x, area.y, width, 3).intersection(area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::new().fg(t.accent))
+        .title(Line::from(vec![
+            Span::styled(" ^l", Style::new().fg(t.danger)),
+            Span::styled(" live ", Style::new().fg(t.muted)),
+            Span::styled("^h", Style::new().fg(t.danger)),
+            Span::styled(" history ", Style::new().fg(t.muted)),
+        ]));
+    let inner = block.inner(chip_area);
+    frame.render_widget(block, chip_area);
+    frame.render_widget(
+        ratatui::widgets::Paragraph::new(Line::from(Span::styled(
+            content,
+            Style::new().fg(t.accent).add_modifier(Modifier::BOLD),
+        ))),
+        inner,
+    );
+}
+
+/// Draws a glow segment chasing around the perimeter of `area`. Used to
+/// signal that the UI is in captured-session view mode — subtle, alive,
+/// and unmistakable. Only the foreground color of border cells is
+/// touched; the actual border glyphs (rounded corners, lines) are
+/// whatever the underlying Block widget rendered.
+///
+/// The animation cadence is driven by wall-clock time, so frame skips
+/// don't desync the pattern. `App::has_active_animation()` includes
+/// view mode so the main loop polls fast enough to look smooth.
+fn render_marching_border(frame: &mut Frame, area: Rect) {
+    if area.width < 2 || area.height < 2 {
+        return;
+    }
+    let t = theme::current();
+    let w = area.width as usize;
+    let h = area.height as usize;
+    let perim = 2 * (w + h - 2);
+    if perim == 0 {
+        return;
+    }
+
+    // 80 cells/sec — at the 50ms render cadence this is ~4 cells per
+    // frame, smooth enough to read as motion on terminals of any size.
+    const CELLS_PER_SEC: u128 = 80;
+    // Trail length. The head is drawn brightest; each cell behind it
+    // fades back to the surface color in equal steps.
+    const SEGMENT: usize = 10;
+
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let head = ((now_ms * CELLS_PER_SEC / 1000) % perim as u128) as usize;
+
+    let buf = frame.buffer_mut();
+    for i in 0..SEGMENT {
+        let p = (head + perim - i) % perim;
+        let (x, y) = perimeter_xy(area, p);
+        // `i = 0` is the head (full accent); `i = SEGMENT - 1` is almost
+        // back to surface. +1 in the denominator keeps the dimmest cell
+        // still slightly tinted so the segment never quite vanishes.
+        let mix = (SEGMENT - i) as f32 / (SEGMENT as f32 + 1.0);
+        if let Some(cell) = buf.cell_mut((x, y)) {
+            cell.set_fg(blend_color(t.surface, t.accent, mix));
+        }
+    }
+}
+
+/// Map a position along the rectangle's perimeter (clockwise from the
+/// top-left corner) to absolute cell coordinates. Wraps cleanly because
+/// `p` is taken mod-perimeter by the caller.
+fn perimeter_xy(area: Rect, p: usize) -> (u16, u16) {
+    let w = area.width as usize;
+    let h = area.height as usize;
+    if p < w {
+        (area.x + p as u16, area.y)
+    } else if p < w + h - 1 {
+        (area.x + (w - 1) as u16, area.y + (p - w + 1) as u16)
+    } else if p < 2 * w + h - 2 {
+        (area.x + (2 * w + h - 3 - p) as u16, area.y + (h - 1) as u16)
+    } else {
+        (area.x, area.y + (2 * w + 2 * h - 4 - p) as u16)
+    }
+}
+
+/// Linear blend between two RGB colors. Falls back to `to` if either
+/// side isn't RGB (theme defines all relevant colors as `Color::Rgb`,
+/// so this is just defensive).
+fn blend_color(from: Color, to: Color, t: f32) -> Color {
+    let t = t.clamp(0.0, 1.0);
+    match (from, to) {
+        (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
+            let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
+            Color::Rgb(lerp(r1, r2), lerp(g1, g2), lerp(b1, b2))
+        }
+        _ => to,
+    }
 }
 
 fn render_dim_overlay(frame: &mut Frame, area: Rect) {
@@ -463,20 +628,12 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
 
     frame.render_widget(Clear, dialog_area);
 
-    let border_fg = Style::new().fg(t.surface);
     let bottom_spans: Vec<Span> = match cursor {
         0 => vec![
             Span::styled(" \u{2190}\u{2192}", Style::new().fg(t.danger)),
             Span::styled(" change ", Style::new().fg(t.muted)),
         ],
-        1 => vec![
-            Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
-            Span::styled(" open ", Style::new().fg(t.muted)),
-            Span::styled("───", border_fg),
-            Span::styled(" c", Style::new().fg(t.danger)),
-            Span::styled("opy path ", Style::new().fg(t.muted)),
-        ],
-        2 | 3 => vec![
+        1 | 2 => vec![
             Span::styled(" \u{21b5}", Style::new().fg(t.danger)),
             Span::styled(" open in browser ", Style::new().fg(t.muted)),
         ],
@@ -488,7 +645,7 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
         .border_type(BorderType::Rounded)
         .title(Span::styled(" settings ", Style::new().fg(t.fg)))
         .title_bottom(Line::from(bottom_spans))
-        .border_style(border_fg)
+        .border_style(Style::new().fg(t.surface))
         .style(Style::new().bg(t.bg));
 
     let inner = block.inner(dialog_area);
@@ -503,10 +660,6 @@ fn render_settings(frame: &mut Frame, area: Rect, app: &App) {
         ListItem::new(Line::from(vec![
             Span::styled(" Theme", Style::new().fg(t.fg)),
             Span::styled(format!("  \u{25c2} {name} \u{25b8}"), Style::new().fg(t.muted)),
-        ])),
-        ListItem::new(Line::from(vec![
-            Span::styled(" Downloads", Style::new().fg(t.fg)),
-            Span::styled("  files, databases, traces", Style::new().fg(t.muted)),
         ])),
         ListItem::new(vec![
             Line::from(vec![
@@ -690,11 +843,18 @@ fn render_mid_section(frame: &mut Frame, area: Rect, app: &mut App, issues_visib
         .constraints(constraints)
         .split(area);
 
+    let viewing = app.is_viewing_session();
     for (i, &p) in panels.iter().enumerate() {
         match p {
             panel::ISSUES => issues_ui::render_issues_panel(frame, cols[i], is_focused(app, panel::ISSUES), app.issues_state()),
             panel::TRACE => crate::trace_ui::render_trace_panel(frame, cols[i], is_focused(app, panel::TRACE), app.trace_state()),
-            panel::PERMISSIONS => permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state()),
+            panel::PERMISSIONS => {
+                if viewing {
+                    render_live_only_placeholder(frame, cols[i], panel::PERMISSIONS, is_focused(app, panel::PERMISSIONS));
+                } else {
+                    permissions_ui::render_permissions_panel(frame, cols[i], is_focused(app, panel::PERMISSIONS), app.permissions_state());
+                }
+            }
             _ => {}
         }
     }
@@ -792,6 +952,22 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
     let vis = app.panel_visibility();
     let files_visible = vis[6];
     let database_visible = vis[7];
+    let viewing = app.is_viewing_session();
+
+    let render_files = |frame: &mut Frame, area: Rect, app: &mut App| {
+        if viewing {
+            render_live_only_placeholder(frame, area, panel::FILES, is_focused(app, panel::FILES));
+        } else {
+            files_ui::render_files_panel(frame, area, is_focused(app, panel::FILES), app.files_state_mut());
+        }
+    };
+    let render_db = |frame: &mut Frame, area: Rect, app: &mut App| {
+        if viewing {
+            render_live_only_placeholder(frame, area, panel::DATABASE, is_focused(app, panel::DATABASE));
+        } else {
+            database_ui::render_database_panel(frame, area, is_focused(app, panel::DATABASE), app.database_state_mut());
+        }
+    };
 
     match (files_visible, database_visible) {
         (true, true) => {
@@ -799,11 +975,11 @@ fn render_bottom_section(frame: &mut Frame, area: Rect, app: &mut App) {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(area);
-            files_ui::render_files_panel(frame, cols[0], is_focused(app, panel::FILES), app.files_state_mut());
-            database_ui::render_database_panel(frame, cols[1], is_focused(app, panel::DATABASE), app.database_state_mut());
+            render_files(frame, cols[0], app);
+            render_db(frame, cols[1], app);
         }
-        (true, false) => files_ui::render_files_panel(frame, area, is_focused(app, panel::FILES), app.files_state_mut()),
-        (false, true) => database_ui::render_database_panel(frame, area, is_focused(app, panel::DATABASE), app.database_state_mut()),
+        (true, false) => render_files(frame, area, app),
+        (false, true) => render_db(frame, area, app),
         (false, false) => {}
     }
 }

@@ -5,12 +5,13 @@ use crossterm::event::KeyCode;
 use crate::adb::Device;
 use crate::apps;
 use crate::selector;
+use crate::session;
 
 fn cache_path() -> PathBuf {
-    dirs::cache_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("holo")
-        .join("last_package")
+    // Shares the single `dirs::cache_dir()` fallback with `session::sessions_root`
+    // so the previous `PathBuf::from(".")` cwd fallback (which would land
+    // `last_package` in whatever directory holo was launched from) is gone.
+    session::cache_root().join("last_package")
 }
 
 pub fn load_last_package() -> Option<String> {
@@ -50,6 +51,11 @@ pub struct ToolbarState {
     pub filter: String,
     pub loading: bool,
     pub device_connected: bool,
+    /// `Some` while a captured session is open — the toolbar renders this
+    /// in place of the device/app dropdowns to surface that the user is
+    /// looking at history. Cleared on `Action::CloseSession` and on
+    /// app/device change.
+    pub session_label: Option<String>,
 }
 
 impl ToolbarState {
@@ -64,6 +70,7 @@ impl ToolbarState {
             filter: String::new(),
             loading: false,
             device_connected: true,
+            session_label: None,
         }
     }
 

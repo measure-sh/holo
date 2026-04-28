@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc};
+use std::time::{Duration, Instant};
 
 use crate::adb::Adb;
 use crate::monitor::MonitorSample;
@@ -15,10 +16,61 @@ use crate::monitor;
 use crate::network;
 use crate::permissions;
 use crate::processes;
+use crate::session::{SessionSeed, SessionWriter};
 use crate::trace;
-use crate::vitals::{VitalsHandle, VitalsEvent};
+use crate::vitals::{self, VitalsHandle, VitalsEvent};
 
 const MAX_LOGCAT_LINES: usize = 1000;
+/// Hold the existing session open across brief PID==None blips (USB jiggle,
+/// adb hiccup). Only close after this much sustained "no PID."
+const PID_NONE_DEBOUNCE: Duration = Duration::from_secs(5);
+
+/// Inputs `SessionWriter::open` needs that are stable across PID transitions
+/// within one (device, package) attach: device identity, app version, the
+/// one-shot toggle probes. Captured in `DataSources::new` from the same calls
+/// `apply_initial_state` consumes, and stamped into every session opened by
+/// this `DataSources` until the user changes app or device.
+struct SessionSeedTemplate {
+    device_serial: String,
+    device_model: Option<String>,
+    package: String,
+    app_version: Option<(String, String)>,
+    has_measure_sdk: bool,
+    debuggable: bool,
+    initial_layout_bounds: bool,
+    initial_airplane_mode: bool,
+    initial_wifi_enabled: bool,
+    initial_dark_mode: bool,
+    initial_show_taps: bool,
+    initial_pointer_location: bool,
+    initial_gpu_rendering: bool,
+    initial_talkback: bool,
+}
+
+impl SessionSeedTemplate {
+    /// Borrow-and-clone — the template lives on `DataSources` and is
+    /// reused for every session opened by this attach. Clippy's
+    /// `wrong_self_convention` flagged the previous `into_seed(&self)`.
+    fn to_seed(&self, pid: u32) -> SessionSeed {
+        SessionSeed {
+            device_serial: self.device_serial.clone(),
+            device_model: self.device_model.clone(),
+            package: self.package.clone(),
+            pid,
+            app_version: self.app_version.clone(),
+            has_measure_sdk: self.has_measure_sdk,
+            debuggable: self.debuggable,
+            initial_layout_bounds: self.initial_layout_bounds,
+            initial_airplane_mode: self.initial_airplane_mode,
+            initial_wifi_enabled: self.initial_wifi_enabled,
+            initial_dark_mode: self.initial_dark_mode,
+            initial_show_taps: self.initial_show_taps,
+            initial_pointer_location: self.initial_pointer_location,
+            initial_gpu_rendering: self.initial_gpu_rendering,
+            initial_talkback: self.initial_talkback,
+        }
+    }
+}
 
 fn try_poll<T>(rx: &mut Option<mpsc::Receiver<T>>) -> Option<T> {
     let result = rx.as_ref()?.try_recv().ok()?;
@@ -33,6 +85,10 @@ pub struct DataSources {
 
     procs_rx: mpsc::Receiver<Option<u32>>,
     last_polled_pid: Option<u32>,
+    /// First instant we observed `procs_rx` returning `None` since the
+    /// last `Some`. Used by the session debounce so a brief USB jiggle
+    /// doesn't fragment one human run into multiple session dirs.
+    pid_none_since: Option<Instant>,
 
     logcat_handle: Option<logcat::LogcatHandle>,
     pub logcat_lines: Vec<String>,
@@ -41,6 +97,16 @@ pub struct DataSources {
     vitals_handle: Option<VitalsHandle>,
     vitals_package: String,
     vitals_debuggable: bool,
+
+    session_writer: Option<SessionWriter>,
+    /// Snapshot of the inputs `SessionWriter::open` needs but `poll` can't
+    /// re-derive: device serial / model and the one-shot probe results
+    /// that are otherwise consumed by `apply_initial_state` and lost.
+    session_seed_template: SessionSeedTemplate,
+    /// Last `traces_dir` we pushed into `App.trace_state.pulled_traces`.
+    /// Tracked so the trace panel auto-rescans whenever a new session
+    /// opens (PID transition) without paying the disk cost on every poll.
+    last_traces_dir_seen: Option<PathBuf>,
 
     db_detect_rx: Option<mpsc::Receiver<Result<Vec<String>, String>>>,
     db_query_rx: Option<mpsc::Receiver<Result<String, String>>>,
@@ -84,7 +150,13 @@ pub struct DataSources {
 }
 
 impl DataSources {
-    pub fn new(adb: Arc<dyn Adb>, serial: &str, package: &str, panel_vis: &[bool; 8]) -> Self {
+    pub fn new(
+        adb: Arc<dyn Adb>,
+        serial: &str,
+        device_model: Option<&str>,
+        package: &str,
+        panel_vis: &[bool; 8],
+    ) -> Self {
         let initial_layout_bounds = adb.get_layout_bounds(serial).unwrap_or(false);
         let initial_airplane_mode = adb.get_airplane_mode(serial).unwrap_or(false);
         let initial_wifi_enabled = adb.get_wifi_enabled(serial).unwrap_or(false);
@@ -97,6 +169,22 @@ impl DataSources {
         let has_measure_sdk = adb.has_measure_sdk(serial, package);
         let monitor_visibility = Arc::new(AtomicU8::new(monitor::visibility_mask(panel_vis)));
         let vitals_debuggable = adb.is_debuggable(serial, package);
+        let session_seed_template = SessionSeedTemplate {
+            device_serial: serial.to_string(),
+            device_model: device_model.map(|s| s.to_string()),
+            package: package.to_string(),
+            app_version: app_version.clone(),
+            has_measure_sdk,
+            debuggable: vitals_debuggable,
+            initial_layout_bounds,
+            initial_airplane_mode,
+            initial_wifi_enabled,
+            initial_dark_mode,
+            initial_show_taps,
+            initial_pointer_location,
+            initial_gpu_rendering,
+            initial_talkback,
+        };
         let connectivity = Arc::new(AtomicBool::new(true));
         spawn_connectivity_poller(adb.clone(), serial.to_string(), connectivity.clone());
         Self {
@@ -114,12 +202,16 @@ impl DataSources {
                 connectivity.clone(),
             ),
             last_polled_pid: None,
+            pid_none_since: None,
             logcat_handle: None,
             logcat_lines: Vec::new(),
             monitored_pid: None,
             vitals_handle: None,
             vitals_package: package.to_string(),
             vitals_debuggable,
+            session_writer: None,
+            session_seed_template,
+            last_traces_dir_seen: None,
             db_detect_rx: Some(database::spawn_db_detector(
                 adb.clone(),
                 serial.to_string(),
@@ -187,6 +279,14 @@ impl DataSources {
     }
 
     pub fn poll(&mut self, app: &mut App, serial: &str) {
+        // Capture is "always on": even while the user is viewing a captured
+        // session, we keep draining channels and writing to the live
+        // session file. The *App-state* pushes are gated — clobbering the
+        // captured-session snapshot with live events would defeat the
+        // purpose of opening it. Snapshot the flag once at the top so a
+        // mid-poll set_viewing_session flip can't tear data flow.
+        let viewing = app.is_viewing_session();
+
         self.device_connected = self.connectivity.load(Ordering::Relaxed);
         while let Ok(level) = self.battery_rx.try_recv() {
             self.battery_level = Some(level);
@@ -195,31 +295,42 @@ impl DataSources {
             self.last_polled_pid = pid;
         }
         while let Ok(info) = self.monitor_rx.try_recv() {
-            app.monitor_state_mut().push(info);
+            if let Some(w) = self.session_writer.as_mut() {
+                w.write_disk_sample(&info);
+            }
+            if !viewing {
+                app.monitor_state_mut().push(info);
+            }
         }
 
-        let current_pid = self.last_polled_pid;
-        if current_pid != self.monitored_pid {
-            self.logcat_handle = None;
-            self.vitals_handle = None;
-            self.monitored_pid = None;
-            if let Some(pid) = current_pid {
-                self.logcat_handle = logcat::LogcatHandle::spawn(serial, pid);
-                self.monitored_pid = Some(pid);
-                if self.vitals_debuggable {
-                    self.vitals_handle = VitalsHandle::spawn(
-                        self.adb.clone(),
-                        serial.to_string(),
-                        self.vitals_package.clone(),
-                        pid,
-                    )
-                    .ok();
-                }
+        self.update_session_for_pid(serial);
+
+        // After a PID transition opens (or closes) the writer, re-list the
+        // session's `traces/` so the Trace panel reflects the right set of
+        // captures. Cheap: one `read_dir` per session change, not per tick.
+        if !viewing {
+            let cur_dir = self.session_writer.as_ref().map(|w| w.traces_dir());
+            if cur_dir != self.last_traces_dir_seen {
+                let traces = cur_dir
+                    .as_deref()
+                    .map(crate::trace::list_perfetto_traces)
+                    .unwrap_or_default();
+                let ts = app.trace_state_mut();
+                ts.pulled_traces = traces;
+                ts.selected_index = 0;
+                self.last_traces_dir_seen = cur_dir;
             }
         }
 
         if let Some(handle) = &self.vitals_handle {
             while let Ok(event) = handle.rx.try_recv() {
+                if let Some(w) = self.session_writer.as_mut() {
+                    let (kind, payload) = vitals::encode_event(&event);
+                    w.write_vitals_frame(kind, &payload);
+                }
+                if viewing {
+                    continue;
+                }
                 match event {
                     VitalsEvent::Gc { ts_ns, duration_us } => {
                         app.monitor_state_mut().push_gc(ts_ns, duration_us);
@@ -242,14 +353,24 @@ impl DataSources {
         if let Some(handle) = &self.logcat_handle {
             let prev_len = self.logcat_lines.len();
             while let Ok(line) = handle.rx().try_recv() {
-                if let Some(entry) = network::parse_http_data(&line) {
+                if let Some(w) = self.session_writer.as_mut() {
+                    w.write_logcat_line(&line);
+                }
+                if !viewing
+                    && let Some(entry) = network::parse_http_data(&line)
+                {
                     app.network_state_mut().push(entry);
                 }
+                // Always grow the in-memory tail so logcat shown after the
+                // user closes a captured-session view includes
+                // what was captured while the user was looking at history.
                 self.logcat_lines.push(line);
             }
             let new_count = self.logcat_lines.len() - prev_len;
             if new_count > 0 {
-                app.logcat_state_mut().adjust_scroll_for_new_lines(new_count);
+                if !viewing {
+                    app.logcat_state_mut().adjust_scroll_for_new_lines(new_count);
+                }
                 if self.logcat_lines.len() > MAX_LOGCAT_LINES {
                     self.logcat_lines.drain(..self.logcat_lines.len() - MAX_LOGCAT_LINES);
                 }
@@ -257,30 +378,39 @@ impl DataSources {
         }
 
         while let Ok(result) = self.permissions_rx.try_recv() {
+            if viewing { continue; }
             match result {
                 Ok(perms) => app.permissions_state_mut().permissions = perms,
                 Err(e) => app.permissions_state_mut().error = Some(e),
             }
         }
-        if let Some(result) = try_poll(&mut self.db_detect_rx) {
+        if let Some(result) = try_poll(&mut self.db_detect_rx)
+            && !viewing
+        {
             match result {
                 Ok(dbs) => app.database_state_mut().databases = dbs,
                 Err(e) => app.database_state_mut().error = Some(e),
             }
         }
-        if let Some(result) = try_poll(&mut self.db_query_rx) {
+        if let Some(result) = try_poll(&mut self.db_query_rx)
+            && !viewing
+        {
             match result {
                 Ok(output) => app.database_state_mut().push_result(&output),
                 Err(e) => app.database_state_mut().push_error(&e),
             }
         }
-        if let Some(result) = try_poll(&mut self.db_pull_rx) {
+        if let Some(result) = try_poll(&mut self.db_pull_rx)
+            && !viewing
+        {
             match result {
                 Ok(path) => app.database_state_mut().push_result(&format!("pulled to {}", path.display())),
                 Err(e) => app.database_state_mut().push_error(&format!("pull failed: {e}")),
             }
         }
-        if let Some(result) = try_poll(&mut self.db_tables_rx) {
+        if let Some(result) = try_poll(&mut self.db_tables_rx)
+            && !viewing
+        {
             match result {
                 Ok((db, tables)) => app.database_state_mut().receive_tables(db, tables),
                 Err(e) => {
@@ -290,13 +420,17 @@ impl DataSources {
                 }
             }
         }
-        if let Some(result) = try_poll(&mut self.db_table_data_rx) {
+        if let Some(result) = try_poll(&mut self.db_table_data_rx)
+            && !viewing
+        {
             match result {
                 Ok(data) => app.database_state_mut().receive_table_data(data),
                 Err(e) => app.database_state_mut().receive_table_error(e),
             }
         }
-        if let Some(result) = try_poll(&mut self.files_list_rx) {
+        if let Some(result) = try_poll(&mut self.files_list_rx)
+            && !viewing
+        {
             match result {
                 Ok((path, entries)) => {
                     if path == "." {
@@ -308,7 +442,9 @@ impl DataSources {
                 Err(e) => app.files_state_mut().error = Some(e),
             }
         }
-        if let Some(result) = try_poll(&mut self.files_pull_rx) {
+        if let Some(result) = try_poll(&mut self.files_pull_rx)
+            && !viewing
+        {
             match result {
                 Ok(path) => {
                     app.files_state_mut().action_flash =
@@ -318,13 +454,17 @@ impl DataSources {
                 Err(e) => app.files_state_mut().error = Some(e),
             }
         }
-        if let Some(result) = try_poll(&mut self.files_stat_rx) {
+        if let Some(result) = try_poll(&mut self.files_stat_rx)
+            && !viewing
+        {
             match result {
                 Ok((path, meta)) => app.files_state_mut().receive_meta(path, meta),
                 Err(e) => app.files_state_mut().receive_detail_error(e),
             }
         }
-        if let Some(result) = try_poll(&mut self.files_cat_rx) {
+        if let Some(result) = try_poll(&mut self.files_cat_rx)
+            && !viewing
+        {
             match result {
                 Ok((path, bytes)) => app.files_state_mut().receive_content(path, bytes),
                 Err(e) => app.files_state_mut().receive_detail_error(e),
@@ -332,6 +472,7 @@ impl DataSources {
         }
         if let Some(result) = try_poll(&mut self.trace_start_rx)
             && let Err(e) = result
+            && !viewing
         {
             let ts = app.trace_state_mut();
             ts.recording = false;
@@ -339,7 +480,9 @@ impl DataSources {
             ts.status_message = Some(format!("failed: {e}"));
             ts.message_at = Some(std::time::Instant::now());
         }
-        if let Some(result) = try_poll(&mut self.trace_pull_rx) {
+        if let Some(result) = try_poll(&mut self.trace_pull_rx)
+            && !viewing
+        {
             let ts = app.trace_state_mut();
             match result {
                 Ok(path) => {
@@ -356,24 +499,129 @@ impl DataSources {
         }
         while let Ok(result) = self.crashes_rx.try_recv() {
             match result {
-                Ok(crashes) => app.issues_state_mut().set_crashes(crashes),
-                Err(e) => app.issues_state_mut().set_crash_error(e),
+                Ok(crashes) => {
+                    if let Some(w) = self.session_writer.as_mut() {
+                        for c in &crashes {
+                            w.write_crash_if_new(c);
+                        }
+                    }
+                    if !viewing {
+                        app.issues_state_mut().set_crashes(crashes);
+                    }
+                }
+                Err(e) => {
+                    if !viewing {
+                        app.issues_state_mut().set_crash_error(e);
+                    }
+                }
             }
         }
         while let Ok(result) = self.anrs_rx.try_recv() {
             match result {
-                Ok(anrs) => app.issues_state_mut().set_anrs(anrs),
-                Err(e) => app.issues_state_mut().set_anr_error(e),
+                Ok(anrs) => {
+                    if let Some(w) = self.session_writer.as_mut() {
+                        for a in &anrs {
+                            w.write_anr_if_new(a);
+                        }
+                    }
+                    if !viewing {
+                        app.issues_state_mut().set_anrs(anrs);
+                    }
+                }
+                Err(e) => {
+                    if !viewing {
+                        app.issues_state_mut().set_anr_error(e);
+                    }
+                }
             }
         }
+
+        if let Some(w) = self.session_writer.as_mut() {
+            w.flush_periodic();
+            if let Some(err) = w.take_error() {
+                app.set_status_flash(format!("session write failed: {err}"), true);
+            }
+        }
+    }
+
+    /// Open / close the `SessionWriter` to track the live PID. PID==None is
+    /// debounced — a brief disconnect (USB jiggle, adb hiccup) leaves the
+    /// existing writer open so one human run doesn't fragment into N session
+    /// dirs. Same-PID transitions are no-ops; different-PID transitions
+    /// finalize the old session and open a new one.
+    fn update_session_for_pid(&mut self, _serial: &str) {
+        let current_pid = self.last_polled_pid;
+        match (self.monitored_pid, current_pid) {
+            (Some(a), Some(b)) if a == b => {
+                self.pid_none_since = None;
+            }
+            (None, Some(pid)) => {
+                self.start_pid(pid);
+                self.pid_none_since = None;
+            }
+            (Some(_), Some(pid)) => {
+                // Different PID — close old session immediately and start fresh.
+                self.stop_pid();
+                self.start_pid(pid);
+                self.pid_none_since = None;
+            }
+            (Some(_), None) => {
+                let now = Instant::now();
+                let since = self.pid_none_since.get_or_insert(now);
+                if now.duration_since(*since) >= PID_NONE_DEBOUNCE {
+                    self.stop_pid();
+                    self.pid_none_since = None;
+                }
+            }
+            (None, None) => {
+                self.pid_none_since = None;
+            }
+        }
+    }
+
+    fn start_pid(&mut self, pid: u32) {
+        let serial = self.session_seed_template.device_serial.clone();
+        self.logcat_handle = logcat::LogcatHandle::spawn(&serial, pid);
+        self.monitored_pid = Some(pid);
+        if self.vitals_debuggable {
+            self.vitals_handle = VitalsHandle::spawn(
+                self.adb.clone(),
+                serial,
+                self.vitals_package.clone(),
+                pid,
+            )
+            .ok();
+        }
+        self.session_writer = SessionWriter::open(self.session_seed_template.to_seed(pid));
+    }
+
+    fn stop_pid(&mut self) {
+        self.logcat_handle = None;
+        self.vitals_handle = None;
+        self.monitored_pid = None;
+        // Drop finalizes metadata.json with `ended_at`.
+        self.session_writer = None;
+    }
+
+    /// Identifies the session currently being written to, if any. Used by
+    /// the history dialog to render the `(live)` badge.
+    pub fn active_session_id(&self) -> Option<&crate::session::SessionId> {
+        self.session_writer.as_ref().map(|w| w.id())
     }
 
     pub fn start_query(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, db: String, sql: String) {
         self.db_query_rx = Some(database::spawn_query(adb, serial, package, db, sql));
     }
 
-    pub fn start_pull(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, db: String) {
-        self.db_pull_rx = Some(database::spawn_pull_db(adb, serial, package, db));
+    pub fn start_pull(
+        &mut self,
+        adb: Arc<dyn Adb>,
+        serial: String,
+        package: String,
+        db: String,
+        dest_dir: PathBuf,
+    ) {
+        self.db_pull_rx = Some(database::spawn_pull_db(adb, serial, package, db, dest_dir));
     }
 
     pub fn restart_db_detection(&mut self, adb: Arc<dyn Adb>, serial: String, package: String) {
@@ -392,8 +640,15 @@ impl DataSources {
         self.files_list_rx = Some(files::spawn_list_dir(adb, serial, package, path));
     }
 
-    pub fn start_pull_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
-        self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path));
+    pub fn start_pull_file(
+        &mut self,
+        adb: Arc<dyn Adb>,
+        serial: String,
+        package: String,
+        path: String,
+        dest_dir: PathBuf,
+    ) {
+        self.files_pull_rx = Some(files::spawn_pull_file(adb, serial, package, path, dest_dir));
     }
 
     pub fn start_stat_file(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, path: String) {
@@ -420,8 +675,15 @@ impl DataSources {
         self.trace_start_rx = Some(trace::spawn_start_trace(adb, serial, package, preset));
     }
 
-    pub fn stop_and_pull_trace(&mut self, adb: Arc<dyn Adb>, serial: String, package: String, preset: trace::TracePreset) {
-        self.trace_pull_rx = Some(trace::spawn_stop_and_pull_trace(adb, serial, package, preset));
+    pub fn stop_and_pull_trace(
+        &mut self,
+        adb: Arc<dyn Adb>,
+        serial: String,
+        _package: String,
+        preset: trace::TracePreset,
+        dest_dir: PathBuf,
+    ) {
+        self.trace_pull_rx = Some(trace::spawn_stop_and_pull_trace(adb, serial, dest_dir, preset));
     }
 }
 

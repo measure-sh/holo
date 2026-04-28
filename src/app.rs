@@ -11,6 +11,7 @@ use crate::monitor::MonitorState;
 use crate::panel;
 use crate::theme;
 use crate::permissions::PermissionsState;
+use crate::sessions::SessionsState;
 use crate::toolbar::{DropdownKind, ToolbarAction, ToolbarState};
 use crate::trace::TraceState;
 
@@ -30,8 +31,40 @@ pub enum Navigation {
     Dropdown(DropdownKind),
     /// Settings popup active; cursor lives on Navigation, not on App.
     Settings { cursor: usize },
+    /// Sessions list dialog. Cursor + summaries live on `SessionsState`.
+    Sessions,
     /// Modal alert with a body string.
     Dialog(String),
+}
+
+/// Panels collapsed by default when a captured session opens. Logcat /
+/// Monitor / Network / Issues / Trace stay visible because the loader
+/// rebuilds them from the captured files (Trace shows the captured
+/// `traces/` listing; its start/stop keys are blocked separately in
+/// `delegate_to_focused`). The three below are hidden because they
+/// have no captured data — they query the live device. Users can still
+/// toggle any of them back on with the panel-number keys.
+const VIEW_HIDDEN_PANELS: [u8; 3] = [
+    panel::PERMISSIONS,
+    panel::FILES,
+    panel::DATABASE,
+];
+
+/// Runtime state held while the user is viewing a captured session. `Some`
+/// on `App::session_view` <=> the UI renders captured contents instead of
+/// live data. The loader (`replay::ReplaySession`) is the on-disk shape;
+/// this struct carries only the pieces App couldn't park on the panel
+/// state structs (today: the captured logcat tail, plus the id so every
+/// consumer reads "which session is open" from one place).
+///
+/// `logcat_lines` is shared as `Arc<[String]>` so the per-frame render
+/// path can grab a cheap owned reference and release the borrow on App
+/// before the rest of `render_app` takes `&mut App`. The captured tail
+/// is immutable after load, so an immutable shared slice is exactly the
+/// right shape.
+pub struct SessionView {
+    pub id: crate::session::SessionId,
+    pub logcat_lines: std::sync::Arc<[String]>,
 }
 
 pub enum Action {
@@ -74,6 +107,20 @@ pub enum Action {
     ToggleGpuRendering,
     ToggleTalkback,
     OpenInEditor(String),
+    /// Sessions panel — load `(device, package)` summaries on the next tick.
+    /// Emitted both when the panel is first shown and when the user hits `r`.
+    RefreshSessions,
+    /// Open the chosen session — switch the UI from live data to a captured
+    /// session. Live capture keeps running in the background.
+    OpenSession(crate::session::SessionId),
+    /// Delete the chosen session directory and refresh.
+    DeleteSession(crate::session::SessionId),
+    /// Close the open session view and resume showing live data.
+    CloseSession,
+    /// Copy an arbitrary path string to the clipboard. Used by the history
+    /// dialog to put the sessions root on the clipboard so users can `cd`
+    /// to it from a shell.
+    CopyPath(String),
 }
 
 pub struct App {
@@ -85,6 +132,7 @@ pub struct App {
     permissions_state: PermissionsState,
     files_state: FilesState,
     monitor_state: MonitorState,
+    sessions_state: SessionsState,
     toolbar: ToolbarState,
     layout_bounds: bool,
     airplane_mode: bool,
@@ -99,8 +147,20 @@ pub struct App {
     issues_state: IssuesState,
     network_state: NetworkState,
     measure_sdk_detected: bool,
+    /// Snapshot of `(panel_visible, commands.visible)` captured when zooming
+    /// in so `Esc` / second `Ctrl+Z` can restore the pre-zoom layout.
     saved_visibility: Option<([bool; 8], bool)>,
     status_flash: Option<(String, std::time::Instant, bool)>,
+    /// Some <=> the UI renders a captured session instead of live data.
+    /// Single source of truth: every other "viewing?" check derives from
+    /// this. Mutated only through `open_session_view` / `close_session_view`
+    /// so the paired layout snapshot can never drift.
+    session_view: Option<SessionView>,
+    /// Panel visibility snapshot captured by `open_session_view` and
+    /// restored by `close_session_view`. Held alongside `session_view`
+    /// (rather than inside it) because it isn't replay state — it's the
+    /// pre-view layout we want to put back on exit.
+    pre_view_visibility: Option<([bool; 8], bool)>,
 }
 
 impl App {
@@ -117,6 +177,7 @@ impl App {
             permissions_state: PermissionsState::new(),
             files_state: FilesState::new(pkg),
             monitor_state: MonitorState::new(),
+            sessions_state: SessionsState::new(),
             toolbar,
             layout_bounds: false,
             airplane_mode: false,
@@ -133,7 +194,54 @@ impl App {
             measure_sdk_detected: false,
             saved_visibility: None,
             status_flash: None,
+            session_view: None,
+            pre_view_visibility: None,
         }
+    }
+
+    pub fn is_viewing_session(&self) -> bool {
+        self.session_view.is_some()
+    }
+
+    pub fn session_view(&self) -> Option<&SessionView> {
+        self.session_view.as_ref()
+    }
+
+    /// Atomic entry into view mode. Snapshots the current panel layout,
+    /// hides the panels that don't replay (`VIEW_HIDDEN_PANELS`), drops
+    /// any focused/zoomed panel, and installs the view. Calling again
+    /// while already viewing replaces the buffer in place — the original
+    /// pre-view snapshot is preserved so exit still restores the layout
+    /// the user had before they ever opened a session.
+    pub fn open_session_view(&mut self, view: SessionView) {
+        if self.session_view.is_some() {
+            self.session_view = Some(view);
+            return;
+        }
+        self.pre_view_visibility = Some((self.panel_visible, self.commands.visible));
+        self.commands.visible = false;
+        for &p in &VIEW_HIDDEN_PANELS {
+            self.panel_visible[(p - 1) as usize] = false;
+        }
+        // Drop any zoom snapshot and focus so the user isn't trapped in
+        // whatever panel had focus when they pressed Enter on the dialog.
+        self.restore_zoom();
+        self.focused = None;
+        self.session_view = Some(view);
+    }
+
+    /// Atomic exit. Returns `true` if a view was actually torn down — the
+    /// caller uses this to decide whether to also clear sibling state
+    /// (toolbar chip, dialog badge).
+    pub fn close_session_view(&mut self) -> bool {
+        if self.session_view.take().is_none() {
+            return false;
+        }
+        if let Some((vis, cmd_vis)) = self.pre_view_visibility.take() {
+            self.panel_visible = vis;
+            self.commands.visible = cmd_vis;
+        }
+        true
     }
 
     pub fn nav(&self) -> &Navigation {
@@ -154,6 +262,18 @@ impl App {
         self.nav = Navigation::Dropdown(DropdownKind::App);
         let loading = self.toolbar.packages.is_empty();
         self.toolbar.prepare_for_dropdown(loading);
+    }
+
+    /// Open the sessions list as a centered dialog. Returns `true` when the
+    /// dialog actually opened (it skips when something else is already open
+    /// so we don't stack popups). The caller follows up with
+    /// `Action::RefreshSessions` so the list is fresh.
+    pub fn open_sessions_popup(&mut self) -> bool {
+        if !matches!(self.nav, Navigation::Panels) {
+            return false;
+        }
+        self.nav = Navigation::Sessions;
+        true
     }
 
     pub fn open_dialog(&mut self, body: String) {
@@ -200,9 +320,25 @@ impl App {
                     self.open_apps_popup();
                     return Action::FetchApps;
                 }
+                KeyCode::Char('h') => {
+                    if self.open_sessions_popup() {
+                        return Action::RefreshSessions;
+                    }
+                    return Action::Noop;
+                }
                 KeyCode::Char('z') => {
                     if self.focused.is_some() {
                         self.toggle_zoom();
+                    }
+                    return Action::Noop;
+                }
+                KeyCode::Char('l') => {
+                    // Direct exit from a captured session view. The
+                    // history dialog still reaches Live via Ctrl+H, but
+                    // this is the one-keystroke escape hatch users see
+                    // hinted in the VIEWING chip.
+                    if self.is_viewing_session() {
+                        return Action::CloseSession;
                     }
                     return Action::Noop;
                 }
@@ -240,6 +376,26 @@ impl App {
                         Action::Noop
                     }
                     ToolbarAction::None => Action::Noop,
+                };
+            }
+            Navigation::Sessions => {
+                let viewing_id = self.session_view.as_ref().map(|v| &v.id);
+                let action = self
+                    .sessions_state
+                    .handle_key(key, viewing_id)
+                    .unwrap_or(Action::Noop);
+                // Selecting a session, picking the live row, or hitting Esc
+                // all close the dialog. Refresh / delete keep it open.
+                return match action {
+                    Action::OpenSession(_) | Action::CloseSession => {
+                        self.close_popup();
+                        action
+                    }
+                    Action::Unfocus => {
+                        self.close_popup();
+                        Action::Noop
+                    }
+                    other => other,
                 };
             }
             Navigation::Panels => {}
@@ -305,7 +461,11 @@ impl App {
     }
 
     fn handle_settings_key(&mut self, code: KeyCode, cursor: usize) -> Action {
-        const SELECTABLE_COUNT: usize = 4;
+        // Three rows now: Theme (0), Screen mirroring (1), About (2).
+        // The "Downloads" row was dropped when artifact writes
+        // consolidated into the session folder — there's no longer a
+        // single useful directory to open from Settings.
+        const SELECTABLE_COUNT: usize = 3;
         match code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.nav = Navigation::Settings {
@@ -330,26 +490,14 @@ impl App {
                 };
                 theme::set_theme(prev);
             }
-            KeyCode::Char('c') if cursor == 1 => {
-                let dir = std::env::temp_dir().join("holo");
-                let _ = std::fs::create_dir_all(&dir);
-                crate::clipboard::copy_to_clipboard(&dir.to_string_lossy());
-                self.close_popup();
-                self.set_status_flash("Path copied!".into(), false);
-            }
             KeyCode::Enter => {
                 match cursor {
                     1 => {
-                        let dir = std::env::temp_dir().join("holo");
-                        let _ = std::fs::create_dir_all(&dir);
-                        let _ = open::that(&dir);
-                    }
-                    2 => {
                         let _ = open::that(
                             "https://github.com/Genymobile/scrcpy/tree/master?tab=readme-ov-file",
                         );
                     }
-                    3 => {
+                    2 => {
                         let _ = open::that("https://github.com/measure-sh/holo");
                     }
                     _ => {}
@@ -373,6 +521,21 @@ impl App {
     fn delegate_to_focused(&mut self, panel_id: u8, key: KeyEvent) -> Option<Action> {
         if self.focused != Some(panel_id) {
             return None;
+        }
+        // While viewing a session, swallow keys for live-only panels and the
+        // trace recording shortcut so users can't kick off ADB calls that
+        // would fail anyway. The status flash on `dispatch()` is the
+        // secondary line of defense; this stops the action even being
+        // emitted.
+        if self.is_viewing_session()
+            && (matches!(panel_id, panel::FILES | panel::PERMISSIONS | panel::DATABASE)
+                || (panel_id == panel::TRACE
+                    && matches!(key.code, KeyCode::Char('s') | KeyCode::Char('d'))))
+        {
+            return Some(match key.code {
+                KeyCode::Esc => Action::Unfocus,
+                _ => Action::Noop,
+            });
         }
         let result = match panel_id {
             panel::COMMANDS => self.commands.handle_key(key),
@@ -546,6 +709,14 @@ impl App {
         &mut self.logcat_state
     }
 
+    pub fn sessions_state(&self) -> &SessionsState {
+        &self.sessions_state
+    }
+
+    pub fn sessions_state_mut(&mut self) -> &mut SessionsState {
+        &mut self.sessions_state
+    }
+
 
 
     pub fn layout_bounds(&self) -> bool {
@@ -642,6 +813,12 @@ impl App {
         self.issues_state = IssuesState::new();
         self.network_state = NetworkState::new();
         self.measure_sdk_detected = false;
+        // Sessions list is per (device, package) — drop loaded summaries so
+        // a stale list isn't shown if the user opens the dialog before the
+        // next refresh fires.
+        self.sessions_state.sessions.clear();
+        self.sessions_state.selected = 0;
+        self.sessions_state.error = None;
 
         self.commands.filter.clear();
         self.commands.cursor = 0;
@@ -686,6 +863,10 @@ impl App {
     pub fn has_active_animation(&self) -> bool {
         self.commands.has_active_animation()
             || self.status_flash_active().is_some()
+            // Marching border around the outer block while viewing a
+            // captured session — keeps the main loop polling at the
+            // animation cadence instead of the idle 1s tick.
+            || self.is_viewing_session()
     }
 
 }
@@ -698,6 +879,16 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    fn test_view() -> SessionView {
+        SessionView {
+            id: crate::session::SessionId {
+                package: "com.test".into(),
+                dir_name: "test".into(),
+            },
+            logcat_lines: std::sync::Arc::from(Vec::<String>::new()),
+        }
     }
 
     #[test]
@@ -1573,5 +1764,151 @@ mod tests {
         assert!(!app.commands().visible);
         app.handle_key(key(KeyCode::Char('c')));
         assert_eq!(app.focused_panel(), None);
+    }
+
+    #[test]
+    fn ctrl_h_opens_sessions_dialog() {
+        let mut app = App::new(None, Some("com.test"));
+        let action = app.handle_key(ctrl('h'));
+        assert!(matches!(action, Action::RefreshSessions));
+        assert_eq!(app.nav(), &Navigation::Sessions);
+    }
+
+    #[test]
+    fn live_row_in_dialog_closes_dialog_and_emits_close_session() {
+        // Selecting the live row in the history dialog must both surface
+        // CloseSession to dispatch (so the open captured-session view is
+        // closed) AND close the dialog itself. Earlier the match arm
+        // didn't match CloseSession, leaving the dialog visible.
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(ctrl('h'));
+        assert_eq!(app.nav(), &Navigation::Sessions);
+
+        let live = crate::session::SessionSummary {
+            id: crate::session::SessionId {
+                package: "com.test".into(),
+                dir_name: "live".into(),
+            },
+            started_at: chrono::Local::now(),
+            ended_at: None,
+            duration: None,
+            size_bytes: 0,
+            pid: 1,
+            device_serial: "emu".into(),
+            device_model: None,
+        };
+        app.sessions_state_mut().live_id = Some(live.id.clone());
+        app.sessions_state_mut().set_sessions(vec![live]);
+
+        let action = app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(action, Action::CloseSession));
+        assert_eq!(app.nav(), &Navigation::Panels);
+    }
+
+    #[test]
+    fn ctrl_h_skips_when_a_popup_is_already_open() {
+        let mut app = App::new(None, Some("com.test"));
+        app.open_settings();
+        let action = app.handle_key(ctrl('h'));
+        // Settings is open — Ctrl+H mustn't stack a second overlay. The
+        // global Ctrl block hoists Ctrl+H above the modal handlers, so it
+        // resolves to a no-op here rather than tearing settings down.
+        assert!(matches!(action, Action::Noop));
+        assert!(matches!(app.nav(), Navigation::Settings { .. }));
+    }
+
+    #[test]
+    fn entering_view_mode_hides_live_only_panels() {
+        let mut app = App::new(None, Some("com.test"));
+        app.open_session_view(test_view());
+        // Logcat (1), monitor (2), network (3), trace (4), issues (5) stay
+        // visible — the loader rebuilds them from captured files.
+        assert!(app.is_panel_visible(panel::LOGCAT));
+        assert!(app.is_panel_visible(panel::MONITOR));
+        assert!(app.is_panel_visible(panel::NETWORK));
+        assert!(app.is_panel_visible(panel::TRACE));
+        assert!(app.is_panel_visible(panel::ISSUES));
+        // Commands (0), permissions (6), files (7), database (8) are
+        // hidden — they have no captured data (they query the device).
+        assert!(!app.is_panel_visible(panel::COMMANDS));
+        assert!(!app.is_panel_visible(panel::PERMISSIONS));
+        assert!(!app.is_panel_visible(panel::FILES));
+        assert!(!app.is_panel_visible(panel::DATABASE));
+    }
+
+    #[test]
+    fn exiting_view_mode_restores_pre_view_layout() {
+        let mut app = App::new(None, Some("com.test"));
+        // Hide a couple of panels before entering view mode.
+        app.handle_key(key(KeyCode::Char('2')));
+        app.handle_key(key(KeyCode::Char('5')));
+        let before = (*app.panel_visibility(), app.commands().visible);
+
+        app.open_session_view(test_view());
+        assert!(app.close_session_view());
+
+        assert_eq!(*app.panel_visibility(), before.0);
+        assert_eq!(app.commands().visible, before.1);
+    }
+
+    #[test]
+    fn focusing_a_hidden_panel_clears_focus_on_view_entry() {
+        let mut app = App::new(None, Some("com.test"));
+        // Focus database (panel 8), which view mode hides.
+        app.handle_key(key(KeyCode::Char('d')));
+        assert_eq!(app.focused_panel(), Some(panel::DATABASE));
+
+        app.open_session_view(test_view());
+        assert_eq!(
+            app.focused_panel(),
+            None,
+            "hidden panels can't keep focus",
+        );
+    }
+
+    #[test]
+    fn double_open_session_view_is_idempotent() {
+        let mut app = App::new(None, Some("com.test"));
+        let original = (*app.panel_visibility(), app.commands().visible);
+        app.open_session_view(test_view());
+        // Second open replaces the buffer; the pre-view snapshot must not
+        // be re-taken (which would capture the *view-mode* layout instead
+        // of the user's original one).
+        app.open_session_view(test_view());
+        assert!(app.close_session_view());
+        assert_eq!(*app.panel_visibility(), original.0);
+        assert_eq!(app.commands().visible, original.1);
+    }
+
+    #[test]
+    fn close_session_view_returns_false_when_idle() {
+        let mut app = App::new(None, Some("com.test"));
+        assert!(!app.close_session_view(), "no view to close");
+    }
+
+    #[test]
+    fn replay_swallows_db_keys_when_focused() {
+        let mut app = App::new(None, Some("com.test"));
+        app.open_session_view(test_view());
+        app.handle_key(key(KeyCode::Char('d')));
+        // Even though `d` would normally focus database, the gate swallows it.
+        // (Database focus is already on; the key is not an action.) Pressing
+        // a normal sub-key like Enter while focused returns Noop.
+        let action = app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(action, Action::Noop));
+    }
+
+    #[test]
+    fn replay_swallows_trace_record_key_but_keeps_navigation() {
+        let mut app = App::new(None, Some("com.test"));
+        app.handle_key(key(KeyCode::Char('t')));
+        app.open_session_view(test_view());
+        // `s` would normally start a trace; in replay it must be a no-op.
+        let action = app.handle_key(key(KeyCode::Char('s')));
+        assert!(matches!(action, Action::Noop));
+        assert!(!app.trace_state().recording);
+        // But list navigation still works — `j` belongs to the trace state's
+        // own handler and isn't blocked.
+        app.handle_key(key(KeyCode::Char('j')));
     }
 }

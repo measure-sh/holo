@@ -25,7 +25,11 @@ mod panel;
 mod permissions;
 mod permissions_ui;
 mod processes;
+mod replay;
 mod selector;
+mod session;
+mod sessions;
+mod sessions_ui;
 mod theme;
 mod toolbar;
 mod trace;
@@ -68,6 +72,11 @@ fn run_app(
     initial_device: Option<adb::Device>,
 ) -> Result<()> {
     theme::load_saved();
+    // Prune sessions older than 5 days. Off the main thread so a slow disk
+    // (or a sessions root that has accumulated thousands of dirs) can't
+    // delay first paint. 5 days keeps roughly a working week of captures
+    // without unbounded growth on machines that run holo daily.
+    std::thread::spawn(|| session::prune_older_than(5));
     let mut app = App::new(initial_device.clone(), None);
     let (command_tx, command_rx) = std::sync::mpsc::channel();
     let (adb_status_tx, adb_status_rx) = std::sync::mpsc::channel();
@@ -84,6 +93,7 @@ fn run_app(
         command_rx,
         adb_status_rx,
         pending_redraw: false,
+        session_view_rx: None,
     };
 
     if let Some(device) = &initial_device {
@@ -184,6 +194,12 @@ fn run_housekeeping(ctx: &mut DispatchContext, app: &mut App) {
         if !was_connected && d.device_connected
             && let Some(device) = app.toolbar().device.clone()
             && let Some(pkg) = package.clone()
+            // Don't trample a captured-session view on reconnect: the
+            // user is reading history, not waiting for the device. The
+            // existing live `DataSources` is kept; capture stays on, so
+            // when they close the view their next live tail picks up
+            // where it left off.
+            && !app.is_viewing_session()
         {
             // Worker-driven path: don't clobber popup state, just reset
             // panel data so the new build's results don't bleed through.
@@ -239,7 +255,18 @@ fn render_frame(
     app: &mut App,
 ) -> Result<()> {
     let battery_level = ctx.data.as_ref().and_then(|d| d.battery_level);
-    let logcat_lines: &[String] = ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines);
+    // While a captured session is open the logcat panel renders the
+    // captured tail (`App::session_view`) instead of the live one in
+    // `DataSources`. The captured buffer is an `Arc<[String]>` so we can
+    // grab an owned handle here and release the borrow on `app` before
+    // the draw closure takes `&mut app`. Live capture keeps running
+    // underneath; the source of truth is just a render-time choice
+    // between two buffers.
+    let captured_logcat = app.session_view().map(|v| std::sync::Arc::clone(&v.logcat_lines));
+    let logcat_lines: &[String] = match &captured_logcat {
+        Some(arc) => arc,
+        None => ctx.data.as_ref().map_or(&[], |d| &d.logcat_lines),
+    };
     if ctx.pending_redraw {
         terminal.clear()?;
         ctx.pending_redraw = false;

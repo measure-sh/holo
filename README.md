@@ -55,6 +55,7 @@ $ holo
 - **Perfetto traces** — start and stop system traces from the TUI. Open them in ui.perfetto.dev with one keystroke.
 - **File browser** — navigate your app's data directory as a tree. Pull any file to your machine with a single key.
 - **Crashes and ANRs** — see crash stack traces and ANR reasons as they happen.
+- **Sessions** — every attach is captured to disk. Press `Ctrl+H` to open the history dialog and view any past session — logcat, monitor, network, issues, traces — even after the device is gone. Capture keeps running while you're viewing history; pick the `(live)` row to come back to live data. See [docs/sessions.md](docs/sessions.md).
 - **Permission management** — grant and revoke runtime permissions.
 - **Quick commands** — open, kill, uninstall, app info, screenshot, toggle dark mode, layout bounds, show taps, and more.
 - **Device mirroring** via scrcpy.

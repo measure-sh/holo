@@ -705,11 +705,16 @@ pub fn spawn_pull_db(
     serial: String,
     package: String,
     db: String,
+    parent_dir: PathBuf,
 ) -> mpsc::Receiver<Result<PathBuf, String>> {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
         let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-        let dest = std::env::temp_dir().join("holo").join(&package).join("db").join(format!("{}_{}", timestamp, db));
+        // `pull_database` writes `<dest>/<db>{,-wal,-shm}`, so we hand it a
+        // per-pull subdir to keep the three sidecar files together. The
+        // caller chose `parent_dir` so all pulls for this session land in
+        // the same place.
+        let dest = parent_dir.join(format!("{}_{}", timestamp, db));
         let result = std::fs::create_dir_all(&dest)
             .map_err(|e| e.to_string())
             .and_then(|_| {

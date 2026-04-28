@@ -2,9 +2,15 @@ mod attach;
 mod blobs;
 mod reader;
 
+use std::io::Read;
+
 pub use reader::VitalsHandle;
 
 pub(crate) use attach::attach_running;
+
+/// Same per-frame size guard used by the live reader — keeps a corrupt
+/// `vitals.bin` from allocating wild amounts of RAM during replay.
+const MAX_PAYLOAD: usize = 1 << 16;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VitalsEvent {
@@ -23,6 +29,69 @@ pub(crate) const KIND_GC: u8 = 0x01;
 pub(crate) const KIND_MEMORY: u8 = 0x02;
 pub(crate) const KIND_CPU: u8 = 0x03;
 pub(crate) const KIND_NETWORK: u8 = 0x04;
+
+/// Re-encode a decoded `VitalsEvent` back into its on-the-wire payload. Used
+/// by `SessionWriter` to tee frames to disk; the wire format is owned here so
+/// we don't need to expose raw bytes from the agent reader thread.
+pub(crate) fn encode_event(event: &VitalsEvent) -> (u8, Vec<u8>) {
+    match *event {
+        VitalsEvent::Gc { ts_ns, duration_us } => {
+            let mut payload = Vec::with_capacity(12);
+            payload.extend_from_slice(&ts_ns.to_be_bytes());
+            payload.extend_from_slice(&duration_us.to_be_bytes());
+            (KIND_GC, payload)
+        }
+        VitalsEvent::Memory { ts_ns, rss_kb, java_heap_kb, native_heap_kb } => {
+            let mut payload = Vec::with_capacity(20);
+            payload.extend_from_slice(&ts_ns.to_be_bytes());
+            payload.extend_from_slice(&(rss_kb as u32).to_be_bytes());
+            payload.extend_from_slice(&(java_heap_kb as u32).to_be_bytes());
+            payload.extend_from_slice(&(native_heap_kb as u32).to_be_bytes());
+            (KIND_MEMORY, payload)
+        }
+        VitalsEvent::Cpu { ts_ns, cpu_centi_percent, num_threads } => {
+            let mut payload = Vec::with_capacity(16);
+            payload.extend_from_slice(&ts_ns.to_be_bytes());
+            payload.extend_from_slice(&cpu_centi_percent.to_be_bytes());
+            payload.extend_from_slice(&num_threads.to_be_bytes());
+            (KIND_CPU, payload)
+        }
+        VitalsEvent::Network { ts_ns, rx_bytes, tx_bytes } => {
+            let mut payload = Vec::with_capacity(24);
+            payload.extend_from_slice(&ts_ns.to_be_bytes());
+            payload.extend_from_slice(&rx_bytes.to_be_bytes());
+            payload.extend_from_slice(&tx_bytes.to_be_bytes());
+            (KIND_NETWORK, payload)
+        }
+    }
+}
+
+/// Decode every `[u8 kind][u32 len_be][payload]` frame from `r` into a flat
+/// `Vec`. Used by the replay reader to reconstruct `MonitorState` from a
+/// session's `vitals.bin`. Stops on EOF, malformed framing, or oversize len —
+/// returning whatever it had decoded so far. Unknown kinds are skipped.
+pub(crate) fn decode_frames<R: Read>(mut r: R) -> Vec<VitalsEvent> {
+    let mut out = Vec::new();
+    let mut header = [0u8; 5];
+    let mut payload = Vec::with_capacity(64);
+    loop {
+        if r.read_exact(&mut header).is_err() {
+            return out;
+        }
+        let kind = header[0];
+        let len = u32::from_be_bytes(header[1..5].try_into().unwrap()) as usize;
+        if len > MAX_PAYLOAD {
+            return out;
+        }
+        payload.resize(len, 0);
+        if r.read_exact(&mut payload).is_err() {
+            return out;
+        }
+        if let Some(event) = decode_payload(kind, &payload) {
+            out.push(event);
+        }
+    }
+}
 
 pub(crate) fn decode_payload(kind: u8, payload: &[u8]) -> Option<VitalsEvent> {
     match kind {
@@ -151,5 +220,19 @@ mod tests {
     fn ignores_wrong_network_payload_length() {
         assert!(decode_payload(KIND_NETWORK, &[0u8; 16]).is_none());
         assert!(decode_payload(KIND_NETWORK, &[0u8; 32]).is_none());
+    }
+
+    #[test]
+    fn encode_decode_round_trip_all_kinds() {
+        let events = [
+            VitalsEvent::Gc { ts_ns: 12345, duration_us: 678 },
+            VitalsEvent::Memory { ts_ns: 1, rss_kb: 2, java_heap_kb: 3, native_heap_kb: 4 },
+            VitalsEvent::Cpu { ts_ns: 9, cpu_centi_percent: 1234, num_threads: 17 },
+            VitalsEvent::Network { ts_ns: 42, rx_bytes: 1_000_000, tx_bytes: 2_000_000 },
+        ];
+        for ev in events {
+            let (kind, payload) = encode_event(&ev);
+            assert_eq!(decode_payload(kind, &payload), Some(ev));
+        }
     }
 }
