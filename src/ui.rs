@@ -185,12 +185,17 @@ pub fn render_app(
         Span::styled(" ^q ", Style::new().fg(t.danger)),
         Span::styled("quit ", Style::new().fg(t.muted)),
         Span::styled("───", sep),
-        Span::styled(" ^h ", Style::new().fg(t.danger)),
+        Span::styled(" ^", Style::new().fg(t.danger)),
         Span::styled("history ", Style::new().fg(t.muted)),
         Span::styled("───", sep),
         Span::styled(" ^␣ ", Style::new().fg(t.danger)),
         Span::styled("settings ", Style::new().fg(t.muted)),
     ];
+    if app.is_viewing_session() {
+        hint_spans.push(Span::styled("───", sep));
+        hint_spans.push(Span::styled(" ^", Style::new().fg(t.danger)));
+        hint_spans.push(Span::styled("live ", Style::new().fg(t.muted)));
+    }
     if app.focused_panel().is_some() {
         let label = if app.is_zoomed() { "zoom out " } else { "zoom in " };
         hint_spans.push(Span::styled("───", sep));
@@ -397,13 +402,7 @@ fn render_session_chip(frame: &mut Frame, area: Rect, label: &str) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(t.accent))
-        .title(Line::from(vec![
-            Span::styled(" ^l", Style::new().fg(t.danger)),
-            Span::styled(" live ", Style::new().fg(t.muted)),
-            Span::styled("^h", Style::new().fg(t.danger)),
-            Span::styled(" history ", Style::new().fg(t.muted)),
-        ]));
+        .border_style(Style::new().fg(t.accent));
     let inner = block.inner(chip_area);
     frame.render_widget(block, chip_area);
     frame.render_widget(
