@@ -620,21 +620,11 @@ impl DispatchContext {
     }
 
     fn apply_session_view(&mut self, app: &mut App, session: ReplaySession) {
-        let started = session.meta.started_at;
-        let label = match session.meta.ended_at {
-            Some(ended) => format!(
-                "{} · {} · {}–{}",
-                session.meta.package,
-                started.format("%Y-%m-%d"),
-                started.format("%H:%M:%S"),
-                ended.format("%H:%M:%S"),
-            ),
-            None => format!(
-                "{} · {}",
-                session.meta.package,
-                started.format("%Y-%m-%d %H:%M:%S"),
-            ),
-        };
+        let label = format!(
+            "{} · {}",
+            session.meta.package,
+            session.meta.started_at.format("%Y-%m-%d %H:%M:%S"),
+        );
         app.toolbar_mut().session_label = Some(label);
 
         // Swap captured state into App. NetworkState/IssuesState/MonitorState
