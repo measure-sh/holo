@@ -11,8 +11,32 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  agent-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: agent-build
+      - run: cargo check
+      - name: Collect agent blobs
+        run: |
+          mkdir -p agent-blobs
+          find target/debug/build -name 'libholoagent-*.so' -exec cp {} agent-blobs/ \;
+          ls -la agent-blobs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-blobs
+          path: agent-blobs/
+
   build:
+    needs: agent-build
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: aarch64-apple-darwin
@@ -31,14 +55,17 @@ jobs:
             os: windows-latest
             bin: holo.exe
     runs-on: ${{ matrix.os }}
+    env:
+      HOLOAGENT_PREBUILT_DIR: ${{ github.workspace }}/agent-blobs
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: nttld/setup-ndk@v1
+      - uses: actions/download-artifact@v4
         with:
-          ndk-version: r28
+          name: agent-blobs
+          path: agent-blobs
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
@@ -63,6 +90,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: holo-*
           merge-multiple: true
       - name: Create release
         env:
