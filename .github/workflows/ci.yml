@@ -27,7 +27,7 @@ jobs:
           mkdir -p agent-blobs
           find target/debug/build -name 'libholoagent-*.so' -exec cp {} agent-blobs/ \;
           ls -la agent-blobs
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: agent-blobs
           path: agent-blobs/
@@ -42,7 +42,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: agent-blobs
           path: agent-blobs
@@ -75,7 +75,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: agent-blobs
           path: agent-blobs
