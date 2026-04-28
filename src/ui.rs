@@ -231,11 +231,14 @@ pub fn render_app(
     ))
     .alignment(Alignment::Center);
 
+    // Tint the outer border warning-colored while a captured session is
+    // open — a quiet "this isn't live" marker visible at every glance.
+    let border_color = if app.is_viewing_session() { t.warning } else { t.surface };
     block = block
         .title(info_line)
         .title_bottom(hint_line)
         .title_bottom(branding_line)
-        .border_style(Style::new().fg(t.surface))
+        .border_style(Style::new().fg(border_color))
         .style(Style::new().bg(t.bg).fg(t.fg));
 
     let inner = block.inner(area);
