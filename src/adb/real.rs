@@ -715,6 +715,22 @@ impl Adb for RealAdb {
     }
 
     fn push_agent(&self, serial: &str, package: &str, bytes: &[u8]) -> Result<String> {
+        let dest = format!("/data/data/{package}/libholoagent.so");
+
+        // Skip push+cp if the file already matches. Replacing a mapped .so via
+        // cp's O_TRUNC invalidates the mmap'd GOT.PLT in the live agent and
+        // kills the app, even when the new bytes are byte-identical.
+        let size_cmd = format!("run-as {package} stat -c %s libholoagent.so 2>/dev/null");
+        let stat = Command::new("adb")
+            .args(["-s", serial, "shell", &size_cmd])
+            .output_timed(ADB_SHELL_TIMEOUT)?;
+        if stat.status.success()
+            && let Ok(size) = String::from_utf8_lossy(&stat.stdout).trim().parse::<u64>()
+            && size == bytes.len() as u64
+        {
+            return Ok(dest);
+        }
+
         let mut local = std::env::temp_dir();
         local.push(format!("holoagent-{}-{}.so", std::process::id(), package));
         std::fs::write(&local, bytes)?;
@@ -742,7 +758,7 @@ impl Adb for RealAdb {
             bail!("run-as cp failed: {stderr}");
         }
 
-        Ok(format!("/data/data/{package}/libholoagent.so"))
+        Ok(dest)
     }
 
     fn attach_agent(&self, serial: &str, package: &str, so_path: &str) -> Result<()> {
