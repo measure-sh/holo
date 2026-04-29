@@ -16,8 +16,8 @@ All ADB commands used by holo, organized by feature area.
 | 30s       | Battery       | `adb shell dumpsys battery`                        |
 
 CPU, memory, GC pauses, thread count, and per-app rx/tx bytes come from the
-JVMTI agent at 1 Hz over a binary stream — see
-[Vitals (JVMTI agent)](#vitals-jvmti-agent) below.
+agent at 1 Hz over a binary stream — see [Vitals (agent)](#vitals-agent)
+below.
 
 ## Commands by Feature
 
@@ -60,8 +60,7 @@ JVMTI agent at 1 Hz over a binary stream — see
 | `adb shell run-as <package> du -s .` | App data size on disk (polled every 5s)  |
 
 CPU%, RSS / Java heap / native heap, GC pauses, thread count, and per-app
-rx/tx bytes are all streamed by the JVMTI agent — see
-[Vitals (JVMTI agent)](#vitals-jvmti-agent).
+rx/tx bytes are all streamed by the agent — see [Vitals (agent)](#vitals-agent).
 
 ### Permissions
 
@@ -94,14 +93,14 @@ rx/tx bytes are all streamed by the JVMTI agent — see
 | `adb shell run-as <package> ls databases/<db>`              | Check if db file exists before pull  |
 | `adb exec-out run-as <package> cat databases/<db>`          | Pull database file (also -wal, -shm) |
 
-### Vitals (JVMTI agent)
+### Vitals (agent)
 
 Used to attach the embedded `libholoagent.so` to a debuggable app. The agent
 streams CPU%, thread count, RSS, Java heap, native heap, GC pause events,
 and per-app rx/tx bytes (via `TrafficStats.getUidRxBytes` / `getUidTxBytes`)
 over an abstract Unix socket bridged to host loopback. See
-[`docs/jvmti.md`](jvmti.md) for the wire format and end-to-end flow. The agent
-is pushed once per app and attached at runtime.
+[`docs/agent.md`](agent.md) for the wire format and end-to-end flow. The
+agent is pushed once per app and attached at runtime.
 
 | Command                                                                                                                  | Purpose                                                    |
 | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |

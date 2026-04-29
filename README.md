@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/measure-sh/holo)](https://github.com/measure-sh/holo/releases/latest)
 
 
-A terminal UI for Android. Built for developers who don't like leaving the terminal.
+A terminal based Profiler and App Inspector for Android. Built for developers who don't like leaving the terminal.
 Manage app data, browse logs, record traces, run database queries, and control your device
 settings directly from the TUI with simple commands.
 
