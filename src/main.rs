@@ -152,10 +152,12 @@ fn run_app(
                         }
                         false
                     }
-                    Event::Resize(_, _) => {
-                        terminal.clear()?;
-                        false
-                    }
+                    // Don't clear here: ratatui's `terminal.draw()` calls
+                    // `autoresize()`, which clears the backend and forces a
+                    // full repaint when the size changes. Clearing inside
+                    // the drain loop blanks the screen for the full drag,
+                    // because no draw happens until the drain finishes.
+                    Event::Resize(_, _) => false,
                     _ => false,
                 };
                 if processed_key || !event::poll(Duration::ZERO)? {
